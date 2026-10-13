@@ -3,7 +3,7 @@
 // 2. A fixed deny-list, stored as SHA-256 hashes so the list itself leaks nothing (owner's
 //    names, client names), plus plain patterns that are not private (home paths, mail
 //    addresses, a local interpreter). Checked on every word, word pair and joined word pair
-//    ("FirstLast"), so it also guards GitHub, where there is no local.json.
+//    ("FirstLast", also with up to 4 characters attached), so it also guards GitHub, where there is no local.json.
 // 3. When local.json exists here, none of its values appear either.
 // Scans tracked files and new files git does not ignore.
 const { execFileSync } = require('child_process');
@@ -58,9 +58,19 @@ for (const f of files) {
   for (let i = 0; i < words.length; i++) {
     if (DENY_HASHES.has(sha(words[i])) || (i + 1 < words.length && DENY_HASHES.has(sha(`${words[i]} ${words[i + 1]}`)))) { hits.push(`${f}: a deny-listed word`); break; }
   }
-  // Joined spellings ("FirstLast" for "First Last"): every split of each word, checked as a word pair.
+  // Joined spellings ("FirstLast", "xFirstLast2"): each word, and each with up to 4 characters cut
+  // from either end, checked whole and at every split as a word pair.
+  // shortcut: more than 4 attached characters are not caught; widen ATT if that ever matters.
+  const ATT = 4;
   if (!hits.some((h) => h.startsWith(`${f}: a deny`))) {
-    joined: for (const word of new Set(words)) for (let k = 1; k < Math.min(word.length, 40); k++) if (DENY_HASHES.has(sha(`${word.slice(0, k)} ${word.slice(k)}`))) { hits.push(`${f}: a deny-listed word pair, written joined`); break joined; }
+    joined: for (const word of new Set(words)) {
+      for (let a = 0; a <= ATT; a++) for (let b = 0; b <= ATT; b++) {
+        const w = word.slice(a, word.length - b);
+        if (w.length < 4) continue;
+        if ((a || b) && DENY_HASHES.has(sha(w))) { hits.push(`${f}: a deny-listed word, with characters attached`); break joined; }
+        for (let k = 1; k < Math.min(w.length, 40); k++) if (DENY_HASHES.has(sha(`${w.slice(0, k)} ${w.slice(k)}`))) { hits.push(`${f}: a deny-listed word pair, written joined`); break joined; }
+      }
+    }
   }
   for (const re of DENY_PATTERNS) if (re.test(text)) hits.push(`${f}: ${re}`);
   for (const v of local) if (text.includes(v)) hits.push(`${f}: a local.json value`);

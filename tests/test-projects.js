@@ -25,7 +25,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source, repeats: REPEATS } = require('./lib/paths');
+const { built, source, repeats: REPEATS, FROZEN } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const MAIN = built('a4-projects');
 const SRC = source('a4-projects');
@@ -415,7 +415,7 @@ if (VAULT) {
       if (t) tasks.push(t);
     }
   }
-  ok(tasks.length > 40, `real tasks read (${tasks.length})`);
+  if (FROZEN) eq(tasks.length, 68, 'frozen data: all 68 tasks read (48 + 20 archived)'); else ok(tasks.length > 300, `real tasks read (${tasks.length})`);
   const live = tasks.filter((t) => !t.archived);
   const P = require(built('a4-planner')).logic;
   const plannerOverdue = P.overdueOf(live.map((t) => ({ ...t })), TD, ['done', 'closed']).map((t) => t.path).sort();
@@ -548,8 +548,11 @@ if (VAULT) {
       const s2 = notes.get(p);
       const changed2 = Object.keys({ ...real, ...s2 }).filter((k) => JSON.stringify(real[k]) !== JSON.stringify(s2[k])).sort();
       eq(changed2, ['dateModified'], `real repeat "${name}": set back to open = the note as it was (bar the stamp)`);
-      const r2 = await eng.toggleInstance(p, '2026-10-07');
-      ok(r2 && r2.result && r2.result.done && notes.get(p).complete_instances.includes('2026-10-07'), `real repeat "${name}": ticking still works after the round trip`);
+      // A day the repeat is on and not ticked yet (a fixed day broke on a real note already ticked that day).
+      const back = L.readTask(s2, p, name, cfg, false); const done0 = s2.complete_instances || [];
+      let tick = null; for (let i = 0; i < 400 && !tick; i++) { const d = L.addDays('2026-10-07', i); if (L.taskOnDay(back, d) && !done0.includes(d)) tick = d; }
+      const r2 = tick && await eng.toggleInstance(p, tick);
+      ok(r2 && r2.result && r2.result.done && notes.get(p).complete_instances.includes(tick), `real repeat "${name}": ticking still works after the round trip (${tick})`);
       // A new start day also brings a repeating someday task back, its rule intact bar DTSTART.
       put(p, JSON.parse(JSON.stringify(real)));
       await eng.someday(p);

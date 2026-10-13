@@ -29,6 +29,7 @@ const { built, source } = require('./lib/paths');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'Australia/Lord_Howe'];
 
 if (!process.env.A4QA_CHILD) {
+  console.log('skipped: the Menu Bar Capture checks (old parts 1 and 5); that companion is not in this repo, its checks run in the A4 vault copy');
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {

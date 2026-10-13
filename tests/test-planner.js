@@ -317,7 +317,7 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   };
   const dir = path.join(VAULT, '02 Planner/TaskNotes/Tasks');
   const real = fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => ({ name: f.replace(/\.md$/, ''), fm: parseFm(fs.readFileSync(path.join(dir, f), 'utf8')) })).filter((x) => x.fm && L.plannerItem(x.fm, `02 Planner/TaskNotes/Tasks/${x.name}.md`, x.name));
-  ok(real.length > 40, `real tasks read (${real.length})`);
+  if (require('./lib/paths').FROZEN) eq(real.length, 48, 'frozen data: all 48 tasks read'); else ok(real.length > 40, `real tasks read (${real.length})`);
   const repeats = real.filter((x) => typeof x.fm.recurrence === 'string');
   ok(repeats.length >= 2, 'real repeating tasks read');
   let fine = true; let repeatKept = true; let comesBack = true;

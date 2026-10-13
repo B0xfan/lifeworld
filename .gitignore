@@ -1,6 +1,8 @@
 node_modules/
 .DS_Store
-/data.json
+data.json
+# the frozen test vault's plugin settings are test data, not an owner's settings
+!tests/fixtures/vault/.obsidian/plugins/*/data.json
 # built by npm run build, never committed (directory rule)
 /main.js
 /dist/
