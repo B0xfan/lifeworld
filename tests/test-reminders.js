@@ -98,7 +98,7 @@ const remOf = (fm) => fm.reminders;
   for (const src of srcs) eq(((/^const \{ ([^}]*) \} = require\('\.\.\/core\/reminders'\);$/m.exec(src) || [null, ''])[1]).split(', '), names, 'takes every reminder helper from the shared core');
   eq(Object.keys(R), names, 'the core offers exactly these');
   // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
-  ok(srcs.every((s) => (require('./lib/core-use').importsOf(s).tasks || []).includes('taskFromFrontmatter')), 'all three take taskFromFrontmatter from the shared core');
+  ok(srcs.every((s) => require('./lib/core-use').fromCore(s, ['taskFromFrontmatter'], true)('taskFromFrontmatter')), 'all three use taskFromFrontmatter and take it from the shared core');
 }
 
 /* ---- 2. the field --------------------------------------------------------------- */

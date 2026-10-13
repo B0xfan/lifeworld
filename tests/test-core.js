@@ -6,7 +6,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { source } = require('./lib/paths');
-const { coreUse } = require('./lib/core-use');
+const { coreUse, fromCore } = require('./lib/core-use');
 
 const CORE = path.join(__dirname, '..', 'src', 'core');
 const EXPORTS = {
@@ -52,6 +52,10 @@ for (const use of ['const v = c ? timeText : 0;', 'switch (v) { case timeText: b
   check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}${use}\n`, ALL).used, ['addDays', 'timeText'], `a use without an import is seen: ${use}`));
 }
 check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}const o = c ? { timeText: 1 } : a?.timeText;\n`, ALL).used, ['addDays'], 'a key inside a ternary and an optional property are not uses'));
+
+// fromCore with mustUse: an import the file never uses fails; a use with the import passes.
+const UNUSED = "const { addDays, timeText } = require('../core/dates');\nfunction f() { return addDays('2026-10-05', 1); }\n";
+check(() => assert.deepStrictEqual([fromCore(UNUSED, ALL)('timeText'), fromCore(UNUSED, ALL, true)('timeText'), fromCore(UNUSED, ALL, true)('addDays')], [true, false, true], 'mustUse: imported but unused is caught'));
 
 // A few behaviour pins on the one copy (the plugin suites cover it in depth).
 const D = core.dates; const Q = core.quickadd; const R = core.reminders;

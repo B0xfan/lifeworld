@@ -43,8 +43,10 @@ const URL_F = 'Check out example.com';
 /* ---- 1. one copy of the rule in all three plugins --------------------------- */
 const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
 // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
-const { importsOf } = require('./lib/core-use');
-for (const name of ['taskTitleOf', 'taskFromFrontmatter', 'openBlockersOf']) ok(srcs.every((s) => (importsOf(s).tasks || []).includes(name)), `all three take ${name} from the shared core`);
+const { fromCore } = require('./lib/core-use');
+const TITLE = ['taskTitleOf', 'taskFromFrontmatter', 'openBlockersOf'];
+const viaCore = srcs.map((s) => fromCore(s, TITLE, true));
+for (const name of TITLE) ok(viaCore.every((f) => f(name)), `all three use ${name} and take it from the shared core`);
 for (const lg of [J, T, L]) ok(lg.taskTitleOf === undefined || typeof lg.taskTitleOf === 'function', 'exported');
 
 /* ---- 2. the reading rule ---------------------------------------------------- */

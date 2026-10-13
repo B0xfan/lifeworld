@@ -64,10 +64,10 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
   const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
   // Updated in section 6: halfOfTime and timeText moved to src/core/dates.js (tests/test-core.js).
   // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
-  const { importsOf } = require('./lib/core-use');
-  for (const name of ['timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'sortByOrder', 'applyMove']) {
-    ok(srcs.every((s) => (importsOf(s).tasks || []).includes(name)), `all three take ${name} from the shared core`);
-  }
+  const { fromCore } = require('./lib/core-use');
+  const TT = ['timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'sortByOrder', 'applyMove'];
+  const viaCore = srcs.map((s) => fromCore(s, TT, true));
+  for (const name of TT) ok(viaCore.every((f) => f(name)), `all three use ${name} and take it from the shared core`);
   const wu = (s) => { const i = s.indexOf('async function writeWithUndo('); return s.slice(i, s.indexOf('\n}\n', i)); };
   ok(wu(srcs[1]) && wu(srcs[1]) === wu(srcs[2]), 'Today and Planner: the same writeWithUndo');
 }

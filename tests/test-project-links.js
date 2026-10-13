@@ -30,8 +30,8 @@ const hT = extractAsync(src.today, 'openProjectPage'); const hP = extractAsync(s
 ok(hT && hP && hT === hP, 'openProjectPage identical in A4 Today and A4 Planner');
 // wikilinkTarget, which it uses, is shared too
 // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
-const { importsOf } = require('./lib/core-use');
-ok([src.today, src.planner].every((s) => (importsOf(s).tasks || []).includes('wikilinkTarget')), 'Today and Planner take wikilinkTarget from the shared core');
+const { fromCore } = require('./lib/core-use');
+ok([src.today, src.planner].every((s) => fromCore(s, ['wikilinkTarget'], true)('wikilinkTarget')), 'Today and Planner use wikilinkTarget and take it from the shared core');
 
 /* ---- 2. where it is wired (static) --------------------------------------- */
 ok(/a4t-proj' \}\);[\s\S]{0,200}addEventListener\('click', \(e\) => openProjectPage\(this\.app, p\.path, e, p\.path\)\)/.test(src.today), 'Today: Active projects chip opens the project page');

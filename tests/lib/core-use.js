@@ -32,9 +32,10 @@ function coreUse(src, names) {
 // -> { module: [names] } a source file imports from the shared core.
 function importsOf(src) { const out = {}; for (const m of src.matchAll(IMPORT_RE)) out[m[2]] = m[1].split(', '); return out; }
 // -> (name) => true when the file keeps no copy of `name` and imports it from the core whenever it
-// uses it (a file that never uses a name need not import it).
-function fromCore(src, names) {
+// uses it (a file that never uses a name need not import it, unless `mustUse` is set: then it must
+// use it and import it).
+function fromCore(src, names, mustUse = false) {
   const { own, used } = coreUse(src, names); const imported = Object.values(importsOf(src)).flat();
-  return (x) => !own.includes(x) && (!used.includes(x) || imported.includes(x));
+  return (x) => !own.includes(x) && (used.includes(x) ? imported.includes(x) : !mustUse);
 }
 module.exports = { coreUse, importsOf, fromCore };
