@@ -10,14 +10,17 @@
  *   is logged; a failed write says so;
  * - the board page on a tiny fake DOM: tabs, tiles, cards, archived cards
  *   have no Move, Edit and card click open the task note.
- * The page header, drag, the Move menu and the look need a real Obsidian. */
+ * - the Move menu (fake Menu): every column, the current one disabled.
+ * The page header, real drag and the look need a real Obsidian. */
 'use strict';
 const path = require('path');
 const Module = require('module');
 const assert = require('assert');
 class TFile { constructor(p, fm) { this.path = p; this.extension = 'md'; this.basename = path.basename(p, '.md'); this.fm = fm; } }
 const notices = [];
-const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder: class {}, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {} };
+const menus = [];
+class Menu { constructor() { this.items = []; menus.push(this); } addItem(f) { const i = { setTitle(t) { i.title = t; return i; }, setDisabled(d) { i.disabled = d; return i; }, onClick(c) { i.click = c; return i; } }; f(i); this.items.push(i); return this; } showAtPosition() {} }
+const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder: class {}, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {}, Menu };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
 const Plugin = require(path.join(__dirname, '..', 'main.js'));
@@ -157,6 +160,68 @@ if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env
     assert.deepStrictEqual(t.writes, [], 'already ticked: no write');
     assert.match(notices[0], /already done/);
   }
+  { // independent expected results (written out by hand, not from the code's own calls)
+    const pick = (fm) => ({ status: fm.status, completedDate: fm.completedDate, due: fm.due, planned_half: fm.planned_half, complete_instances: fm.complete_instances });
+    const R = FIXTURES.repeat;
+    const EXPECT = [
+      ['open', 'in-progress', { status: 'in-progress', due: '2026-10-20', planned_half: 'am' }],
+      ['open', 'blocked', { status: 'blocked', due: '2026-10-20', planned_half: 'am' }],
+      ['open', 'done', { status: 'done', completedDate: TODAY, due: '2026-10-20', planned_half: 'am' }],
+      ['open', 'closed', { status: 'closed', completedDate: TODAY, due: '2026-10-20', planned_half: 'am' }],
+      ['open', 'someday', { status: 'someday' }],
+      ['done', 'open', { status: 'open', due: '2026-10-04' }],
+      ['done', 'closed', { status: 'closed', completedDate: TODAY, due: '2026-10-04' }],
+      ['done', 'someday', { status: 'someday' }],
+      ['someday', 'in-progress', { status: 'in-progress' }],
+      // a repeating task outside Done: the status only, its ticks and dates untouched, no completedDate
+      ['repeat', 'in-progress', { status: 'in-progress', due: R.due, complete_instances: R.complete_instances }],
+      ['repeat', 'blocked', { status: 'blocked', due: R.due, complete_instances: R.complete_instances }],
+      ['repeat', 'closed', { status: 'closed', due: R.due, complete_instances: R.complete_instances }],
+      ['repeat', 'someday', { status: 'someday', due: R.due, complete_instances: R.complete_instances }],
+      ['repeatSomeday', 'open', { status: 'open' }],
+    ];
+    for (const [name, col, want] of EXPECT) {
+      const w = world(FIXTURES[name]);
+      assert.strictEqual(await w.p.moveTask(w.task(), col), true, `${name} -> ${col}`);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(pick(w.file.fm))), want, `${name} -> ${col}: expected fields`);
+      assert.notStrictEqual(w.file.fm.dateModified, BASE.dateModified, `${name} -> ${col}: dateModified stamped`);
+      if (name.startsWith('repeat')) assert.strictEqual(w.p.settings.archiveQueue.length, 0, `${name} -> ${col}: a repeating task never queues for archive`);
+    }
+  }
+  { // the normal double tick: two Done moves tick two different days, both succeed
+    const w = world(FIXTURES.repeat);
+    assert.strictEqual(await w.p.moveTask(w.task(), 'done'), true);
+    assert.strictEqual(await w.p.moveTask(w.task(), 'done'), true, 'second Done works');
+    const added = w.file.fm.complete_instances.filter((d) => !FIXTURES.repeat.complete_instances.includes(d));
+    assert.strictEqual(added.length, 2, `two new days ticked (${added})`);
+    assert.notStrictEqual(added[0], added[1]);
+    assert.strictEqual(w.file.fm.status, 'open', 'still open');
+  }
+  { // Closed on a repeating task ends the series, and the toast says so, with Undo
+    const w = world(FIXTURES.repeat);
+    await w.p.moveTask(w.task(), 'closed');
+    assert.strictEqual(w.toasts[0][0], 'Closed: "Task" won\'t repeat any more');
+    assert.ok(!L.isOpenTask(w.task(), cfg), 'the series is no longer open');
+    await w.toasts[0][1]();
+    assert.deepStrictEqual(w.file.fm, FIXTURES.repeat, 'Undo brings the series back');
+    const o = world(FIXTURES.open); await o.p.moveTask(o.task(), 'closed');
+    assert.strictEqual(o.toasts[0][0], 'Moved "Task" to Closed', 'a one-off task: the plain toast');
+  }
+  { // a repeating Someday task dropped on Done: ticks today's day and says it stays in Someday
+    const w = world(FIXTURES.repeatSomeday);
+    assert.strictEqual(await w.p.moveTask(w.task(), 'done'), true);
+    assert.strictEqual(w.file.fm.status, 'someday');
+    assert.strictEqual(w.file.fm.complete_instances.length, 1, 'one day ticked');
+    assert.match(w.toasts[0][0], /It repeats, so it stays in Someday$/);
+  }
+  { // moveTask guards itself: archived and missing notes
+    const w = world(FIXTURES.done);
+    assert.strictEqual(await w.p.moveTask({ ...w.task(), archived: true }, 'open'), false, 'archived: refused');
+    assert.deepStrictEqual(w.writes, [], 'archived: no write');
+    notices.length = 0;
+    assert.strictEqual(await w.p.moveTask({ ...w.task(), path: 'gone/Task.md' }, 'open'), false, 'missing note: refused');
+    assert.match(notices[0], /Could not find "Task"/, 'missing note: says so');
+  }
   { // refusals and failures
     const w = world(FIXTURES.open);
     assert.strictEqual(await w.p.moveTask(w.task(), 'waiting'), false, 'not a column');
@@ -171,7 +236,7 @@ if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env
   /* ---- the board page on a tiny fake DOM ------------------------------------ */
   const node = (tag) => { const n = { tag, kids: [], listeners: {}, className: '', textContent: '', dataset: {}, attrs: {},
     createEl(t) { const c = node(t); n.kids.push(c); return c; }, setAttr(k, v) { n.attrs[k] = v; }, addEventListener(t, f) { n.listeners[t] = f; },
-    empty() { n.kids = []; }, setText(t) { n.textContent = t; }, appendText(t) { n.kids.push({ kids: [], textContent: t }); }, addClass() {}, removeClass() {} }; return n; };
+    empty() { n.kids = []; }, getBoundingClientRect: () => ({ left: 0, bottom: 0 }), setText(t) { n.textContent = t; }, appendText(t) { n.kids.push({ kids: [], textContent: t }); }, addClass() {}, removeClass() {} }; return n; };
   const walk = (n, f, out = []) => { if (f(n)) out.push(n); for (const k of n.kids || []) walk(k, f, out); return out; };
   const text = (n) => n.textContent + (n.kids || []).map(text).join('');
   const opened = []; const moved = [];
@@ -205,5 +270,27 @@ if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env
   view.area = 'work'; page = node('div'); view.renderTaskBoard(page);
   assert.deepStrictEqual(walk(page, (n) => n.className === 'a4pj-btitle').map(text), ['Menu photos'], 'Work: work tasks only');
   assert.strictEqual(walk(page, (n) => n.className === 'a4pj-tabs')[0].kids.map(text)[0], 'Tasks37', 'tab count stays the full total');
+  { // a repeating card with an old due date is not red and shows how it repeats; nor is Someday red
+    const rv = Object.assign(Object.create(V), { plugin: view.plugin, app: {}, cfg, today: TODAY, tasks: [
+      T('Stretch', { recurrenceRaw: 'FREQ=DAILY', due: '2026-09-19' }), T('Later', { status: 'someday', due: '2026-10-01' }), T('Late', { due: '2026-10-01', status: 'blocked' })],
+    projects, query: '', tab: 'projects', area: null, render() {} });
+    const pg = node('div'); rv.renderTaskBoard(pg);
+    const whens = Object.fromEntries(walk(pg, (n) => n.className === 'a4pj-bcard').map((c) => [walk(c, (n) => n.className === 'a4pj-btitle')[0].textContent, walk(c, (n) => /a4pj-bwhen/.test(n.className))[0]]));
+    assert.deepStrictEqual([whens.Stretch.className, whens.Stretch.textContent], ['a4pj-bwhen', 'Every day'], 'repeating: never overdue, shows the repeat');
+    assert.deepStrictEqual([whens.Later.className, whens.Later.textContent], ['a4pj-bwhen', `Due ${L.shortDay('2026-10-01', TODAY)}`], 'Someday: not red');
+    assert.strictEqual(whens.Late.className, 'a4pj-bwhen is-late', 'blocked one-off past due: red');
+  }
+  { // the Move menu: every column, the current one disabled, a pick moves through moveTask
+    menus.length = 0; moved.length = 0;
+    const anchor = { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) };
+    view.taskMoveMenu(anchor, tasks[0], 'open');
+    const items = menus[0].items;
+    assert.deepStrictEqual(items.map((i) => [i.title, !!i.disabled]), [['Open (here now)', true], ['In progress', false], ['Blocked', false], ['Someday', false], ['Done', false], ['Closed', false]]);
+    items[4].click();
+    assert.deepStrictEqual(moved, [['Menu photos', 'done']], 'menu pick calls moveTask');
+    const mb = walk(menu, (n) => n.tag === 'button' && n.textContent === 'Move')[0];
+    menus.length = 0; mb.listeners.click();
+    assert.strictEqual(menus.length, 1, 'the card Move button opens the menu');
+  }
   console.log('task board self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

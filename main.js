@@ -1140,7 +1140,8 @@ function firstBodyLine(text) {
 // + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
 // idea and no goal; the one line is the first body line. `why` (free text) goes
 // through the YAML writer; the other values are fixed or checked by the caller.
-// The one line is saved as typed (line breaks become spaces), never shortened.
+// The one line keeps every word and symbol, never shortened; line breaks and runs of
+// spaces become one space (Markdown shows them as one anyway).
 function ideaNote(title, line, why, sphere, today, stringify) {
   const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim();
   const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
@@ -2906,12 +2907,15 @@ class A4ProjectsPlugin extends Plugin {
   // one-off task and every other column but Someday: the status setter the task
   // card uses (completedDate, dateModified, auto-archive as today; for done that
   // is exactly the tick). Done on a repeating task: the tick, this occurrence only,
-  // so it stays open. Someday: the Someday action (a one-off task loses its day
-  // and due date). Out of Someday: the status only, no date invented.
+  // so it stays open (a Someday one stays in Someday, as the tick leaves it).
+  // Closed on a repeating task ends the series (team call 2026-10-13); the toast
+  // says so. Someday: the Someday action (a one-off task loses its day and due
+  // date). Out of Someday: the status only, no date invented.
   async moveTask(t, column) {
     const cfg = this.engine.cfg();
+    if (t.archived || !taskColumns(cfg).includes(column)) return false; // nothing takes a task out of the archive
     const f = this.engine.file(t.path);
-    if (!f || !taskColumns(cfg).includes(column)) return false;
+    if (!f) { new Notice(`Could not find "${t.title}". It may have been moved or renamed.`); return false; }
     const fm = this.engine.fm(f) || {};
     if (taskColumn(statusString(fm[cfg.F.status])) === column) return false; // dropped back in its own column: silent
     const today = this.engine.today(), label = TASK_COLUMN_LABEL[column];
@@ -2923,7 +2927,7 @@ class A4ProjectsPlugin extends Plugin {
         if (strList(fm[cfg.F.completeInstances]).includes(d)) { new Notice(`"${t.title}" is already done for ${shortDay(d, today)}. It repeats, so it stays open.`); return false; }
         w = await this.completeTask(t, true);
         const r = (w && w.result) || { day: d };
-        msg = `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}. It repeats, so it stays open`;
+        msg = `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}. It repeats, so it stays ${isSomeday({ status: statusString(fm[cfg.F.status]) }) ? 'in Someday' : 'open'}`;
         text = `You marked the task "${t.title}" done for ${shortDay(r.day, today)}.`;
       } else if (column === 'someday') {
         // A finished one-off task is reopened first (as unticking does), so no completedDate stays behind.
@@ -2931,7 +2935,10 @@ class A4ProjectsPlugin extends Plugin {
         const sd = await this.engine.someday(t.path);
         w = { undo: async () => { await sd.undo(); if (reopen) await reopen.undo(); } };
         if (t.due && !t.recurrenceRaw) msg += '. The due date was taken off';
-      } else w = await this.engine.setStatus(t.path, column);
+      } else {
+        w = await this.engine.setStatus(t.path, column);
+        if (column === 'closed' && t.recurrenceRaw) msg = `Closed: "${t.title}" won't repeat any more`;
+      }
     } catch (e) { console.error('[a4-projects] task move failed', t.path, e); new Notice(`Could not move "${t.title}".`); return false; }
     const undo = w && w.undo;
     if (undo) this.toast.show(msg, this.logged(text, async () => { await undo(); return true; }));
@@ -3971,7 +3978,7 @@ class ProjectsView extends ItemView {
   }
 
   // Task card (spec 15): name, project with its area tag, due date (red when
-  // overdue), High or Low priority. An archived task (finished and filed away)
+  // overdue; a repeating task shows how it repeats), High or Low priority. An archived task (finished and filed away)
   // has no Move: no existing action takes it out of the archive.
   taskCard(host, { t, p, col }) {
     const today = this.today;
@@ -3983,8 +3990,9 @@ class ProjectsView extends ItemView {
     if (p && (p.sphere === 'work' || p.sphere === 'personal')) el(pills, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
     el(pills, 'span', 'a4pj-pill is-proj', p ? p.name : t.projectKey ? (t.project || t.projectKey) : 'No project');
     if (t.archived) el(pills, 'span', 'a4pj-pill is-proj', 'Archived');
-    const late = !!t.due && t.due < today && col !== 'done' && col !== 'closed';
-    el(top, 'span', 'a4pj-bwhen' + (late ? ' is-late' : ''), t.due ? `${late ? 'Overdue' : 'Due'} ${shortDay(t.due, today)}` : 'No due date');
+    // The List's rule: a repeating task is never overdue and shows how it repeats, not its old due date.
+    const late = !t.recurrenceRaw && !!t.due && t.due < today && ['open', 'in-progress', 'blocked'].includes(col);
+    el(top, 'span', 'a4pj-bwhen' + (late ? ' is-late' : ''), t.recurrenceRaw ? repeatWords(t.recurrenceRaw) : t.due ? `${late ? 'Overdue' : 'Due'} ${shortDay(t.due, today)}` : 'No due date');
     el(c, 'div', 'a4pj-btitle', t.title);
     // Normal is the default, so only High and Low get a tag (mockup).
     if (t.priority === 'high' || t.priority === 'low') el(el(c, 'div', 'a4pj-by'), 'span', `a4pj-pill is-${t.priority}`, t.priority === 'high' ? 'High priority' : 'Low priority');
