@@ -1114,9 +1114,10 @@ function taskColumns(cfg) { return TASK_COLUMNS.filter((k) => k === 'someday' ||
 function taskBoardRows(tasks, projects, cfg, area, query) {
   const byKey = new Map(projects.map((p) => [p.key, p]));
   const q = String(query || '').trim().toLowerCase();
+  const cols = taskColumns(cfg); // the tab count must match what the columns show
   return tasks.filter((t) => !t.archived || !isOpenTask(t, cfg))
     .map((t) => ({ t, p: (t.projectKey && byKey.get(t.projectKey)) || null, col: taskColumn(t.status) }))
-    .filter((x) => x.col && (!area || (x.p && x.p.sphere === area))
+    .filter((x) => cols.includes(x.col) && (!area || (x.p && x.p.sphere === area))
       && (!q || [x.t.title, x.p ? x.p.name : x.t.project].some((v) => String(v || '').toLowerCase().includes(q))));
 }
 // One column's cards: Done and Closed newest finished first, the latest DONE_PREVIEW
@@ -1140,10 +1141,10 @@ function firstBodyLine(text) {
 // + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
 // idea and no goal; the one line is the first body line. `why` (free text) goes
 // through the YAML writer; the other values are fixed or checked by the caller.
-// The one line keeps every word and symbol, never shortened; line breaks and runs of
-// spaces become one space (Markdown shows them as one anyway).
+// The one line is kept exactly as typed (spaces included); only line breaks become a
+// space, so it stays one line, and the ends are trimmed.
 function ideaNote(title, line, why, sphere, today, stringify) {
-  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim();
+  const w = String(why || '').trim(), l = String(line || '').replace(/\r\n|\r|\n/g, ' ').trim();
   const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
   return `---\ntype: project\nstatus: idea\ncreated: ${today}\nsphere: ${sphere}\n${y}---\n\n# ${title}\n\n${l ? `${l}\n` : ''}`;
 }
@@ -1899,8 +1900,10 @@ class TaskEngine {
     const cfg = this.cfg();
     const now = this.now();
     const w = await this.write(path, (fm) => applyProperty(fm, cfg, 'status', status, { day: dayOf(now), stamp: tnTimestamp(now) }));
+    const prev = this.plugin.settings.archiveQueue.find((x) => x.taskPath === path);
     const queued = await this.plugin.archiveQueueOnStatus(path, status, cfg, now);
-    return { result: w.result, undo: async () => { await w.undo(); if (queued) await this.plugin.cancelArchive(path); } };
+    // Undo puts back an auto-archive this change cancelled (e.g. a Done task moved out of Done).
+    return { result: w.result, undo: async () => { await w.undo(); if (queued || prev) await this.plugin.cancelArchive(path, prev); } };
   }
   async setProperty(path, prop, value) {
     const cfg = this.cfg();
@@ -2709,10 +2712,12 @@ class A4ProjectsPlugin extends Plugin {
     await this.save();
     return queued;
   }
-  async cancelArchive(path) {
+  // `restore`: the entry to put back in its place (Undo of a change that cancelled it).
+  async cancelArchive(path, restore) {
     const before = this.settings.archiveQueue.length;
     this.settings.archiveQueue = this.settings.archiveQueue.filter((x) => x.taskPath !== path);
-    if (this.settings.archiveQueue.length !== before) await this.save();
+    if (restore) this.settings.archiveQueue.push(restore);
+    if (restore || this.settings.archiveQueue.length !== before) await this.save();
   }
   async processArchiveQueue(nowMs) {
     if (this.archiving) return;
@@ -2932,8 +2937,13 @@ class A4ProjectsPlugin extends Plugin {
       } else if (column === 'someday') {
         // A finished one-off task is reopened first (as unticking does), so no completedDate stays behind.
         const reopen = !t.recurrenceRaw && isCompletedIn(cfg, statusString(fm[cfg.F.status])) ? await this.engine.setStatus(t.path, cfg.defaultStatus) : null;
-        const sd = await this.engine.someday(t.path);
-        w = { undo: async () => { await sd.undo(); if (reopen) await reopen.undo(); } };
+        let sd;
+        try { sd = await this.engine.someday(t.path); } catch (e) {
+          // Never leave a finished task reopened by a half move: put it back as it was.
+          if (reopen) await reopen.undo().catch((u) => console.error('[a4-projects] task move rollback failed', t.path, u));
+          throw e;
+        }
+        w = { undo: async () => { try { await sd.undo(); } finally { if (reopen) await reopen.undo(); } } };
         if (t.due && !t.recurrenceRaw) msg += '. The due date was taken off';
       } else {
         w = await this.engine.setStatus(t.path, column);

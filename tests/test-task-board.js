@@ -7,7 +7,8 @@
  *   status, Someday), field for field and in the same key order, with the real
  *   task engine on a fake vault and a fixed clock; same column and a second
  *   Done on a repeating task write nothing; Undo puts the note back; the move
- *   is logged; a failed write says so;
+ *   is logged; a failed write says so; a failed Someday write after the
+ *   reopen puts the task back; Undo restores a cancelled auto-archive;
  * - the board page on a tiny fake DOM: tabs, tiles, cards, archived cards
  *   have no Move, Edit and card click open the task note.
  * - the Move menu (fake Menu): every column, the current one disabled.
@@ -221,6 +222,42 @@ if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env
     notices.length = 0;
     assert.strictEqual(await w.p.moveTask({ ...w.task(), path: 'gone/Task.md' }, 'open'), false, 'missing note: refused');
     assert.match(notices[0], /Could not find "Task"/, 'missing note: says so');
+  }
+  { // section 10: Undo of a move out of Done puts back the auto-archive it cancelled
+    const Q = { taskPath: `${TD}/Task.md`, statusChangeTimestamp: 1, archiveAfterTimestamp: 2, statusValue: 'done' };
+    for (const col of ['open', 'closed', 'someday']) {
+      const w = world(FIXTURES.done); w.p.settings.archiveQueue = [clone(Q)];
+      await w.p.moveTask(w.task(), col);
+      assert.deepStrictEqual(w.p.settings.archiveQueue.filter((x) => x.statusValue === 'done' && x.archiveAfterTimestamp === 2), [], `done -> ${col}: the queued archive is cancelled`);
+      await w.toasts[0][1]();
+      assert.deepStrictEqual(w.p.settings.archiveQueue, [Q], `done -> ${col}: Undo puts the queued archive back`);
+      assert.deepStrictEqual(w.file.fm, FIXTURES.done, `done -> ${col}: Undo restores the note`);
+    }
+  }
+  { // section 10: a failed Someday write after the reopen puts the finished task back
+    const Q = { taskPath: `${TD}/Task.md`, statusChangeTimestamp: 1, archiveAfterTimestamp: 2, statusValue: 'done' };
+    const w = world(FIXTURES.done); w.p.settings.archiveQueue = [clone(Q)];
+    const write = w.p.app.fileManager.processFrontMatter; let n = 0;
+    w.p.app.fileManager.processFrontMatter = async (f, cb) => { if (++n === 2) throw new Error('disk'); return write(f, cb); };
+    notices.length = 0;
+    assert.strictEqual(await w.p.moveTask(w.task(), 'someday'), false);
+    assert.match(notices[0], /Could not move "Task"/);
+    assert.deepStrictEqual(w.file.fm, FIXTURES.done, 'still Done, completedDate kept');
+    assert.deepStrictEqual(w.p.settings.archiveQueue, [Q], 'its auto-archive kept');
+    assert.deepStrictEqual(w.p.settings.activity, [], 'not logged');
+    // Undo of a good move: if the Someday undo fails, the reopen undo still runs.
+    const u = world(FIXTURES.done); await u.p.moveTask(u.task(), 'someday');
+    const uw = u.p.app.fileManager.processFrontMatter; let m = 0;
+    u.p.app.fileManager.processFrontMatter = async (f, cb) => { if (++m === 1) throw new Error('disk'); return uw(f, cb); };
+    await assert.rejects(u.toasts[0][1](), /disk/, 'the failure reaches the toast (it says "Could not undo that")');
+    assert.strictEqual(u.file.fm.status, 'done', 'the task is finished again');
+    assert.strictEqual(u.file.fm.completedDate, FIXTURES.done.completedDate, 'with its completedDate');
+  }
+  { // section 10: the tab count is what the columns show (a status the settings lack counts nowhere)
+    const noClosed = { ...cfg, statuses: cfg.statuses.filter((x) => x.value !== 'closed') };
+    const rows = L.taskBoardRows([T('A', { status: 'closed', completedDate: TODAY }), T('B')], [], noClosed);
+    assert.deepStrictEqual(rows.map((x) => x.t.title), ['B'], 'no Closed column: the closed task is not counted');
+    assert.ok(rows.every((x) => L.taskColumns(noClosed).includes(x.col)));
   }
   { // refusals and failures
     const w = world(FIXTURES.open);

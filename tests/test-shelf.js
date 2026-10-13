@@ -45,7 +45,8 @@ assert.strictEqual(L.applyPlainStatus({ status: 'active' }, 'paused', '2026-10-1
 /* ---- idea note shape ------------------------------------------------------- */
 const yaml = (o) => Object.entries(o).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n') + '\n';
 assert.strictEqual(L.ideaNote('Beach cleanup', '  A signup   page. ', 'No date: yet', 'personal', '2026-10-13', yaml),
-  '---\ntype: project\nstatus: idea\ncreated: 2026-10-13\nsphere: personal\nwhy: "No date: yet"\n---\n\n# Beach cleanup\n\nA signup page.\n');
+  '---\ntype: project\nstatus: idea\ncreated: 2026-10-13\nsphere: personal\nwhy: "No date: yet"\n---\n\n# Beach cleanup\n\nA signup   page.\n', 'spaces kept as typed, ends trimmed');
+assert.ok(L.ideaNote('X', 'one\r\ntwo\nthree\rfour', '', 'work', 'd', yaml).endsWith('# X\n\none two three four\n'), 'line breaks become one space, so it stays one line');
 assert.strictEqual(L.ideaNote('X', '', '  ', 'work', '2026-10-13', yaml), '---\ntype: project\nstatus: idea\ncreated: 2026-10-13\nsphere: work\n---\n\n# X\n\n', 'no why, no line: the New Project shape');
 assert.strictEqual(L.firstBodyLine(L.ideaNote('X', 'One line.', '', 'work', '2026-10-13', yaml)), 'One line.', 'the one line is the card description');
 assert.ok(L.ideaNote('X', '', 'w', 'work', 'd', (o) => `why: ${o.why}`).includes('why: w\n---'), 'a YAML writer without a final newline still closes the block');
