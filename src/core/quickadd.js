@@ -5,8 +5,9 @@ const { pad2, isDayStr, toDayStr, utcOf, fromUtc, addDays, weekdayOf, partsOf, p
 /* ========================================================================== *
  * Quick add: one copy for every part of LifeWorld (phase 1 section 6; before, a
  * verbatim copy each in Projects and Planner). The Menu Bar Capture companion
- * keeps its own copy of this block; the A4 vault's tests compare it with this
- * one. Plain words -> a new task: "call Ana friday 3pm !high".
+ * keeps its own copy of this block; the A4 vault's tests must be pointed at
+ * this file before these builds are installed there (phase 3). Plain words ->
+ * a new task: "call Ana friday 3pm !high".
  * ========================================================================== */
 
 const DOW_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];

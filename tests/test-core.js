@@ -47,6 +47,10 @@ for (const copy of ['let pad2 = (n) => n;', 'var pad2 = 1;', '  function pad2(n)
 }
 check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}const k = { timeText };\n`, ALL).used, ['addDays', 'timeText'], 'a use without an import is seen'));
 check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}x.timeText(); const s = 'timeText'; const o = { timeText: 1 };\n`, ALL).used, ['addDays'], 'a property, a string and a key are not uses'));
+for (const use of ['const v = c ? timeText : 0;', 'switch (v) { case timeText: break; }', 'const v = c ? 0 : timeText;']) {
+  check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}${use}\n`, ALL).used, ['addDays', 'timeText'], `a use without an import is seen: ${use}`));
+}
+check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}const o = c ? { timeText: 1 } : a?.timeText;\n`, ALL).used, ['addDays'], 'a key inside a ternary and an optional property are not uses'));
 
 // A few behaviour pins on the one copy (the plugin suites cover it in depth).
 const D = core.dates; const Q = core.quickadd; const R = core.reminders;

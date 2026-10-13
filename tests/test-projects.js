@@ -558,7 +558,9 @@ if (VAULT) {
       put(p, JSON.parse(JSON.stringify(real)));
       await eng.someday(p);
       await eng.setStart(p, '2026-10-10');
-      ok(notes.get(p).status === 'open' && /FREQ=DAILY/.test(notes.get(p).recurrence) && /DTSTART:20261010/.test(notes.get(p).recurrence), `real repeat "${name}": a new start day brings it back`);
+      // Fixed in section 6 review round: compared the rule bar DTSTART (was a FREQ=DAILY test, wrong for a weekly repeat).
+      const ruleBody = (r) => String(r).split(';').filter((x) => !/^DTSTART[:;=]/i.test(x)).join(';');
+      ok(notes.get(p).status === 'open' && ruleBody(notes.get(p).recurrence) === ruleBody(real.recurrence) && /DTSTART:20261010/.test(notes.get(p).recurrence), `real repeat "${name}": a new start day brings it back`, `${real.recurrence} -> ${notes.get(p).recurrence}`);
     }
   };
   globalThis.__somedayRun = run;

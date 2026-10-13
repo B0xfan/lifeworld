@@ -6,9 +6,12 @@ const esbuild = require('esbuild');
 const IMPORT_RE = /^const \{ ([^}]*) \} = require\('(?:\.\.\/core|\.)\/(\w+)'\);.*$/gm;
 const ws = (code, more) => esbuild.transformSync(code, { loader: 'js', minifyWhitespace: true, ...more }).code;
 const minified = (code) => ws(code, { minifyIdentifiers: true, format: 'cjs' });
-// Identifier-like occurrences: not a property (`.x`), not an object key (`x:`).
-// shortcut: `a ? x : b` reads as a key and is not counted, upgrade if a check ever misses one.
-const count = (s, x, renamed) => (s.match(new RegExp(`(?<![\\w$.])${x}${renamed ? '\\d*' : ''}(?![\\w$])(?!:)`, 'g')) || []).length;
+// Identifier-like occurrences: not a property (`.x`), not an object key (`x:`), but a bare
+// ternary value (`c?x:y`) and a `case x:` label are uses (esbuild prints both this way).
+const count = (s, x, renamed) => {
+  const id = `${x}${renamed ? '\\d*' : ''}`;
+  return (s.match(new RegExp(`(?<![\\w$.])${id}(?![\\w$])(?!:)|(?<=\\?|case )${id}(?=:)`, 'g')) || []).length;
+};
 
 // -> { imports: { module: [names] }, own: [names], used: [names] } for the given core names.
 function coreUse(src, names) {
