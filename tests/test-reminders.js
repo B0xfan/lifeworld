@@ -3,7 +3,7 @@
  * A4 Projects, A4 Today and A4 Planner. No Obsidian: an in-memory vault.
  * `node tests/test-reminders.js` (re-runs itself in several time zones).
  *
- *  1. The reminder helpers are the same code in all three plugins.
+ *  1. The reminder helpers are one copy, in src/core/reminders.js (section 6).
  *  2. The field: TaskNotes' own `reminders` format, offsets both ways
  *     (PT0M, -PT15M, -PT1H, -P1D, Other), which entry A4 reads, the words
  *     and the small "15m" mark, typed "Other" amounts.
@@ -88,20 +88,17 @@ function engineFor(v) { const e = new TaskEngine({ app: v.app, settings: { tnSna
 const remOf = (fm) => fm.reminders;
 
 (async () => {
-/* ---- 1. same code in all three ----------------------------------------------- */
+/* ---- 1. one copy, in the shared core -------------------------------------------- */
+// Updated in section 6: the reminder helpers moved from Projects, Today and Planner (verbatim
+// copies) to src/core/reminders.js; tests/test-core.js checks no plugin keeps a copy.
 {
-  const extract = (src, name) => {
-    const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);
-    if (!m) return null;
-    const first = src.slice(m.index, src.indexOf('\n', m.index));
-    if (/^const /.test(first) && first.trim().endsWith(';')) return first;
-    const o = (first.match(/\{/g) || []).length; const c = (first.match(/\}/g) || []).length;
-    return o && o === c ? first : src.slice(m.index, src.indexOf('\n}\n', m.index) + 2);
-  };
-  for (const name of ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords', 'taskFromFrontmatter']) {
-    const a = extract(srcs[0], name);
-    ok(a && a === extract(srcs[1], name) && a === extract(srcs[2], name), `same code in all three plugins: ${name}`);
-  }
+  const R = require('../src/core/reminders');
+  const names = ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'];
+  for (const [i, logic] of [L, T, PL].entries()) for (const x of names) ok(logic[x] !== undefined, `${['Projects', 'Today', 'Planner'][i]} still offers ${x}`);
+  for (const src of srcs) eq(((/^const \{ ([^}]*) \} = require\('\.\.\/core\/reminders'\);$/m.exec(src) || [null, ''])[1]).split(', '), names, 'takes every reminder helper from the shared core');
+  eq(Object.keys(R), names, 'the core offers exactly these');
+  const extract = (src, name) => { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); return m ? src.slice(m.index, src.indexOf('\n}\n', m.index) + 2) : null; };
+  ok(extract(srcs[0], 'taskFromFrontmatter') && extract(srcs[0], 'taskFromFrontmatter') === extract(srcs[1], 'taskFromFrontmatter') && extract(srcs[0], 'taskFromFrontmatter') === extract(srcs[2], 'taskFromFrontmatter'), 'same code in all three plugins: taskFromFrontmatter');
 }
 
 /* ---- 2. the field --------------------------------------------------------------- */

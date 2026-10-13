@@ -156,4 +156,18 @@ function occursOn(rule, day) {
   return true;
 }
 
-module.exports = { pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn };
+// Short month and weekday names, and clock times ('HH:MM'): moved in section 6 with the quick add that uses them.
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function halfOfTime(t) { return t ? (t < '13:00' ? 'am' : 'pm') : null; }
+
+// 'HH:MM' -> '4:30 PM' ('4 PM' with short and no minutes).
+function timeText(t, short) {
+  if (!t) return '';
+  const [h, mi] = t.split(':').map(Number);
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+module.exports = { pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };

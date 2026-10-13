@@ -63,7 +63,8 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 {
   const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
   const extract = (src, name) => { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); if (!m) return null; const first = src.slice(m.index, src.indexOf('\n', m.index)); const o = (first.match(/\{/g) || []).length; const c = (first.match(/\}/g) || []).length; return o && o === c ? first : src.slice(m.index, src.indexOf('\n}\n', m.index) + 2); };
-  for (const name of ['timeOf', 'ruleTimeOf', 'halfOfTime', 'timeText', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'sortByOrder', 'applyMove']) {
+  // Updated in section 6: halfOfTime and timeText moved to src/core/dates.js (tests/test-core.js).
+  for (const name of ['timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'sortByOrder', 'applyMove']) {
     const a = extract(srcs[0], name);
     ok(a && a === extract(srcs[1], name) && a === extract(srcs[2], name), `same code in all three plugins: ${name}`);
   }

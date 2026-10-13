@@ -6,8 +6,8 @@
  * No Obsidian: stand-ins for the vault and TaskNotes' API.
  * `node tests/test-quick-add.js` (re-runs itself in several time zones).
  *
- *  1. The SHARED quick add block is the same text in all three plugins, and
- *     every date helper Menu Bar Capture copies is the same as A4 Projects'.
+ *  1. One quick add parser, in src/core/quickadd.js (before section 6, the SHARED
+ *     block was a verbatim copy in Projects and Planner); every name it calls exists.
  *  2. The three plugins read every phrase the same way: same task fields, same
  *     orange "Adds:" line.
  *  3. Planner quick add saves what Projects' quick add saves (time on Due in
@@ -61,26 +61,25 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 async function main() {
-  /* ---- 1. one parser, copied verbatim -------------------------------------- */
+  /* ---- 1. one parser, in the shared core -------------------------------------- */
+  // Updated in section 6: the SHARED quick add block moved from Projects and Planner (verbatim
+  // copies) to src/core/quickadd.js; tests/test-core.js checks no plugin keeps a copy.
   const src = { pj: fs.readFileSync(source('a4-projects'), 'utf8'), pl: fs.readFileSync(source('a4-planner'), 'utf8') };
-  const START = '/* ========================================================================== *\n * SHARED quick add with a4-planner and a4-menubar-capture';
-  const END = '/* ---- end of SHARED quick add ---------------------------------------------- */\n';
-  const block = (s) => { const a = s.indexOf(START); const b = s.indexOf(END, a); return a < 0 || b < 0 || s.indexOf(START, a + 1) >= 0 ? null : s.slice(a, b + END.length); };
-  const B = { pj: block(src.pj), pl: block(src.pl) };
-  ok(!!B.pj && B.pj.length > 5000, 'A4 Projects has exactly one SHARED quick add block');
-  ok(B.pl === B.pj, 'A4 Planner\'s SHARED quick add block is the same text as A4 Projects\'');
-  for (const name of ['understand', 'parseDayWord', 'parseClock', 'repeatRule', 'quickAddChips', 'quickAddPlan', 'whenValue', 'shortDay']) {
-    for (const k of ['pj', 'pl']) ok((src[k].match(new RegExp(`^function ${name}\\(`, 'gm')) || []).length === 1, `${k}: ${name} is defined once (no second copy overriding it)`);
-  }
-  // Every top-level name the shared block uses is defined in each plugin (no
-  // ReferenceError waiting for a phrase the tests didn't try).
-  const used = [...new Set((B.pj.match(/(?<![\\.\w])[A-Za-z_][A-Za-z0-9_]*(?=\()/g) || []))].filter((x) => !['function', 'if', 'for', 'while', 'return', 'String', 'Number', 'RegExp', 'Array', 'Math', 'Date', 'Set', 'isNaN', 'exec', 'test', 'push', 'slice', 'replace', 'join', 'map', 'filter', 'split', 'trim', 'toLowerCase', 'toUpperCase', 'startsWith', 'includes', 'findIndex', 'indexOf', 'sort', 'cut', 'fn', 'ahead', 'padStart', 'every', 'source', 'flags', 'endsWith'].includes(x));
+  const QA = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'quickadd.js'), 'utf8');
+  ok(QA.length > 5000 && !src.pj.includes('end of SHARED quick add') && !src.pl.includes('end of SHARED quick add'), 'one quick add block, in src/core/quickadd.js, none left in Projects or Planner');
   for (const k of ['pj', 'pl']) {
-    // Updated in section 5: a name may also come from the shared core (src/core/dates.js).
-    const core = (/^const \{ ([^}]*) \} = require\('\.\.\/core\/dates'\);$/m.exec(src[k]) || [null, ''])[1].split(', ');
-    const missing = used.filter((x) => !new RegExp(`^(?:function ${x}\\(|const ${x} = )`, 'm').test(src[k]) && !core.includes(x));
-    eq(missing, [], `${k}: every function the shared block calls is defined`);
+    const m = /^const \{ ([^}]*) \} = require\('\.\.\/core\/quickadd'\);$/m.exec(src[k]);
+    const names = m ? m[1].split(', ') : [];
+    ok(['understand', 'parseClock', 'quickAddChips', 'quickAddPlan'].every((x) => names.includes(x)), `${k}: takes the parser and the "Adds:" line from the shared core`);
   }
+  for (const name of ['understand', 'parseDayWord', 'parseClock', 'repeatRule', 'quickAddChips', 'quickAddPlan', 'whenValue', 'shortDay']) {
+    ok((QA.match(new RegExp(`^function ${name}\\(`, 'gm')) || []).length === 1, `core: ${name} is defined once (no second copy overriding it)`);
+  }
+  // Every top-level name the shared block uses is defined there or taken from the dates core (no
+  // ReferenceError waiting for a phrase the tests didn't try).
+  const used = [...new Set((QA.match(/(?<![\\.\w])[A-Za-z_][A-Za-z0-9_]*(?=\()/g) || []))].filter((x) => !['function', 'if', 'for', 'while', 'return', 'String', 'Number', 'RegExp', 'Array', 'Math', 'Date', 'Set', 'isNaN', 'exec', 'test', 'push', 'slice', 'replace', 'join', 'map', 'filter', 'split', 'trim', 'toLowerCase', 'toUpperCase', 'startsWith', 'includes', 'findIndex', 'indexOf', 'sort', 'cut', 'fn', 'ahead', 'padStart', 'every', 'source', 'flags', 'endsWith', 'require'].includes(x));
+  const fromDates = (/^const \{ ([^}]*) \} = require\('\.\/dates'\);$/m.exec(QA) || [null, ''])[1].split(', ');
+  eq(used.filter((x) => !new RegExp(`^(?:function ${x}\\(|const ${x} = )`, 'm').test(QA) && !fromDates.includes(x)), [], 'every function the shared block calls is defined');
 
   /* ---- 2. same reading, same orange line ------------------------------------- */
   const MON = '2026-10-05'; // a Monday

@@ -64,8 +64,9 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 
 /* ---- 1. shared code ---------------------------------------------------------- */
 // Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
+// Updated in section 6: asList, halfOfTime, timeText and the reminder helpers moved to src/core/ too.
 const SHARED = [
-  'wikilinkTarget', 'wikilinkLabel', 'asList', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'halfOfTime', 'timeText', 'REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
+  'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
 function extract(src, name) {
   const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);
   if (!m) return null;

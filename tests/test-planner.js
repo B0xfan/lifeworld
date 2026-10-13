@@ -53,8 +53,9 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 
 /* ---- 1. shared code is a verbatim copy of A4 Today's ---------------------- */
 // Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
+// Updated in section 6: asList, halfOfTime, timeText and the reminder helpers moved to src/core/ too.
 const SHARED = [
-  'wikilinkTarget', 'wikilinkLabel', 'asList', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'halfOfTime', 'timeText', 'REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
+  'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
 function extract(src, name) {
   const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);
   if (!m) return null;
@@ -423,7 +424,8 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   ok(!/\u2014/.test(qa.slice(qa.indexOf("'a4pl-hint', 'Dates"), qa.indexOf('are picked up as you type'))), 'the help line has no em dash');
   ok(L.understand('x !high', '2026-10-07').priority === 'high' && L.understand('x !low', '2026-10-07').priority === 'low' && !!L.understand('x every monday', '2026-10-07').recurrence, 'the help line examples are real syntax the parser accepts');
   ok(/b\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\)/.test(qa), 'clicking a project keeps the focus in the box');
-  const shared = src.slice(src.indexOf('SHARED quick add with a4-planner'), src.indexOf('end of SHARED quick add'));
+  const shared = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'quickadd.js'), 'utf8'); // updated in section 6: the shared block is the core file
+  ok(shared.length > 5000, 'the shared quick add block is there to check');
   ok(!/project(Matches|Token)|pickProjectText/.test(shared), 'the +project code is outside the shared quick add block');
 }
 
