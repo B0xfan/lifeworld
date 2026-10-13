@@ -1,0 +1,9 @@
+{
+  "id": "a4-sidebar",
+  "name": "A4 Sidebar",
+  "version": "0.9.0",
+  "minAppVersion": "1.7.2",
+  "description": "A left-sidebar tab laid out like Lifeworld: Today, Planner and Focus at the top, then My Life in groups (Direction, Wellbeing, Money & work, Free time, Notes) and the seven Rooms, with section names large and items small. Items open A4's existing dashboards; notes can be dragged onto folders to move them; the + uses A4 Quick Create. It also puts the toolbar buttons (today's daily note, new unique note, new canvas, graph view, and a Bases menu listing every base A to Z) and the Audrey badge on the Files tab, and Terminal and Settings on the right sidebar. Works on phone too: long-press for the menu. Sort order per folder (Settings, A4 Sidebar, or right-click a folder): newest first, oldest first, A to Z or Z to A, with dated notes sorted by their real date.",
+  "author": "A4",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,325 @@
+/* A4 Today. Every selector carries the html:not(#a4t-guard) prefix so the
+ * theme cannot outrank it (Dex journal 2026-09-28); keep it on new rules. */
+html:not(#a4t-guard) .a4t-root, html:not(#a4t-guard) .a4t-capture-modal {
+  --a4t-bg: var(--ink, var(--background-primary));
+  --a4t-bg2: var(--ink-2, var(--background-secondary));
+  --a4t-bg3: var(--ink-3, color-mix(in srgb, var(--background-primary) 94%, var(--text-normal)));
+  --a4t-paper: var(--ink-paper, var(--text-normal));
+  --a4t-dim: var(--ink-paper-dim, var(--text-muted));
+  --a4t-faint: var(--ink-paper-faint, color-mix(in srgb, var(--text-normal) 68%, var(--background-primary)));
+  --a4t-marker: var(--ink-marker, var(--a4t-acc, var(--interactive-accent)));
+  --a4t-marker-soft: var(--ink-marker-soft, color-mix(in srgb, var(--a4t-acc, var(--interactive-accent)) 12%, transparent));
+  --a4t-marker-border: var(--ink-marker-border, color-mix(in srgb, var(--a4t-acc, var(--interactive-accent)) 38%, transparent));
+  --a4t-on-marker: var(--ink-on-marker, #ffffff);
+  --a4t-hair: var(--ink-hairline, var(--background-modifier-border));
+  --a4t-hair2: var(--ink-hairline-emphasis, var(--background-modifier-border-hover));
+  --a4t-wash: var(--ink-hover-wash, var(--background-modifier-hover));
+  --a4t-warning: var(--ink-warning, #866c32);
+  --a4t-success: var(--ink-success-dot, #5e7a60);
+  --a4t-cyan: var(--ink-hue-cyan, #4e6b73);
+  --a4t-yellow: var(--ink-hue-yellow, #7f662f);
+  --a4t-indigo: var(--ink-hue-indigo, #565e7e);
+  --a4t-shadow: var(--ink-float-shadow, var(--shadow-l));
+  --a4t-f-display: var(--ink-font-display, var(--font-interface));
+  --a4t-f-body: var(--ink-font-body, var(--font-interface));
+  --a4t-f-hand: var(--a4t-hand-family, var(--ink-font-hand, cursive)), var(--ink-font-hand, cursive);
+  --a4t-f-mono: var(--ink-font-mono, var(--font-monospace));
+  --a4t-r-micro: var(--ink-radius-micro, 2px);
+  --a4t-r-control: var(--ink-radius-control, 4px);
+  --a4t-r-subtle: var(--ink-radius-subtle, 10px);
+}
+/* Any-theme defaults, dark mode (mockup-today-any-theme, approved 2026-10-07).
+ * INKLINE's own values still come first, so the existing page is unchanged. */
+html:not(#a4t-guard) body.theme-dark .a4t-root, html:not(#a4t-guard) body.theme-dark .a4t-capture-modal {
+  --a4t-on-marker: var(--ink-on-marker, #10131a);
+  --a4t-warning: var(--ink-warning, #c2a35c);
+  --a4t-success: var(--ink-success-dot, #7d9a7f);
+  --a4t-cyan: var(--ink-hue-cyan, #7a99a1);
+  --a4t-yellow: var(--ink-hue-yellow, #c2a35c);
+  --a4t-indigo: var(--ink-hue-indigo, #8087a6);
+}
+
+html:not(#a4t-guard) .a4t-root { position: relative; padding: 0; height: 100%; overflow: hidden; background: var(--ink-deep, var(--a4t-bg)); color: var(--a4t-paper); font-family: var(--a4t-f-body); }
+html:not(#a4t-guard) .a4t-root .a4t-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; }
+html:not(#a4t-guard) .a4t-root .a4t-page { position: relative; max-width: 1320px; margin: 0 auto; padding: 30px 40px 50px; box-sizing: border-box; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-page { padding: 18px 16px 40px; }
+html:not(#a4t-guard) .a4t-root *, html:not(#a4t-guard) .a4t-capture-modal * { box-sizing: border-box; }
+
+html:not(#a4t-guard) /* icons */
+.a4t-root .a4t-ic, html:not(#a4t-guard) .a4t-capture-modal .a4t-ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+html:not(#a4t-guard) .a4t-root .a4t-ic svg, html:not(#a4t-guard) .a4t-capture-modal .a4t-ic svg { width: 15px; height: 15px; stroke-width: 1.8; }
+html:not(#a4t-guard) .a4t-root .a4t-ic-lg svg { width: 22px; height: 22px; }
+
+html:not(#a4t-guard) /* buttons: Obsidian and the theme style every <button>; reset them here */
+.a4t-root button, html:not(#a4t-guard) .a4t-capture-modal button { font-family: inherit; color: inherit; background: none; border: 0; box-shadow: none; padding: 0; margin: 0; height: auto; cursor: pointer; font-size: inherit; font-weight: inherit; line-height: inherit; }
+html:not(#a4t-guard) .a4t-root button:hover { background: none; box-shadow: none; }
+html:not(#a4t-guard) .a4t-root button:focus-visible, html:not(#a4t-guard) .a4t-root input:focus-visible { outline: 2px solid var(--a4t-marker); outline-offset: 2px; box-shadow: none; }
+html:not(#a4t-guard) .a4t-root .a4t-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--a4t-r-control); border: 1px solid var(--a4t-hair2); font-weight: 500; font-size: 13px; color: var(--a4t-paper); background: transparent; white-space: nowrap; }
+html:not(#a4t-guard) .a4t-root .a4t-btn:hover { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-small { padding: 3px 9px; font-size: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-ghost { border-color: transparent; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-primary { background: var(--a4t-marker); border-color: var(--a4t-marker); color: var(--a4t-on-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-primary:hover { background: var(--a4t-marker); filter: brightness(1.06); }
+
+html:not(#a4t-guard) /* header */
+.a4t-root .a4t-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 18px; }
+html:not(#a4t-guard) .a4t-root .a4t-kicker, html:not(#a4t-guard) .a4t-capture-modal .a4t-kicker { font: 500 10.5px/1.4 var(--a4t-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-kicker.is-warn { color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-title { font: 640 clamp(30px, 3.2vw, 42px)/1.08 var(--a4t-f-display); letter-spacing: -.02em; margin: 4px 0 0; padding-bottom: 8px; position: relative; display: inline-block; color: var(--a4t-paper); border: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-title::after { content: ''; position: absolute; left: 0; bottom: 0; width: 190px; max-width: 100%; height: 9px; background: var(--a4t-acc, var(--a4t-marker)); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 190 9'%3E%3Cpath d='M2 6.5C40 2.5 95 2 188 4.5' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat left / 100% 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 190 9'%3E%3Cpath d='M2 6.5C40 2.5 95 2 188 4.5' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat left / 100% 100%; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-title { font-size: 30px; }
+html:not(#a4t-guard) .a4t-root .a4t-hand-note { font: var(--a4t-hand-weight, 600) 23px var(--a4t-f-hand); color: var(--a4t-acc, var(--a4t-marker)); transform: rotate(-1.2deg); transform-origin: left; display: block; margin-top: 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-hand-aside { font: var(--a4t-hand-weight, 600) 21px var(--a4t-f-hand); color: var(--a4t-faint); transform: rotate(-2deg); margin: 4px 6px 16px; }
+html:not(#a4t-guard) .a4t-root .a4t-head-actions, html:not(#a4t-guard) .a4t-root .a4t-edit-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+html:not(#a4t-guard) .a4t-root .a4t-edit-actions { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-head-actions { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-edit-actions { display: flex; }
+html:not(#a4t-guard) .a4t-root .a4t-edit-hint { font-size: 20px; margin: 0 6px 0 0; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-hand-aside { display: none; }
+
+html:not(#a4t-guard) /* zones and grid */
+.a4t-root .a4t-zone { min-height: 8px; }
+html:not(#a4t-guard) .a4t-root .a4t-grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 16px; align-items: start; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-grid { grid-template-columns: 1fr; gap: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-col { min-width: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-zone { min-height: 70px; border-radius: var(--a4t-r-subtle); outline: 1px dashed transparent; outline-offset: 4px; transition: outline-color .15s; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-zone.is-drop-here { outline-color: var(--a4t-marker-border); }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-zone-top { margin-bottom: 16px; }
+
+html:not(#a4t-guard) /* widget frames */
+.a4t-root .a4t-w { position: relative; }
+html:not(#a4t-guard) .a4t-root .a4t-wtools { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-w.a4t-card { border: 1px solid var(--a4t-hair); border-radius: var(--a4t-r-subtle); padding: 16px 18px; background: var(--a4t-bg2); margin-bottom: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-w.a4t-warn-card { border-color: var(--a4t-marker-border); }
+html:not(#a4t-guard) .a4t-root .a4t-w.a4t-strip > .a4t-wbody { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 8px 0 14px; color: var(--a4t-dim); font-size: 13px; border-bottom: 1px solid var(--a4t-hair); margin-bottom: 16px; }
+html:not(#a4t-guard) .a4t-root .a4t-w.a4t-link > .a4t-wbody { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: -2px 0 14px; padding: 10px 14px; border: 1px dashed var(--a4t-hair2); border-radius: var(--a4t-r-subtle); font-size: 13px; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-w-capture > .a4t-wbody { margin-bottom: 18px; }
+
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w { border: 1px dashed var(--a4t-hair2); border-radius: var(--a4t-r-subtle); background: var(--a4t-bg2); padding: 34px 18px 16px; margin-bottom: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w.a4t-strip, html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w-capture, html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w.a4t-link { padding: 34px 14px 10px; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w > .a4t-wbody { pointer-events: none; opacity: .55; margin-bottom: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-w.a4t-strip > .a4t-wbody { border-bottom: 0; padding-bottom: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-wtools { display: flex; position: absolute; top: 6px; left: 8px; right: 8px; align-items: center; gap: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-grip { display: inline-flex; align-items: center; gap: 6px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; color: var(--a4t-dim); font: 600 11px var(--a4t-f-mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px 3px 2px; border-radius: var(--a4t-r-control); }
+html:not(#a4t-guard) .a4t-root .a4t-grip:hover { background: var(--a4t-wash); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-grip .a4t-ic svg { width: 16px; height: 16px; }
+html:not(#a4t-guard) .a4t-root .a4t-sp { flex: 1; }
+html:not(#a4t-guard) .a4t-root .a4t-mv, html:not(#a4t-guard) .a4t-root .a4t-rm { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--a4t-r-control); color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-mv { display: none; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mv { display: grid; }
+html:not(#a4t-guard) .a4t-root .a4t-mv svg { width: 16px; height: 16px; }
+html:not(#a4t-guard) .a4t-root .a4t-mv:hover, html:not(#a4t-guard) .a4t-root .a4t-rm:hover { background: var(--a4t-wash); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-rm { font-size: 18px; line-height: 1; }
+html:not(#a4t-guard) .a4t-root .a4t-rm:hover { color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-w.is-dragging { position: absolute; left: var(--a4t-x); top: var(--a4t-y); width: var(--a4t-w); z-index: 50; pointer-events: none; box-shadow: var(--a4t-shadow); opacity: .95; margin: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-ph { height: var(--a4t-h); border: 2px dashed var(--a4t-marker-border); border-radius: var(--a4t-r-subtle); background: var(--a4t-marker-soft); margin-bottom: 14px; }
+
+html:not(#a4t-guard) /* weather strip */
+.a4t-root .a4t-w-main { display: flex; align-items: center; gap: 8px; color: var(--a4t-paper); font-size: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-w-main b { font: 600 22px var(--a4t-f-display); }
+html:not(#a4t-guard) .a4t-root .a4t-w-item { display: inline-flex; align-items: center; gap: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-w-upd { margin-left: auto; font: 500 11px var(--a4t-f-mono); color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-w-upd.is-stale { color: var(--a4t-warning); }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-w.a4t-strip > .a4t-wbody { gap: 10px 16px; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-w-upd { margin-left: 0; }
+
+html:not(#a4t-guard) /* capture */
+.a4t-root .a4t-capture, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture { display: flex; align-items: center; gap: 10px; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-subtle); padding: 10px 14px; color: var(--a4t-faint); background: transparent; }
+html:not(#a4t-guard) .a4t-root .a4t-capture:focus-within, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture:focus-within { border-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-capture input, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture input { flex: 1; min-width: 0; background: none; border: 0; outline: none; box-shadow: none; padding: 0; height: auto; font: 15px var(--a4t-f-body); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-capture input:focus, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture input:focus { box-shadow: none; outline: none; border: 0; background: none; }
+html:not(#a4t-guard) .a4t-root .a4t-capture input::placeholder, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture input::placeholder { color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root kbd, html:not(#a4t-guard) .a4t-capture-modal kbd { font: 500 11px var(--a4t-f-mono); border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-control); padding: 1px 6px; color: var(--a4t-faint); background: transparent; box-shadow: none; }
+html:not(#a4t-guard) .a4t-root.is-narrow kbd { display: none; }
+/* capture box: drag handle to enlarge (1.6.0); the size is not remembered */
+html:not(#a4t-guard) .a4t-root .a4t-capture { position: relative; }
+html:not(#a4t-guard) .a4t-root .a4t-capture textarea.a4t-capture-text { flex: 1; min-width: 0; display: block; resize: none; background: none; border: 0; outline: none; box-shadow: none; padding: 0; margin: 0; border-radius: 0; height: auto; min-height: 0; font: 15px var(--a4t-f-body); line-height: normal; color: var(--a4t-paper); overflow-y: auto; scrollbar-width: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-capture textarea.a4t-capture-text:focus { box-shadow: none; outline: none; border: 0; background: none; }
+html:not(#a4t-guard) .a4t-root .a4t-capture textarea.a4t-capture-text::placeholder { color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-capture textarea.a4t-capture-text:focus::placeholder { color: transparent; }
+html:not(#a4t-guard) .a4t-root .a4t-capture.is-grown { align-items: flex-start; }
+html:not(#a4t-guard) .a4t-root .a4t-capture.is-grown textarea.a4t-capture-text { scrollbar-width: thin; }
+html:not(#a4t-guard) .a4t-root .a4t-capture-grip { position: absolute; left: 0; right: 0; bottom: -1px; height: 10px; cursor: ns-resize; touch-action: none; display: flex; align-items: center; justify-content: center; }
+html:not(#a4t-guard) .a4t-root .a4t-capture-grip::after { content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--a4t-hair2); transition: background-color .12s ease, width .12s ease; }
+html:not(#a4t-guard) .a4t-root .a4t-capture-grip:hover::after, html:not(#a4t-guard) .a4t-root .a4t-capture.is-resizing .a4t-capture-grip::after { background: var(--a4t-marker); width: 52px; }
+html:not(#a4t-guard) .a4t-root .a4t-capture.is-resizing, html:not(#a4t-guard) .a4t-root .a4t-capture.is-resizing * { cursor: ns-resize; user-select: none; }
+html:not(#a4t-guard) .a4t-root .a4t-capture-send, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture-send { cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-capture-send:hover, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture-send:hover, html:not(#a4t-guard) .a4t-root .a4t-capture-send:focus-visible, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture-send:focus-visible { color: var(--a4t-paper); border-color: var(--a4t-marker); outline: none; }
+html:not(#a4t-guard) .a4t-capture-modal .a4t-kicker { margin-bottom: 10px; }
+
+html:not(#a4t-guard) /* cards */
+.a4t-root .a4t-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+html:not(#a4t-guard) .a4t-root .a4t-card-head h3 { margin: 2px 0 0; font: 620 17px/1.25 var(--a4t-f-display); letter-spacing: -.01em; color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-count { font: 500 11px var(--a4t-f-mono); color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-empty { font: var(--a4t-hand-weight, 600) 19px var(--a4t-f-hand); color: var(--a4t-faint); padding: 4px 2px; }
+html:not(#a4t-guard) .a4t-root .a4t-muted { color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-small-text { font-size: 12px; }
+
+html:not(#a4t-guard) /* tasks */
+.a4t-root .a4t-task { display: flex; align-items: flex-start; gap: 10px; padding: 7px 4px; border-radius: var(--a4t-r-control); }
+html:not(#a4t-guard) .a4t-root .a4t-task + .a4t-task { border-top: 1px dashed var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root .a4t-task:hover { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-tick { width: 17px; height: 17px; border-radius: 50%; border: 1.6px solid var(--a4t-faint); display: grid; place-items: center; margin-top: 2px; flex: none; color: var(--a4t-on-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-tick:hover { border-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-tick svg { width: 11px; height: 11px; stroke-width: 3; display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-tick { background: var(--a4t-marker); border-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-tick svg { display: block; }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-busy { opacity: .7; }
+html:not(#a4t-guard) .a4t-root .a4t-task-main { flex: 1; min-width: 0; cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-task-title { font-size: 13.5px; line-height: 1.4; color: var(--a4t-paper); overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-task-title { color: var(--a4t-faint); text-decoration: line-through; text-decoration-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-task-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+html:not(#a4t-guard) .a4t-root .a4t-chip { display: inline-flex; align-items: center; gap: 4px; font: 500 11px/1.6 var(--a4t-f-mono); padding: 0 6px; border: 1px solid var(--a4t-hair); border-radius: var(--a4t-r-micro); color: var(--a4t-dim); white-space: nowrap; }
+html:not(#a4t-guard) .a4t-root .a4t-chip .a4t-ic svg { width: 11px; height: 11px; }
+html:not(#a4t-guard) .a4t-root .a4t-chip.is-proj { color: var(--a4t-cyan); }
+html:not(#a4t-guard) .a4t-root .a4t-chip.is-warn { color: var(--a4t-marker); border-color: var(--a4t-marker-border); }
+html:not(#a4t-guard) .a4t-root .a4t-chip.is-prog { color: var(--a4t-yellow); }
+html:not(#a4t-guard) .a4t-root .a4t-more { font: 500 12px var(--a4t-f-body); color: var(--a4t-dim); padding: 8px 4px 0; display: flex; align-items: center; gap: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-more:hover { color: var(--a4t-paper); }
+
+html:not(#a4t-guard) /* habits */
+.a4t-root .a4t-habits { display: flex; flex-wrap: wrap; gap: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-habit { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 6px; border: 1px solid var(--a4t-hair2); border-radius: 999px; font-size: 13px; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-habit .a4t-hc { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--a4t-faint); display: grid; place-items: center; color: var(--a4t-on-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-habit .a4t-hc svg { width: 11px; height: 11px; stroke-width: 3; display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-habit.is-on { color: var(--a4t-paper); border-color: var(--a4t-success); }
+html:not(#a4t-guard) .a4t-root .a4t-habit.is-on .a4t-hc { background: var(--a4t-success); border-color: var(--a4t-success); }
+html:not(#a4t-guard) .a4t-root .a4t-habit.is-on .a4t-hc svg { display: block; }
+html:not(#a4t-guard) .a4t-root .a4t-habit.is-derived { border-style: dashed; }
+html:not(#a4t-guard) .a4t-root .a4t-habit:disabled { opacity: .7; }
+html:not(#a4t-guard) .a4t-root .a4t-streak { display: inline-flex; align-items: center; gap: 2px; font: 500 11px var(--a4t-f-mono); color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-streak .a4t-ic svg { width: 12px; height: 12px; }
+
+html:not(#a4t-guard) /* mood */
+.a4t-root .a4t-mood { display: flex; gap: 14px; align-items: center; }
+html:not(#a4t-guard) .a4t-root .a4t-mood-score { --a4t-s: 0; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font: 600 16px var(--a4t-f-display); flex: none; position: relative; isolation: isolate; cursor: pointer; background: conic-gradient(var(--a4t-marker) calc(var(--a4t-s) * 1%), var(--a4t-hair) 0); }
+html:not(#a4t-guard) .a4t-root .a4t-mood-score::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--a4t-bg2); z-index: -1; }
+html:not(#a4t-guard) .a4t-root .a4t-feel { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+
+html:not(#a4t-guard) /* calendar */
+.a4t-root .a4t-event { display: grid; grid-template-columns: 84px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--a4t-hair); font-size: 13.5px; }
+html:not(#a4t-guard) .a4t-root .a4t-event:last-child { border-bottom: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-ev-when { font: 500 11px var(--a4t-f-mono); color: var(--a4t-faint); display: flex; flex-direction: column; text-transform: uppercase; letter-spacing: .06em; }
+html:not(#a4t-guard) .a4t-root .a4t-ev-when span { text-transform: none; letter-spacing: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-event.is-today .a4t-ev-when { color: var(--a4t-marker); }
+
+html:not(#a4t-guard) /* projects and journal */
+.a4t-root .a4t-projs { display: flex; flex-wrap: wrap; gap: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-proj { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--a4t-hair); border-radius: var(--a4t-r-control); font-size: 12.5px; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-proj .a4t-ic { color: var(--a4t-indigo); }
+html:not(#a4t-guard) .a4t-root .a4t-proj .a4t-ic svg { width: 13px; height: 13px; }
+html:not(#a4t-guard) .a4t-root .a4t-proj:hover { color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-journal { color: var(--a4t-dim); font-size: 14px; line-height: 1.6; margin: 0 0 8px; }
+
+html:not(#a4t-guard) /* add-widget panel */
+.a4t-root .a4t-addpanel { position: absolute; top: 0; right: 0; bottom: 0; width: 320px; background: var(--a4t-bg2); border-left: 1px solid var(--a4t-hair2); box-shadow: var(--a4t-shadow); padding: 18px 16px; z-index: 40; overflow: auto; }
+html:not(#a4t-guard) .a4t-root .a4t-addpanel[hidden] { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-panel-open { padding-right: 360px; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-addpanel { top: auto; left: 0; width: auto; max-height: 55%; border-left: 0; border-top: 1px solid var(--a4t-hair2); border-radius: 16px 16px 0 0; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-page.is-panel-open { padding-right: 16px; padding-bottom: 60vh; }
+html:not(#a4t-guard) .a4t-root .a4t-ap-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+html:not(#a4t-guard) .a4t-root .a4t-ap-head h3 { margin: 2px 0 0; font: 620 17px var(--a4t-f-display); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-ap-item { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px dashed var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root .a4t-ap-txt { flex: 1; min-width: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-ap-name { font-size: 13.5px; }
+html:not(#a4t-guard) .a4t-root .a4t-ap-desc { font-size: 12px; color: var(--a4t-faint); margin-top: 1px; }
+html:not(#a4t-guard) .a4t-root .a4t-ap-item.is-later .a4t-ap-name { color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-tag-later { font: 600 10px var(--a4t-f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--a4t-warning); border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; }
+html:not(#a4t-guard) .a4t-root .a4t-tag-on { font: 500 11px var(--a4t-f-mono); color: var(--a4t-success); }
+html:not(#a4t-guard) .a4t-root .a4t-ap-foot { margin: 12px 0 0; line-height: 1.5; }
+
+html:not(#a4t-guard) /* moving tasks (mockup round 3) */
+.a4t-root .a4t-task { position: relative; touch-action: pan-y; }
+html:not(#a4t-guard) .a4t-root .a4t-task-main { user-select: none; -webkit-user-select: none; }
+html:not(#a4t-guard) .a4t-root .a4t-t-more { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--a4t-r-control); color: var(--a4t-faint); opacity: 0; flex: none; margin-top: -2px; }
+html:not(#a4t-guard) .a4t-root .a4t-t-more svg { width: 16px; height: 16px; }
+html:not(#a4t-guard) .a4t-root .a4t-task:hover .a4t-t-more, html:not(#a4t-guard) .a4t-root .a4t-t-more:focus-visible, html:not(#a4t-guard) .a4t-root .a4t-t-more.is-open { opacity: 1; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-t-more { opacity: 1; }
+html:not(#a4t-guard) .a4t-root .a4t-t-more:hover { background: var(--a4t-wash); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-t-more { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-tdragging { position: absolute; left: var(--a4t-x); top: var(--a4t-y); width: var(--a4t-w); z-index: 60; pointer-events: none; background: var(--a4t-bg3); box-shadow: var(--a4t-shadow); opacity: .95; }
+html:not(#a4t-guard) .a4t-root .a4t-t-ph { height: 4px; border-radius: 2px; background: var(--a4t-marker); margin: 3px 0; }
+html:not(#a4t-guard) .a4t-root .a4t-w.a4t-card.is-ttarget { border-color: var(--a4t-marker-border); }
+html:not(#a4t-guard) .a4t-root .a4t-movemenu { position: absolute; left: var(--a4t-mx); top: var(--a4t-my); z-index: 70; width: 200px; background: var(--a4t-bg3); border: 1px solid var(--a4t-hair2); border-radius: 8px; box-shadow: var(--a4t-shadow); padding: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-mm-k { font: 500 10.5px var(--a4t-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--a4t-faint); padding: 4px 8px 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-movemenu button { display: flex; width: 100%; align-items: center; justify-content: flex-start; gap: 8px; padding: 7px 8px; border-radius: var(--a4t-r-control); font-size: 13px; text-align: left; color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-movemenu button:hover:not(:disabled) { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-movemenu button:disabled { color: var(--a4t-faint); cursor: default; }
+html:not(#a4t-guard) .a4t-root .a4t-mm-note { font-size: 11.5px; color: var(--a4t-faint); padding: 2px 8px 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-mm-here { margin-left: auto; font: 500 11px var(--a4t-f-mono); color: var(--a4t-faint); }
+
+html:not(#a4t-guard) /* Hint text hides while the box has focus: the blinking caret sits on the
+   first letter and turned "Jot" into "Uot" (2026-10-03). */
+.a4t-root .a4t-capture input:focus::placeholder, html:not(#a4t-guard) .a4t-capture-modal .a4t-capture input:focus::placeholder { color: transparent; }
+
+html:not(#a4t-guard) /* Chips keep the card's own background, html:not(#a4t-guard) so the row's hover wash never sits
+   behind their text (red "due" chip was 3.7:1 on a hovered row in light mode). */
+.a4t-root .a4t-task .a4t-chip { background: var(--a4t-bg2); }
+
+html:not(#a4t-guard) /* color scheme menu (mockup round 4) */
+.a4t-root .a4t-btn.a4t-icon-only { padding: 6px 8px; }
+html:not(#a4t-guard) .a4t-root .a4t-schememenu .a4t-mm-note { border-top: 1px dashed var(--a4t-hair); margin-top: 4px; padding-top: 6px; }
+html:not(#a4t-guard) .a4t-root .a4t-schememenu button { gap: 9px; }
+html:not(#a4t-guard) .a4t-root .a4t-schememenu .a4t-ck { margin-left: auto; color: var(--a4t-marker); visibility: hidden; }
+html:not(#a4t-guard) .a4t-root .a4t-schememenu button.is-on .a4t-ck { visibility: visible; }
+
+html:not(#a4t-guard) /* settings: accent swatches and live preview */
+.a4t-settings .a4t-swatches { display: flex; gap: 6px; margin-left: 10px; }
+html:not(#a4t-guard) .a4t-settings .a4t-swatch { width: 16px; height: 16px; border-radius: 50%; background: var(--a4t-sw); cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+html:not(#a4t-guard) .a4t-settings .a4t-swatch.is-on { outline-color: var(--text-normal); }
+html:not(#a4t-guard) .a4t-settings .a4t-preview { margin: 8px 0 4px; padding: 16px 20px 18px; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-primary); }
+html:not(#a4t-guard) .a4t-settings .a4t-pv-k { font: 600 10.5px var(--font-monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint); }
+html:not(#a4t-guard) .a4t-settings .a4t-pv-title { font: 700 26px/1.1 var(--font-interface); letter-spacing: -.02em; margin-top: 6px; padding-bottom: 8px; position: relative; display: inline-block; color: var(--text-normal); }
+html:not(#a4t-guard) .a4t-settings .a4t-pv-title::after { content: ''; position: absolute; left: 0; bottom: 0; width: 170px; max-width: 100%; height: 8px; background: var(--a4t-acc, var(--interactive-accent)); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 190 9'%3E%3Cpath d='M2 6.5C40 2.5 95 2 188 4.5' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat left / 100% 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 190 9'%3E%3Cpath d='M2 6.5C40 2.5 95 2 188 4.5' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat left / 100% 100%; }
+html:not(#a4t-guard) .a4t-settings .a4t-pv-hand { font: var(--a4t-hand-weight, 600) 23px var(--a4t-hand-family, cursive), cursive; color: var(--a4t-acc, var(--interactive-accent)); transform: rotate(-1.2deg); transform-origin: left; margin-top: 4px; }
+
+/* ---- Settings › Calendars (calendar picker, mockup approved 2026-10-04) ---- */
+html:not(#a4t-guard) .a4t-settings .a4t-cal-picker { margin-top: 18px; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-head-ctl { flex-direction: column; align-items: flex-end; gap: 6px; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-updated { font-size: var(--font-ui-smaller); color: var(--text-muted); white-space: nowrap; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-updated.is-hidden { display: none; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-status { margin: 2px 0 8px; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-empty { padding: 12px 0; color: var(--text-muted); font-size: var(--font-ui-small); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-account { margin-top: 8px; border: 1px solid var(--background-modifier-border); border-radius: 8px; overflow: hidden; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-account-h { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; background: var(--background-secondary); font-weight: 600; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-tally { font-weight: 400; font-size: var(--font-ui-smaller); color: var(--text-muted); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-group-h { padding: 10px 14px 4px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-row { display: flex; align-items: center; gap: 10px; padding: 6px 14px; cursor: pointer; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-row:hover { background: var(--background-modifier-hover); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-row input[type=checkbox] { margin: 0; flex: none; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--text-faint); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-badge { flex: none; font-size: 10.5px; line-height: 1.5; padding: 0 7px; border-radius: 9px; color: var(--text-accent); background: hsla(var(--accent-h), var(--accent-s), var(--accent-l), .14); border: 1px solid hsla(var(--accent-h), var(--accent-s), var(--accent-l), .35); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-note { flex: none; min-width: 150px; text-align: right; font-size: var(--font-ui-smaller); color: var(--text-faint); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-note.is-warn { color: var(--color-orange); }
+html:not(#a4t-guard) .a4t-settings .a4t-cal-foot { margin-top: 12px; font-size: var(--font-ui-smaller); color: var(--text-faint); line-height: 1.6; }
+.is-phone .a4t-settings .a4t-cal-note { min-width: 0; }
+.is-phone .a4t-settings .a4t-cal-row { flex-wrap: wrap; }
+
+/* blocked tasks (dependencies, Projects mockup round 4) */
+html:not(#a4t-guard) .a4t-root .a4t-task.is-blocked { opacity: .78; }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-blocked .a4t-task-title { color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-blocked .a4t-tick { border-style: dashed; }
+html:not(#a4t-guard) .a4t-root .a4t-chip.a4t-lock { color: var(--a4t-warning); border-color: color-mix(in srgb, var(--a4t-warning) 60%, transparent); cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-chip.a4t-lock:hover { color: var(--a4t-paper); border-color: var(--a4t-warning); }
+html:not(#a4t-guard) /* Overdue card: "Move all N to today" and its Undo line (1.2.3, mockup option A) */
+.a4t-root .a4t-btn.a4t-od-move { margin-top: 10px; color: var(--a4t-marker); border-color: var(--a4t-marker-border); background: var(--a4t-bg2); }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-od-move:hover { background: var(--a4t-marker-soft); }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-od-move:disabled { opacity: .6; cursor: default; }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-od-move .a4t-ic svg { width: 14px; height: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-od-undo { display: flex; align-items: center; gap: 8px; padding: 4px 2px; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-od-undo .a4t-ic svg { width: 14px; height: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-od-undo-text { flex: 1; font: var(--a4t-hand-weight, 600) 19px var(--a4t-f-hand); color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-od-undo-btn { font: 600 13px var(--a4t-f-body); color: var(--a4t-marker); background: none; border: 0; box-shadow: none; padding: 2px 4px; cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-od-undo-btn:hover { text-decoration: underline; }
+
+/* Task times (1.2.5): the clock time in front of a task name, and the Undo notice. */
+html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-time { font: 600 11.5px var(--a4t-f-mono); color: var(--a4t-marker); margin-right: 7px; letter-spacing: .02em; white-space: nowrap; }
+.a4-undo-notice { display: flex; align-items: center; gap: 12px; }
+.a4-undo-notice .a4-undo-btn { flex: none; }
+
+/* Reminders (1.3.0, reminder setup mockup approved 2026-10-05): a small
+ * bell after the time says the task will ring; "15m" when it rings earlier. */
+html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell { display: inline-flex; align-items: flex-start; gap: 1px; margin: 0 6px 0 -3px; color: var(--a4t-marker); vertical-align: baseline; white-space: nowrap; }
+html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell .a4t-ic svg { width: 12px; height: 12px; stroke-width: 2; }
+html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell-k { font: 600 9.5px var(--a4t-f-mono); line-height: 1; position: relative; top: -2px; }

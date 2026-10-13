@@ -1435,7 +1435,7 @@ function understand(text, today) {
   cut(new RegExp(`\\s(?:starts?|start on|starting|from) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.start = d; return true; });
   cut(new RegExp(`\\s(?:due|by) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.due = d; return true; });
   // A clock time: "3pm", "at 9:30am", "4 p.m.", or "at 15:30" / "at noon" (a bare
-  // colon time needs "at" here, so "Read John 3:16" stays a title).
+  // colon time needs "at" here, so "Read Acts 2:38" stays a title).
   cut(/\s(?:at\s)?(\d{1,2}(?::\d{2})?\s?(?:am|pm|a\.m\.|p\.m\.))(?=\s)/i, (m) => { const tm = parseClock(m[1]); if (!tm) return false; r.time = tm; return true; });
   if (!r.time) cut(/\sat\s(\d{1,2}:\d{2}|noon|midnight)(?=\s)/i, (m) => { const tm = parseClock(m[1]); if (!tm) return false; r.time = tm; return true; });
   cut(/\s(?:in the |this )?(morning|afternoon|evening|tonight)\b/i, (m) => { r.plannedHalf = m[1].toLowerCase() === 'morning' ? 'am' : 'pm'; if (m[1].toLowerCase() === 'tonight') r.plannedDay = today; return true; });

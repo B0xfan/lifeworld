@@ -14,4 +14,14 @@ const P = require(MAIN);
 assert.strictEqual(typeof P, 'function', 'module.exports is the plugin class');
 assert.strictEqual(P.name, 'A4ProjectsPlugin', 'class names survive bundling');
 for (const k of ['logic', 'TaskEngine', 'TaskLinks', 'ProjectsView', 'IdeaModal', 'cardAccent']) assert.ok(P[k], `exports ${k}`);
+// Today, Planner and Sidebar: complete plugin folders that load.
+const anyObsidian = new Proxy({}, { get: (t, k) => (k === 'Platform' ? {} : class {}) });
+Module._load = function (req, ...a) { return req === 'obsidian' ? anyObsidian : load.call(this, req, ...a); };
+for (const [id, cls] of [['a4-today', 'A4TodayPlugin'], ['a4-planner', 'A4PlannerPlugin'], ['a4-sidebar', 'A4SidebarPlugin']]) {
+  const dir = path.join(__dirname, '..', 'dist', id);
+  for (const f of ['main.js', 'manifest.json', 'styles.css']) assert.ok(fs.existsSync(path.join(dir, f)), `${id}/${f} built`);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')).id, id, `${id} manifest id`);
+  assert.strictEqual(require(path.join(dir, 'main.js')).name, cls, `${id} exports its plugin class`);
+}
+assert.strictEqual(fs.readdirSync(path.join(__dirname, '..', 'dist', 'a4-today', 'fonts')).length, 4, 'Today ships its four font licence texts');
 console.log('build self-check: OK');

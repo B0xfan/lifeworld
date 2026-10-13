@@ -14,7 +14,5 @@ jobs:
       - run: npm ci
       - name: Build (esbuild, src/ to main.js)
         run: npm run build
-      - name: Syntax check of the built file
-        run: node --check main.js
       - name: Self-checks (no vault needed)
         run: node tests/run-all.js
