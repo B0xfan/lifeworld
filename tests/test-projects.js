@@ -16,23 +16,26 @@
  * 5. Quick-add words, repeat words, steps, Inbox/overdue/later rules, and the
  *    overview on a copy of the real task and project notes (read-only).
  * Moved from the A4 vault: behaviour checks load the built main.js, text checks read
- * src/ (tests/lib/paths.js). Real-note checks run only with A4_VAULT set (and the
- * real repeats only with A4_REAL_REPEATS=<task name>,<task name>). */
+ * src/ (tests/lib/paths.js).  Note checks read the frozen, made-up copy in
+ * tests/fixtures/vault, or the owner's vault with A4_VAULT (its repeats by name with
+ * A4_REAL_REPEATS=<task name>,<task name>). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null;
+const { built, source, repeats: REPEATS } = require('./lib/paths');
+const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const MAIN = built('a4-projects');
 const SRC = source('a4-projects');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
 if (!process.env.A4PJ_CHILD) {
   let fails = 0; let total = 0;
-  if (!process.env.TASKNOTES_MODEL) console.log('NOTE: TASKNOTES_MODEL not set: the TaskNotes oracle checks are skipped.');
+  // shortcut: the oracle needs TaskNotes' own model package, not installed here or on GitHub; add it as a dev dependency to run it in CI.
+  if (!process.env.TASKNOTES_MODEL) console.log('skipped: the TaskNotes oracle checks (repeat ticks compared with TaskNotes\' own code); TASKNOTES_MODEL is not set');
+  if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; A4_REAL_REPEATS is not set');
   for (const tz of ZONES) {
     try {
       const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4PJ_CHILD: '1' }, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
@@ -391,7 +394,7 @@ eq(L.applyProjectLink({ projects: ['[[A]]', '[[B]]'] }, cfg.F, '[[C]]'), { proje
 eq(L.applyProjectLink({ projects: ['[[A]]'] }, cfg.F, null), {}, 'project link: removed');
 eq(L.projectBodyForPage('---\na: 1\n---\n## Tasks\n\n![[02 Planner/TaskNotes/Views/project-tasks.base]]\n\n## Notes\n\nNote: hi\n'), '## Notes\n\nNote: hi', 'project note: task-list embed left out');
 
-// real data (read-only, only with A4_VAULT): every task and project note parses; overview agrees with the Planner's overdue rule
+// real data (read-only; the frozen copy unless A4_VAULT): every task and project note parses; overview agrees with the Planner's overdue rule
 if (VAULT) {
   const parseFm = (text) => {
     const block = /^---\n([\s\S]*?)\n---/.exec(text); if (!block) return null;
@@ -412,7 +415,7 @@ if (VAULT) {
       if (t) tasks.push(t);
     }
   }
-  ok(tasks.length > 300, `real tasks read (${tasks.length})`);
+  ok(tasks.length > 40, `real tasks read (${tasks.length})`);
   const live = tasks.filter((t) => !t.archived);
   const P = require(built('a4-planner')).logic;
   const plannerOverdue = P.overdueOf(live.map((t) => ({ ...t })), TD, ['done', 'closed']).map((t) => t.path).sort();
@@ -424,8 +427,12 @@ if (VAULT) {
   for (const f of fs.readdirSync(PD).filter((x) => x.endsWith('.md'))) { const p = L.readProject(parseFm(fs.readFileSync(path.join(PD, f), 'utf8')), `x/${f}`, f.replace(/\.md$/, '')); if (p) projects.push(p); }
   const groups = L.overviewGroups(projects, 'all', '');
   const closed = L.closedProjects(projects, '');
-  eq(groups.reduce((a, g) => a + g.projects.length, 0) + closed.length, projects.length, 'real data: every project is in Work, Personal, Unsorted or Closed');
-  ok(groups.every((g) => g.projects.every((p, i, a) => !i || ({ active: 0, paused: 1, backlog: 2 }[a[i - 1].status] ?? 3) <= ({ active: 0, paused: 1, backlog: 2 }[p.status] ?? 3))), 'real data: active, then paused, then backlog');
+  // Updated in section 4: ideas and cold storage sit on the board's own tabs (neither open nor closed).
+  const shelved = projects.filter((p) => p.status === 'idea' || p.status === 'cold-storage');
+  eq(groups.reduce((a, g) => a + g.projects.length, 0) + closed.length + shelved.length, projects.length, 'real data: every project is in Work, Personal, Unsorted, Closed, Ideas or Cold storage');
+  // Updated in section 4: the board branch added waiting and blocked (OPEN_ORDER in src/projects).
+  const ord = (s) => ({ active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 }[s] ?? 5);
+  ok(groups.every((g) => g.projects.every((p, i, a) => !i || ord(a[i - 1].status) <= ord(p.status))), 'real data: active, paused, waiting, blocked, then backlog');
   for (const p of projects) { const s = L.projectStats(p, tasks, TD, cfg); ok(s.done + s.open + s.later <= s.total && s.done >= 0, `real data: counts add up for ${p.name}`); }
 
   /* ---- Find a task (mockup approved 2026-10-06) on the real tasks ---- */
@@ -524,8 +531,8 @@ if (VAULT) {
     await eng.setDue(P1, null);
     eq(notes.get(P1).status, 'open', 'removing a date never touches status');
     // The real repeats.
-    // Real repeats by name, only when given (names stay out of the public repo).
-    for (const name of VAULT ? (process.env.A4_REAL_REPEATS || '').split(',').filter(Boolean) : []) {
+    // Repeats by name: the frozen copy's, or the owner's from A4_REAL_REPEATS (names stay out of the repo).
+    for (const name of REPEATS) {
       const real = parseReal(name);
       if (!real) { ok(false, `real repeat present: ${name}`); continue; }
       const p = `${TDIR}/${name}.md`;
@@ -578,7 +585,7 @@ if (VAULT) {
   ok(/id: 'open-work'[^\n]*focus: 'work'/.test(src), "command open-work asks for the work list");
   ok(/overviewGroups\(this\.projects, this\.filter, this\.query, sp\)/.test(src) && /closedProjects\(this\.projects, this\.query, sp\)/.test(src), 'the overview filters by the chosen list');
   ok(!/this\.state\.focus = null/.test(src), 'the chosen list is not dropped after the first draw');
-  // Real data (only with A4_VAULT): the two lists split the projects exactly, with no overlap.
+  // Real data (the frozen copy unless A4_VAULT): the two lists split the projects exactly, with no overlap.
   if (VAULT) {
   const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const fm = {}; if (m) for (const l of m[1].split('\n')) { const x = /^([\w-]+):\s*(.*)$/.exec(l); if (x) fm[x[1]] = x[2].trim().replace(/^"(.*)"$/, '$1'); } return fm; };
   const PD = path.join(VAULT, '04 Inner World/My Life/Projects');
@@ -594,7 +601,7 @@ if (VAULT) {
 
 /* ---- 7. Task card fixes, 0.1.3 (2026-10-05) ----
  * (a) Blocked by / Blocks picker: the owner saw ~12 tasks, no scroll, other projects
- *     on top. Cause: the list was cut at 12 (A4 Features had only one other open
+ *     on top. Cause: the list was cut at 12 (the owner's project had only one other open
  *     task, so everything after it was other projects A to Z). Now every open
  *     task is listed: own project first, then other projects; search covers all.
  * (b) Clicking Morning / Afternoon / Any time / Status / Priority jumped the note
@@ -618,7 +625,7 @@ if (VAULT) {
   const gm = L.depPickGroups(many, 'A', '');
   eq(gm.mine.length + gm.others.length, 150, 'picker: no cap (150 of 150 listed)');
   eq(L.depPickGroups(many, 'A', 'Task 14').others.map((c) => c.title), ['Task 140', 'Task 142', 'Task 143', 'Task 145', 'Task 146', 'Task 148', 'Task 149'], 'picker search: finds tasks far down the list');
-  // Real data (read-only, only with A4_VAULT): every open task is reachable from every open task's picker.
+  // Real data (read-only; the frozen copy unless A4_VAULT): every open task is reachable from every open task's picker.
   if (VAULT) {
   const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const fm = {}; let key = null; if (m) for (const line of m[1].split('\n')) { let x = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line); if (x) { key = x[1]; const v = x[2].trim(); fm[key] = v === '' ? null : v.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1'); continue; } x = /^\s+-\s+(.*)$/.exec(line); if (x && key) { if (!Array.isArray(fm[key])) fm[key] = []; fm[key].push(x[1].trim().replace(/^"(.*)"$/, '$1')); } } return fm; };
   const TD2 = path.join(VAULT, '02 Planner/TaskNotes/Tasks');

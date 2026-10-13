@@ -249,7 +249,7 @@ eq(L.greeting(17), 'Good evening', 'greeting evening');
   const day = '2026-10-05';
   // The approved mockup's own example, as drawn.
   const fms = {
-    'T/review.md': { tags: ['task'], due: day, planned_half: 'am', planned_order: 10, projects: ['[[Reading Vault]]'] },
+    'T/review.md': { tags: ['task'], due: day, planned_half: 'am', planned_order: 10, projects: ['[[Garden Plan]]'] },
     'T/water.md': { tags: ['task'], recurrence: 'DTSTART:20260904;FREQ=DAILY', scheduled: '2026-09-04', planned_half: 'am', planned_order: 20 },
     'T/gym.md': { tags: ['task'], due: day, planned_half: 'pm', planned_order: 10 },
     'T/car.md': { tags: ['task'], due: '2026-10-03', priority: 'high' },
@@ -427,8 +427,8 @@ const ev = L.eventsWindow([
 eq(ev.map((e) => e.summary), ['All day', 'Market', 'edge'], 'calendar window today..+7, all-day first');
 eq(L.eventDayLabel('2026-10-05', '2026-10-03'), 'Mon 5', 'event day label');
 eq(L.longDate('2026-10-03'), 'Saturday, October 3', 'long date');
-const je = L.journalExcerpt('# Head\n\nWent to [[Corner Shop]] and [[04 Inner World/My Life/Guide/Surf Club|Surf Club]]. **Good** day.', 260);
-eq(je.text, 'Went to Corner Shop and Surf Club. Good day.', 'journal excerpt strips markup');
+const je = L.journalExcerpt('# Head\n\nWent to [[Corner Shop]] and [[04 Inner World/My Life/Guide/Swim Club|Swim Club]]. **Good** day.', 260);
+eq(je.text, 'Went to Corner Shop and Swim Club. Good day.', 'journal excerpt strips markup');
 ok(L.journalExcerpt('word '.repeat(200), 260).cut, 'long excerpt is cut');
 
 /* ---- layout ---------------------------------------------------------------- */

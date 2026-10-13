@@ -10,7 +10,7 @@ const fs = require('fs');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null;
+const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const MAIN = built('a4-projects');
 
 class TFile {}
@@ -25,10 +25,8 @@ function ok(c, name, extra) { n++; if (!c) { failed++; console.log(`FAIL ${name}
 function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(b); ok(x === y, name, `got ${x} want ${y}`); }
 
 const TODAY = '2026-10-08';
-// The plugin's saved TaskNotes snapshot: the live one with A4_VAULT, else a frozen copy (2026-10-13;
-// statuses, priorities, colours and field names only).
-const snapshot = VAULT ? JSON.parse(fs.readFileSync(path.join(VAULT, '.obsidian/plugins/a4-projects/data.json'), 'utf8')).tnSnapshot || {}
-  : JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'tn-snapshot.json'), 'utf8'));
+// The plugin's saved TaskNotes snapshot (statuses, priorities, colours and field names only).
+const snapshot = JSON.parse(fs.readFileSync(path.join(VAULT, '.obsidian/plugins/a4-projects/data.json'), 'utf8')).tnSnapshot || {};
 const cfg = L.engineConfig(snapshot);
 const SC = L.colorMap(snapshot.customStatuses, {});
 const PC = L.colorMap(snapshot.customPriorities, {});

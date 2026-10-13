@@ -25,14 +25,14 @@
  *    in both rows, a drop-down of every base A to Z with its folder, read
  *    fresh on every click; TaskNotes' starter views left out (files kept).
  * Moved from the A4 vault: behaviour checks load the built files, text checks read
- * src/ (tests/lib/paths.js). Real-vault checks run only with A4_VAULT set. */
+ * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with A4_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null;
+const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const SB_MAIN = built('a4-sidebar');
 const PJ_MAIN = built('a4-projects');
 
@@ -69,20 +69,22 @@ const members = ['active', 'paused', 'failed', 'backlog', 'done'].map((s, i) => 
 eq(S.openProjectCount(members), 3, 'count leaves out failed and done');
 eq(S.openProjectCount([]), 0, 'count of none is 0');
 
-// Real data (read-only, only with A4_VAULT): for each list, the sidebar's count = the page's open list.
+// Real data (read-only; the frozen copy unless A4_VAULT): for each list, the sidebar's count = the page's open list.
 const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const o = {}; if (m) for (const l of m[1].split('\n')) { const x = /^([\w-]+):\s*(.*)$/.exec(l); if (x) o[x[1]] = x[2].trim().replace(/^"(.*)"$/, '$1'); } return o; };
 const PD = path.join(VAULT || '', '04 Inner World/My Life/Projects');
 const notes = !VAULT ? [] : fs.readdirSync(PD).filter((f) => f.endsWith('.md')).map((f) => ({ name: f.replace(/\.md$/, ''), fm: parse(fs.readFileSync(path.join(PD, f), 'utf8')) })).filter((x) => x.fm.type === 'project');
 const projects = notes.map((x) => L.readProject(x.fm, `x/${x.name}.md`, x.name));
-let closedSeen = 0;
+const closedSeen = [];
 if (VAULT) for (const kind of ['work', 'personal', 'unsorted']) {
   const sbMembers = notes.filter((x) => S.sphereOf(x.fm) === kind).map((x) => ({ name: x.name, open: rule(x.fm) }));
   const page = L.overviewGroups(projects, 'all', '', kind).flatMap((g) => g.projects).map((p) => p.name).sort();
   eq(S.openProjectCount(sbMembers), page.length, `real data: ${kind} count = projects the page lists as open (${page.length})`);
   eq(sbMembers.filter((m) => m.open).map((m) => m.name).sort(), page, `real data: ${kind}, same projects`);
-  closedSeen += sbMembers.filter((m) => !m.open).length;
+  closedSeen.push(...sbMembers.filter((m) => !m.open).map((m) => m.name));
 }
-if (VAULT) eq(closedSeen, L.closedProjects(projects, '').length, 'real data: the ones left out are exactly the Closed list');
+// Updated in section 4: ideas and cold storage are not open either, so they are left out too.
+if (VAULT) eq(closedSeen.sort(), [...L.closedProjects(projects, ''), ...projects.filter((p) => p.status === 'idea' || p.status === 'cold-storage')].map((p) => p.name).sort(), 'real data: the ones left out are exactly the Closed list plus Ideas and Cold storage');
+if (require('./lib/paths').FROZEN) ok(projects.some((p) => p.status === 'idea') && projects.some((p) => p.status === 'cold-storage') && L.closedProjects(projects, '').length > 0, 'real data: the notes include closed, idea and cold-storage projects');
 
 /* ---- 2. the folded-out list = the open projects -------------------------- */
 eq(S.openProjects(members).map((m) => m.name), ['P0', 'P1', 'P3'], 'list leaves out failed and done');
@@ -179,7 +181,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   eq(S.dateKey('09-12-2026 - 1328 - ABC Northside.md'), { day: 20260912, time: 808 }, 'date: older HHmm capture');
   eq(S.dateKey('2026-10-03-wip-sweep.md'), { day: 20261003, time: -1 }, 'date: ISO report');
   eq(S.dateKey('2026-10-08_canvas.canvas'), { day: 20261008, time: -1 }, 'date: scratchpad canvas');
-  for (const n of ['67 of Mobile Sites.md', 'README.md', '13-40-2026.md', '2026-1-1.md', '123-45-6789.md']) ok(S.dateKey(n) === null, `not a date: ${n}`);
+  for (const n of ['67 Ways to Bake.md', 'README.md', '13-40-2026.md', '2026-1-1.md', '123-45-6789.md']) ok(S.dateKey(n) === null, `not a date: ${n}`);
   // Scratchpad: newest first across the new year and within a day
   eq(order('00 Daily Scratchpad', ['12-31-2026.md', 'README.md', '01-02-2027.md', '01-02-2027 - 11-00 AM.md', '01-02-2027 - 1-05 PM.md']),
     ['01-02-2027 - 1-05 PM.md', '01-02-2027 - 11-00 AM.md', '01-02-2027.md', '12-31-2026.md', 'README.md'], 'Scratchpad: real dates, newest first, README below');
@@ -193,7 +195,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   eq(S.sortRuleFor('04 Inner World/Journal/2026/10', D), { mode: 'newest', from: '04 Inner World/Journal', always: true }, 'nearest listed folder wins (Journal over Inner World)');
   eq(S.sortRuleFor('03 WiP', D), null, 'unlisted folder: main setting');
   // Library Notes: A to Z by name, a quote-mark title first, dates not special
-  eq(order('04 Inner World/Library Notes', ['Twin Market.md', '‘I got carried away’.md', '67 of Mobile Sites.md', 'Allbirds.md']), ['‘I got carried away’.md', '67 of Mobile Sites.md', 'Allbirds.md', 'Twin Market.md'], 'Library Notes: A to Z');
+  eq(order('04 Inner World/Library Notes', ['Twin Market.md', '‘I got carried away’.md', '67 Ways to Bake.md', 'Applewood.md']), ['‘I got carried away’.md', '67 Ways to Bake.md', 'Applewood.md', 'Twin Market.md'], 'Library Notes: A to Z');
   // a NEW note lands in place (computed from names, nothing frozen)
   const topics = ['A3.md', 'A4.md', 'Cabin Retreat.md', 'Zebra.md'];
   eq(order('04 Inner World/My Life/Topics', topics.concat('Banana.md')), ['A3.md', 'A4.md', 'Banana.md', 'Cabin Retreat.md', 'Zebra.md'], 'new note lands A to Z, not at the bottom');
@@ -220,10 +222,10 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   ok(/onExternalSettingsChange/.test(src), 'synced settings from the phone are picked up');
   // 0.8.1 bug (2026-10-08 06:14): WiP set to Newest first listed its dated
   // work FOLDERS oldest first, because subfolders only followed the main switch.
-  const wip = (sort) => S.sortChildren('03 WiP', ['2026-09-07 Summer Road Trip', '_archive', '2026-10-08-sort-options-in-a4-plugin', '2026-09-11-claude-code-weekly-recaps', '2026-09-10 Garden Language Club'].map((name) => ({ name, isFolder: true })).concat([{ name: 'README.md', isFolder: false }, { name: '2026-10-06_property-marketplace-meeting-prep.md', isFolder: false }]), sort).map((x) => x.name);
-  eq(wip(S.setFolderSort(D, '03 WiP', 'newest')), ['2026-10-08-sort-options-in-a4-plugin', '2026-09-11-claude-code-weekly-recaps', '2026-09-10 Garden Language Club', '2026-09-07 Summer Road Trip', '_archive', '2026-10-06_property-marketplace-meeting-prep.md', 'README.md'], 'folder set to Newest first: its dated subfolders newest first, _archive after them, notes below');
-  eq(wip(S.setFolderSort(D, '03 WiP', 'oldest')).slice(0, 5), ['2026-09-07 Summer Road Trip', '2026-09-10 Garden Language Club', '2026-09-11-claude-code-weekly-recaps', '2026-10-08-sort-options-in-a4-plugin', '_archive'], 'Oldest first: subfolders oldest first, _archive after them');
-  eq(wip(D).slice(0, 5), ['_archive', '2026-09-07 Summer Road Trip', '2026-09-10 Garden Language Club', '2026-09-11-claude-code-weekly-recaps', '2026-10-08-sort-options-in-a4-plugin'], 'no own order + folders switch Off: folders A to Z as before');
+  const wip = (sort) => S.sortChildren('03 WiP', ['2026-09-07 Summer Road Trip', '_archive', '2026-10-08-shelf-paint-colours', '2026-09-11-weekly-bread-notes', '2026-09-10 Garden Language Club'].map((name) => ({ name, isFolder: true })).concat([{ name: 'README.md', isFolder: false }, { name: '2026-10-06_garden-meeting-prep.md', isFolder: false }]), sort).map((x) => x.name);
+  eq(wip(S.setFolderSort(D, '03 WiP', 'newest')), ['2026-10-08-shelf-paint-colours', '2026-09-11-weekly-bread-notes', '2026-09-10 Garden Language Club', '2026-09-07 Summer Road Trip', '_archive', '2026-10-06_garden-meeting-prep.md', 'README.md'], 'folder set to Newest first: its dated subfolders newest first, _archive after them, notes below');
+  eq(wip(S.setFolderSort(D, '03 WiP', 'oldest')).slice(0, 5), ['2026-09-07 Summer Road Trip', '2026-09-10 Garden Language Club', '2026-09-11-weekly-bread-notes', '2026-10-08-shelf-paint-colours', '_archive'], 'Oldest first: subfolders oldest first, _archive after them');
+  eq(wip(D).slice(0, 5), ['_archive', '2026-09-07 Summer Road Trip', '2026-09-10 Garden Language Club', '2026-09-11-weekly-bread-notes', '2026-10-08-shelf-paint-colours'], 'no own order + folders switch Off: folders A to Z as before');
   const jr = S.sortChildren('04 Inner World/Journal/2026', [{ name: '10', isFolder: true }, { name: '09', isFolder: true }], D).map((x) => x.name);
   eq(jr, ['09', '10'], 'Journal month folders (no date in the name) keep A to Z');
 }
@@ -232,7 +234,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
 {
   eq([S.BASES_TOOL.id, S.BASES_TOOL.icon, S.BASES_TOOL.label], ['bases', 'database', 'Open a base'], 'bases: database icon, tooltip "Open a base"');
   eq(S.TOOLS.length, 4, 'bases: the four older buttons are unchanged');
-  // the real vault, read-only (only with A4_VAULT)
+  // the vault, read-only (the frozen copy unless A4_VAULT)
   const found = [];
   if (VAULT) {
   const walk = (d) => { for (const e of fs.readdirSync(path.join(VAULT, d), { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = d ? `${d}/${e.name}` : e.name; if (e.isDirectory()) walk(p); else found.push(p); } };

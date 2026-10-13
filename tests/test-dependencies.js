@@ -7,12 +7,11 @@
  *  - circles refused (self, 2-step, long chain), loops already in the files end
  *  - deleted / renamed blockers, repeating blockers, "Blocks" computed, freedBy
  *  - blocked tasks sort lower and are never a project's next step
- * `node tests/test-dependencies.js` (A4_VAULT overrides the vault root). */
+ * `node tests/test-dependencies.js` */
 const path = require('path');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null; // real notes only when set
 
 class TFile { constructor(p) { this.path = p; this.name = p.split('/').pop(); this.basename = this.name.replace(/\.md$/, ''); this.extension = 'md'; const i = p.lastIndexOf('/'); this.parent = { path: p.slice(0, i) }; } }
 class TFolder { constructor(p) { this.path = p; this.children = []; } }

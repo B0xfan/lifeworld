@@ -16,8 +16,8 @@
  *  5. Readers: Today and Planner see the same reminder (bell) as Projects;
  *     a task with no time never rings; a done task shows no bell (source).
  *  6. No plugin fires its own notification (no double ring on the Mac).
- * Built files for behaviour, src/ for text (tests/lib/paths.js); A4_VAULT adds the
- * TaskNotes settings check. */
+ * Built files for behaviour, src/ for text (tests/lib/paths.js); the TaskNotes settings
+ * check reads tests/fixtures/vault, or the owner's vault with A4_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -25,7 +25,7 @@ const { execFileSync } = require('child_process');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null; // real notes only when set
+const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Australia/Lord_Howe', 'America/New_York'];
 
 if (!process.env.A4RM_CHILD) {

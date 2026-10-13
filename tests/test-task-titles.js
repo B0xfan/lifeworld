@@ -11,14 +11,14 @@
  *    Blocks)
  *  - renaming when name and file name differ, and Undo
  *  - names are only ever shown as text (no HTML sink in the three plugins)
- *  - The real task notes, read only, only with A4_VAULT set.
+ *  - The task notes, read only: tests/fixtures/vault, or the owner's vault with A4_VAULT.
  * `node tests/test-task-titles.js` */
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null; // real notes only when set
+const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 
 class TFile { constructor(p) { this.path = p; this.name = p.split('/').pop(); this.basename = this.name.replace(/\.md$/, ''); this.extension = 'md'; const i = p.lastIndexOf('/'); this.parent = { path: p.slice(0, i) }; } }
 class TFolder { constructor(p) { this.path = p; this.children = []; } }
@@ -242,7 +242,7 @@ function engineFor(v, snap) { const e = new TaskEngine({ app: v.app, settings: {
   ok(/const tl = h\(main, 'div', 'a4pl-task-title'\);[\s\S]{0,1200}?tl\.appendText\(it\.title\);/.test(srcs[2]), 'Planner task row: name added as text (after the time)');
   ok(/createDiv\(\{ cls: 'a4pl-ghost', text: [^}]*d\.item\.title \}\)/.test(srcs[2]), 'Planner drag preview: text option');
 
-  /* ---- 8. The real tasks, read only (only with A4_VAULT) ------------------- */
+  /* ---- 8. The task notes, read only (the frozen copy unless A4_VAULT) ------- */
   const real = [];
   for (const [dir, inArch] of VAULT ? [[TASKS, false], [ARCH, true]] : []) {
     const abs = path.join(VAULT, dir);

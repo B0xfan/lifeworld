@@ -1,0 +1,4 @@
+# Frozen test data
+
+Made-up notes shaped like a real LifeWorld vault (tasks, projects, settings).
+The vault-reading checks run on this when `A4_VAULT` is not set. Nothing here is real.

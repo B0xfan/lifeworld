@@ -26,7 +26,6 @@ const { execFileSync } = require('child_process');
 const Module = require('module');
 
 const { built, source } = require('./lib/paths');
-const VAULT = process.env.A4_VAULT || null; // real notes only when set
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'Australia/Lord_Howe'];
 
 if (!process.env.A4QA_CHILD) {

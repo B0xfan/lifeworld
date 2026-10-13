@@ -5,7 +5,7 @@
  * Planner shares with A4 Today (task reading, repeats, moves) is still a
  * character-for-character copy, so the two can never disagree.
  * Moved from the A4 vault: behaviour checks load the built files, text checks read
- * src/ (tests/lib/paths.js). Real-task checks run only with A4_VAULT set. */
+ * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with A4_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -301,9 +301,9 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   ok(/somedayOpen: false/.test(srcP) && /a4pl-grp is-someday/.test(srcP), 'Someday group: folded until opened');
 }
 
-/* ---- 12. Someday on a copy of the real task notes (read-only; only with A4_VAULT) */
-if (process.env.A4_VAULT) {
-  const VAULT = process.env.A4_VAULT;
+/* ---- 12. Someday on a copy of the task notes (read-only; the frozen copy unless A4_VAULT) */
+{
+  const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
   const parseFm = (text) => {
     const block = /^---\n([\s\S]*?)\n---/.exec(text); if (!block) return null;
     const fm = {}; let key = null;
@@ -359,20 +359,20 @@ if (process.env.A4_VAULT) {
 
 /* ---- "+project" typing in the New task box (1.4.0, mockup approved 2026-10-07) ---- */
 {
-  const N = ['A3 Features and Improvements', 'A4 Features and Improvements', "Rosa's Restaurant", 'ABC Northside', 'Beach Sunsets',
-    'Build a Property Map', 'Client Prospects', 'Cabin Retreat', 'Evening Drills', 'Instituto de idiomas Fox', 'Market and Mill',
-    'Miscellaneous', 'Personal', 'Pine Farm', 'Purple Lake Private Car Rental', 'Ram Grove Day', 'Sam November US Trip'];
+  const N = ['A1 Kitchen Ideas', 'A2 Kitchen Ideas', "Rosa's Restaurant", 'ABC Northside', 'Lake Sunsets',
+    'Build a Plant Map', 'Client Prospects', 'Cabin Retreat', 'Evening Drills', 'Hilltop Language Lab', 'Mill and Barn',
+    'Miscellaneous', 'Personal', 'Pine Farm', 'Purple Lake Bike Hire', 'Ram Grove Day', 'Sam November US Trip'];
   const names = (q) => L.projectMatches(q, N).map((m) => m.name);
   // The mockup's lists, in its order: name starts first, then later words.
-  eq(names('p'), ['Personal', 'Pine Farm', 'Purple Lake Private Car Rental', 'Build a Property Map', 'Client Prospects'], '+p: the mockup list, in order');
+  eq(names('p'), ['Personal', 'Pine Farm', 'Purple Lake Bike Hire', 'Build a Plant Map', 'Client Prospects'], '+p: the mockup list, in order');
   eq(names('ram'), ['Ram Grove Day'], '+ram: only Ram Grove Day');
   eq(names('RAM'), ['Ram Grove Day'], 'matching ignores capitals');
   eq(names('xyz'), [], '+xyz: nothing');
   eq(names(''), [], 'a bare + lists nothing');
-  eq(names('s'), ['Sam November US Trip', 'Beach Sunsets'], "+s: Sam first, then Beach Sunsets; Rosa's apostrophe is not a word start");
-  eq(names('purple lake'), ['Purple Lake Private Car Rental'], 'a multi-word query fits a multi-word name');
-  eq(names('purple  lake'), ['Purple Lake Private Car Rental'], 'extra spaces in the query are ignored');
-  eq(names('lake private'), ['Purple Lake Private Car Rental'], 'a later-word query can span words');
+  eq(names('s'), ['Sam November US Trip', 'Lake Sunsets'], "+s: Sam first, then Lake Sunsets; Rosa's apostrophe is not a word start");
+  eq(names('purple lake'), ['Purple Lake Bike Hire'], 'a multi-word query fits a multi-word name');
+  eq(names('purple  lake'), ['Purple Lake Bike Hire'], 'extra spaces in the query are ignored');
+  eq(names('lake bike'), ['Purple Lake Bike Hire'], 'a later-word query can span words');
   eq(names('ove'), [], 'no match in the middle of a word ("Grove")');
   const hit = L.projectMatches('pro', N).find((m) => m.name === 'Client Prospects');
   eq([hit.at, hit.len], [7, 3], 'the matched part is marked where it is (Client [Pro]spects)');

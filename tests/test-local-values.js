@@ -2,8 +2,8 @@
 // 1. local.json (owner-only build values) is ignored by git and not tracked.
 // 2. A fixed deny-list, stored as SHA-256 hashes so the list itself leaks nothing (owner's
 //    names, client names), plus plain patterns that are not private (home paths, mail
-//    addresses, a local interpreter). Checked on every word and word pair, so it also guards
-//    GitHub, where there is no local.json.
+//    addresses, a local interpreter). Checked on every word, word pair and joined word pair
+//    ("FirstLast"), so it also guards GitHub, where there is no local.json.
 // 3. When local.json exists here, none of its values appear either.
 // Scans tracked files and new files git does not ignore.
 const { execFileSync } = require('child_process');
@@ -57,6 +57,10 @@ for (const f of files) {
   const words = text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   for (let i = 0; i < words.length; i++) {
     if (DENY_HASHES.has(sha(words[i])) || (i + 1 < words.length && DENY_HASHES.has(sha(`${words[i]} ${words[i + 1]}`)))) { hits.push(`${f}: a deny-listed word`); break; }
+  }
+  // Joined spellings ("FirstLast" for "First Last"): every split of each word, checked as a word pair.
+  if (!hits.some((h) => h.startsWith(`${f}: a deny`))) {
+    joined: for (const word of new Set(words)) for (let k = 1; k < Math.min(word.length, 40); k++) if (DENY_HASHES.has(sha(`${word.slice(0, k)} ${word.slice(k)}`))) { hits.push(`${f}: a deny-listed word pair, written joined`); break joined; }
   }
   for (const re of DENY_PATTERNS) if (re.test(text)) hits.push(`${f}: ${re}`);
   for (const v of local) if (text.includes(v)) hits.push(`${f}: a local.json value`);
