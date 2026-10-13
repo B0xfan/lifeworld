@@ -7,7 +7,7 @@
  * THIRD_PARTY_NOTICES.md.
  *
  * Built 2026-10-04 from an approved mockup.
- * Hand-written CommonJS, no build step, same as the other A4 plugins.
+ * Hand-written CommonJS; esbuild bundles it into the repo-root main.js (npm run build).
  * Will later merge with A4 Today and A4 Planner into the one public
  * "Lifeworld" plugin; the engine below is written to be lifted as is.
  *

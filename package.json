@@ -1,0 +1,14 @@
+{
+  "name": "lifeworld",
+  "version": "0.7.0",
+  "private": true,
+  "description": "LifeWorld Obsidian plugin (source). The plugin's own version lives in manifest.json.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "test": "npm run build && node tests/run-all.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

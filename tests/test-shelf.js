@@ -110,7 +110,7 @@ const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { sta
   assert.strictEqual(walk(c1, (n) => n.textContent === 'Move to Cold Storage').length, 0);
 
   // Delete permanently is offered on Cold Storage cards only (spec 10d).
-  const src = require('fs').readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const src = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'projects', 'main.js'), 'utf8'); // source text, not the bundle
   assert.strictEqual((src.match(/deleteProjectPermanently\(/g) || []).length, 2, 'one definition, one caller (the Cold Storage card)');
 
   // A card click opens the project page; a button click does not.

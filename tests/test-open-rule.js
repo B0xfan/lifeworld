@@ -38,7 +38,7 @@ assert.deepStrictEqual([...listed].sort(), [...OPEN].sort(), 'List shows exactly
 assert.deepStrictEqual(L.closedProjects(ps, '').map((p) => p.status).sort(), [...CLOSED].sort(), 'Closed shows done, failed, dropped only (no ideas, no cold storage)');
 
 // Both task pickers use the shared rule, not their own copy of the closed list.
-const src = fs.readFileSync(MAIN, 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'projects', 'main.js'), 'utf8'); // source text, not the bundle
 assert.strictEqual((src.match(/collectProjects\(\)\.filter\(\(p\) => p\.sphere === sp && isOpenProject\(p\)/g) || []).length, 2, 'both pickers call isOpenProject');
 assert.strictEqual((src.match(/!CLOSED_STATUSES\.includes\(p\.status\)/g) || []).length, 1, 'only isOpenProject tests the closed list for openness');
 console.log(`open rule: OK (${all.length} status values)`);

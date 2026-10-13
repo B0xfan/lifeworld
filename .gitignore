@@ -1,3 +1,5 @@
 node_modules/
 .DS_Store
 data.json
+# built by npm run build, never committed (directory rule)
+main.js
