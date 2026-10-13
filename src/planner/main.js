@@ -429,7 +429,7 @@ class A4PlannerPlugin extends Plugin {
   // A4 Projects' task settings (statuses, priorities, defaults), or null.
   engineCfg() {
     const own = this.projectsPlugin();
-    try { return own && own.engine ? own.engine.cfg() : null; } catch (e) { return null; }
+    try { return own && own.engine ? own.engine.cfg() : null; } catch { return null; }
   }
 
   completedStatuses() {

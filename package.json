@@ -5,9 +5,17 @@
   "license": "MIT",
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "test": "npm run build && node tests/run-all.js"
+    "lint": "eslint .",
+    "test": "npm run build && eslint --quiet . && node tests/run-all.js"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "@eslint/js": "9.39.5",
+    "@eslint/json": "0.14.0",
+    "@tasknotes/model": "0.2.2",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-obsidianmd": "0.4.2",
+    "obsidian": "1.8.7",
+    "typescript-eslint": "8.71.2"
   }
 }

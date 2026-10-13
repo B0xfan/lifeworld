@@ -8,8 +8,8 @@
  *    TaskNotes' own algorithm, run on TaskNotes' own recurrence package
  *    (@tasknotes/model, which uses the rrule library) for thousands of rules,
  *    starts, ticked days and "todays", including the real repeating tasks.
- *    Needs TASKNOTES_MODEL=<folder with node_modules/@tasknotes/model and rrule>;
- *    without it these checks are skipped and say so.
+ *    @tasknotes/model is a pinned dev dependency (section 8); TASKNOTES_MODEL=<folder
+ *    with node_modules/@tasknotes/model> uses another install.
  * 3. New-note frontmatter has TaskNotes' key order (mapTaskToFrontmatter).
  * 4. Status writes, archive writes, undo snapshots, timestamps across time
  *    zones and midnight / daylight-saving edges.
@@ -33,8 +33,9 @@ const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_
 
 if (!process.env.A4PJ_CHILD) {
   let fails = 0; let total = 0;
-  // shortcut: the oracle needs TaskNotes' own model package, not installed here or on GitHub; add it as a dev dependency to run it in CI.
-  if (!process.env.TASKNOTES_MODEL) console.log('skipped: the TaskNotes oracle checks (repeat ticks compared with TaskNotes\' own code); TASKNOTES_MODEL is not set');
+  // Section 8: @tasknotes/model is a pinned dev dependency, so the oracle runs everywhere (the
+  // time-zone children inherit this); TASKNOTES_MODEL can still point at another install.
+  process.env.TASKNOTES_MODEL = process.env.TASKNOTES_MODEL || path.join(__dirname, '..');
   if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; A4_REAL_REPEATS is not set');
   for (const tz of ZONES) {
     try {

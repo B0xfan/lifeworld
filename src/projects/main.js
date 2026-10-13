@@ -91,7 +91,6 @@ const Modal = obsidian.Modal || class {};
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-projects';
-const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
 const PROJECTS_FOLDER = '04 Inner World/My Life/Projects';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
 const TODAY_COMMAND = 'a4-today:open';
@@ -1514,7 +1513,6 @@ const SOURCES = [
   { id: 'tasknotes', name: 'TaskNotes', desc: 'Ticks, new tasks and repeats go through the TaskNotes plugin (it must be turned on).' },
   { id: 'checkbox', name: 'Obsidian checkboxes (not built yet)', desc: 'Plain - [ ] lines in your notes. Planned for the public version.' },
 ];
-const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], activity: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {}, view: 'list', kind: 'projects' } };
 
 function normalizeSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
@@ -1589,7 +1587,7 @@ function taskLinkView(t, cfg, today, statusColors, priorityColors) {
 // The [[...]] links in a piece of text (not embeds): where, the link path, the alias.
 function wikilinksIn(text, offset) {
   const out = [];
-  const re = /\[\[([^\[\]\n]+?)\]\]/g;
+  const re = /\[\[([^[\]\n]+?)\]\]/g;
   let m;
   while ((m = re.exec(text))) {
     if (m.index > 0 && text[m.index - 1] === '!') continue;
@@ -1751,7 +1749,7 @@ class TaskLinks {
     const { RangeSetBuilder, StateEffect, Prec } = require('@codemirror/state');
     const { ViewPlugin, Decoration, WidgetType } = require('@codemirror/view');
     let syntaxTree = null;
-    try { syntaxTree = require('@codemirror/language').syntaxTree; } catch (e) { syntaxTree = null; }
+    try { syntaxTree = require('@codemirror/language').syntaxTree; } catch { syntaxTree = null; }
     const { editorInfoField, editorLivePreviewField } = obsidian;
     const links = this;
     const refresh = StateEffect.define();
@@ -1762,15 +1760,15 @@ class TaskLinks {
       toDOM() { const el = links.build(this.t, this.label, this.linktext, this.src); el.dataset.cm = '1'; return el; }
       ignoreEvent() { return true; }
     }
-    const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch (e) { return false; } };
-    const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch (e) { return null; } };
+    const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch { return false; } };
+    const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
     // A [[link]] the editor itself treats as a link (not in code, not in the properties block).
     const isLinkToken = (state, pos) => {
       if (!syntaxTree) return true;
       try {
         const n = syntaxTree(state).resolveInner(pos, 1);
         return /hmd-internal-link/.test(n.name) && !/code|frontmatter|comment/.test(n.name);
-      } catch (e) { return true; }
+      } catch { return true; }
     };
     const build = (view) => {
       try { return buildRaw(view); } catch (e) { console.error('[a4-projects] task links: drawing failed', e); return Decoration.none; }
@@ -1812,7 +1810,7 @@ class TaskLinks {
   }
   refreshEditors() {
     if (!this.refreshEffect) return;
-    for (const v of Array.from(this.views)) { try { v.dispatch({ effects: this.refreshEffect.of(null) }); } catch (e) { this.views.delete(v); } }
+    for (const v of Array.from(this.views)) { try { v.dispatch({ effects: this.refreshEffect.of(null) }); } catch { this.views.delete(v); } }
   }
 
   // Any task note changed (a tick here, in Today, the Planner, the card, sync): redraw.
@@ -3802,7 +3800,7 @@ class ProjectsView extends ItemView {
       const tk = el(r, 'button', 'a4pj-tick a4pj-tick-sm' + (s.done ? ' is-on' : '')); if (s.done) setIcon(tk, 'check');
       tk.setAttr('aria-label', s.done ? 'Mark step not done' : 'Mark step done');
       tk.addEventListener('click', async () => {
-        try { const w = await this.plugin.engine.toggleStep(t.path, s.line, !s.done); if (!w.result) new Notice('That step changed in the note; refreshing.'); } catch (e) { new Notice('Could not update that step.'); }
+        try { const w = await this.plugin.engine.toggleStep(t.path, s.line, !s.done); if (!w.result) new Notice('That step changed in the note; refreshing.'); } catch { new Notice('Could not update that step.'); }
         this.scheduleRender();
       });
       el(r, 'div', 'a4pj-step-t', s.text);
@@ -3814,7 +3812,7 @@ class ProjectsView extends ItemView {
       if (e.key !== 'Enter' || e.isComposing || !inp.value.trim()) return;
       e.preventDefault();
       const v = inp.value; inp.value = '';
-      try { const w = await this.plugin.engine.addStep(t.path, v); this.plugin.toast.show('Step added', w.undo); } catch (err) { new Notice('Could not add that step.'); inp.value = v; }
+      try { const w = await this.plugin.engine.addStep(t.path, v); this.plugin.toast.show('Step added', w.undo); } catch { new Notice('Could not add that step.'); inp.value = v; }
       this.scheduleRender();
     });
   }
@@ -3901,7 +3899,7 @@ class ProjectsView extends ItemView {
       if (t.plannedDay && !t.due) {
         el(box, 'div', 'a4pj-pop-sep');
         const u = el(box, 'button', 'a4pj-pop-q'); el(u, 'span', null, 'Unschedule'); el(u, 'span', 'a4pj-k', 'no day');
-        u.addEventListener('click', async () => { pop.close(); try { const w = await this.plugin.engine.unschedule(t.path); this.plugin.toast.show('Unscheduled', w.undo); } catch (e) { new Notice('Could not unschedule it.'); } this.scheduleRender(); });
+        u.addEventListener('click', async () => { pop.close(); try { const w = await this.plugin.engine.unschedule(t.path); this.plugin.toast.show('Unscheduled', w.undo); } catch { new Notice('Could not unschedule it.'); } this.scheduleRender(); });
       }
     }, this.popOpts());
   }
@@ -3916,7 +3914,7 @@ class ProjectsView extends ItemView {
           const w = await this.plugin.engine.setProject(t.path, p ? p.path : null);
           if (p) this.leave(row);
           this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo);
-        } catch (e) { new Notice('Could not move it.'); }
+        } catch { new Notice('Could not move it.'); }
         if (onDone) onDone(); else this.scheduleRender();
       };
       const draw = () => {
@@ -4358,7 +4356,7 @@ class TaskCardManager {
       const host = el(box, 'div', 'a4pj-pop-list');
       const choose = async (p) => {
         pop.close();
-        try { const w = await engine.setProject(t.path, p ? p.path : null); this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo); } catch (e) { new Notice('Could not move it.'); }
+        try { const w = await engine.setProject(t.path, p ? p.path : null); this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo); } catch { new Notice('Could not move it.'); }
         refresh();
       };
       const draw = () => {

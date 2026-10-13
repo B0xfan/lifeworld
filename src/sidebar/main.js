@@ -968,7 +968,7 @@ class A4SidebarView extends ItemView {
     row.addEventListener('dragstart', (e) => {
       this.dragging = file;
       const dm = this.app.dragManager;
-      try { if (dm && dm.dragFile) dm.onDragStart(e, dm.dragFile(e, file)); } catch (err) { /* internal API: drag still works inside this sidebar */ }
+      try { if (dm && dm.dragFile) dm.onDragStart(e, dm.dragFile(e, file)); } catch { /* internal API: drag still works inside this sidebar */ }
       if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'all'; }
       row.addClass('is-dragging');
     });
@@ -1371,7 +1371,7 @@ class A4SidebarPlugin extends Plugin {
   async placeInDrawer() {
     const ws = this.app.workspace; const ls = ws.leftSplit;
     let leaf = null;
-    if (ls && ws.createLeafInParent) { try { leaf = ws.createLeafInParent(ls, 0); } catch (e) { leaf = null; } }
+    if (ls && ws.createLeafInParent) { try { leaf = ws.createLeafInParent(ls, 0); } catch { leaf = null; } }
     if (!leaf) leaf = ws.getLeftLeaf(false);
     await leaf.setViewState({ type: VIEW_TYPE, active: false });
     if (ls && ls.selectTab) ls.selectTab(leaf);
@@ -1398,7 +1398,7 @@ class A4SidebarPlugin extends Plugin {
   // new sort settings; fold state stays per device as before.
   async onExternalSettingsChange() {
     let d = null;
-    try { d = await this.loadData(); } catch (e) { return; }
+    try { d = await this.loadData(); } catch { return; }
     if (!d || typeof d !== 'object' || Array.isArray(d)) return;
     this.state.sort = normalizeSort(d.sort);
     this.scheduleRender();

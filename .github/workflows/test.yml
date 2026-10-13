@@ -14,5 +14,7 @@ jobs:
       - run: npm ci
       - name: Build (esbuild, src/ to main.js)
         run: npm run build
+      - name: Official Obsidian ESLint (errors fail; warnings are listed for phase 2)
+        run: npx eslint .
       - name: Self-checks (no vault needed)
         run: node tests/run-all.js
