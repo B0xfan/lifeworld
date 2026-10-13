@@ -98,6 +98,19 @@ for (const bad of [undefined, '', 'idea', 'failed', 'nonsense']) {
   assert.strictEqual(fm.end_date, '2026-01-02');
 }
 
+{ // Activity: newest first, capped, and loaded data is cleaned.
+  let a = [];
+  for (let i = 0; i < 205; i++) a = L.addActivity(a, `e${i}`, i);
+  assert.strictEqual(a.length, L.ACTIVITY_CAP, 'capped at 200');
+  assert.strictEqual(L.ACTIVITY_CAP, 200);
+  assert.deepStrictEqual([a[0], a[199]], [{ at: 204, text: 'e204' }, { at: 5, text: 'e5' }], 'newest first, oldest dropped');
+  assert.deepStrictEqual(L.addActivity(undefined, 'x', 1), [{ at: 1, text: 'x' }], 'no list yet');
+  const loaded = L.normalizeSettings({ activity: [...a, { at: 1, text: 'over' }, null, { at: 'x', text: 'bad' }, { at: 2 }] });
+  assert.strictEqual(loaded.activity.length, 200, 'loaded list is capped too');
+  assert.deepStrictEqual(L.normalizeSettings({}).activity, [], 'old data: empty history');
+  assert.deepStrictEqual(L.normalizeSettings({ activity: [null, { at: 3, text: 't' }] }).activity, [{ at: 3, text: 't' }], 'bad entries dropped');
+}
+
 /* ---- plugin actions on a fake vault ------------------------------------- */
 const PD = '04 Inner World/My Life/Projects';
 function world(notes, answers) {
@@ -112,15 +125,15 @@ function world(notes, answers) {
     },
     fileManager: { processFrontMatter: async (f, cb) => { writes.push(f.path); const c = clone(f.fm); cb(c); f.fm = c; }, trashFile: () => { throw new Error('use vault.trash'); } },
   };
-  const toasts = [];
+  const toasts = []; const saves = [];
   const p = Object.create(Plugin.prototype);
   Object.assign(p, {
-    app,
+    app, settings: { activity: [] }, saveData: async (d) => { saves.push(clone(d)); },
     toast: { show: (m, u) => toasts.push([m, u]) },
     engine: { file: (q) => files.find((f) => f.path === q) || null, fm: (f) => f.fm, today: () => TODAY },
     ask: async () => answers.ask, confirmAction: async () => answers.confirm, pickGoal: async () => answers.goal,
   });
-  return { p, files, fmOf: (name) => (files.find((f) => f.basename === name) || {}).fm, trashed, writes, toasts };
+  return { p, saves, log: () => p.settings.activity.map((e) => e.text), files, fmOf: (name) => (files.find((f) => f.basename === name) || {}).fm, trashed, writes, toasts };
 }
 const P = (name) => `${PD}/${name}.md`;
 
@@ -146,6 +159,7 @@ const P = (name) => `${PD}/${name}.md`;
   // Guards now decide inside the write, so a refusal may open it but changes nothing.
   for (const f of w.files) assert.deepStrictEqual(f.fm, notes[Object.keys(notes).find((k) => f.path.endsWith(`${k}.md`))], `${f.path} unchanged`);
   assert.deepStrictEqual(w.trashed, [], 'nothing trashed');
+  assert.deepStrictEqual(w.log(), [], 'cancelled or refused: nothing logged');
 
   // Delete: only from cold storage, only that note, to the vault .trash
   w = world(notes, { confirm: true });
@@ -154,6 +168,7 @@ const P = (name) => `${PD}/${name}.md`;
   assert.deepStrictEqual(w.trashed, [[P('Cold'), false]], "only the note, to Obsidian's trash");
   assert.deepStrictEqual(w.writes, [], 'delete writes no note');
   assert.strictEqual(w.files.length, Object.keys(notes).length - 1);
+  assert.deepStrictEqual(w.log(), ['You deleted Cold.'], 'delete logged once; refused deletes not');
 
   // The happy paths, with Undo
   w = world(notes, { ask: 'Parked till Jan', goal: { basename: 'New goal' } });
@@ -168,8 +183,14 @@ const P = (name) => `${PD}/${name}.md`;
   w.p.pickGoal = async () => { throw new Error('must not ask when a goal exists'); };
   assert.strictEqual(await w.p.promoteIdea(P('IdeaG')), true);
   assert.strictEqual(w.fmOf('IdeaG').goal, '[[Old]]');
+  const done = ['You promoted IdeaG to a project.', 'You promoted Idea to a project.', 'You restored Cold to Waiting.', 'You moved Done to Cold Storage.', 'You moved Act to Waiting.'];
+  assert.deepStrictEqual(w.log(), done, 'every board action logged, newest first');
+  assert.ok(w.p.settings.activity.every((e) => Number.isFinite(e.at)), 'each entry has its time');
+  assert.deepStrictEqual(w.saves[w.saves.length - 1].activity, w.p.settings.activity, 'saved to plugin data');
   for (const [, undo] of w.toasts.reverse()) await undo();
   for (const k of ['Act', 'Done', 'Cold', 'Idea', 'IdeaG']) assert.deepStrictEqual(w.fmOf(k), notes[k], `Undo restores ${k}`);
+  assert.deepStrictEqual(w.log().slice(0, 5), done.slice().reverse().map((t) => `Undone: y${t.slice(1)}`), 'each Undo logs its own entry');
+  assert.deepStrictEqual(w.log().slice(5), done, 'history is never rewritten');
 
   // Restore with no saved column: Backlog and a notice
   w = world({ C: { ...BASE, status: 'cold-storage' } }, {});
@@ -185,6 +206,14 @@ const P = (name) => `${PD}/${name}.md`;
   assert.strictEqual(await w.p.moveProject(P('A'), 'done'), false);
   assert.strictEqual(w.fmOf('A').status, 'active');
   assert.ok(/Could not change/.test(notices[0]));
+  assert.deepStrictEqual(w.log(), [], 'failed write: nothing logged');
+  { // The List's status menu writes through writeProject directly: not logged.
+    const v = world({ A: { ...BASE, status: 'active' } }, {});
+    const u = await v.p.writeProject(v.files[0], (fm) => { L.applyProjectStatus(fm, 'paused', TODAY); });
+    assert.ok(u && v.fmOf('A').status === 'paused', 'direct write went through');
+    assert.strictEqual(await u(), true, 'undo reports it wrote');
+    assert.deepStrictEqual(v.log(), [], 'a direct write (the List) is not logged, nor its Undo');
+  }
 
   // Two Cold Storage dialogs open on one note: the second keeps stored_from.
   w = world({ A: { ...BASE, status: 'waiting' } }, { ask: 'first' });
@@ -234,6 +263,14 @@ const P = (name) => `${PD}/${name}.md`;
   notices.length = 0;
   await w.toasts[0][1]();
   assert.ok(/Could not undo the change to "A"/.test(notices[0]), 'failed undo write: a clear notice');
+  assert.deepStrictEqual(w.log(), ['You moved A to Done.'], 'failed undo: no Undone entry');
+  // A failed save of the history never fails the move.
+  w = world({ A: { ...BASE, status: 'active' } }, {});
+  w.p.saveData = async () => { throw new Error('disk'); };
+  const err = console.error; console.error = () => {};
+  assert.strictEqual(await w.p.moveProject(P('A'), 'done'), true, 'move still succeeds');
+  console.error = err;
+  assert.strictEqual(w.fmOf('A').status, 'done');
 
   // Goal list: open goals only
   const GD = '04 Inner World/My Life/Goals';

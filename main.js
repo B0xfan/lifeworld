@@ -109,6 +109,12 @@ const OPEN_ORDER = { active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 };
 // The projects board's columns, in order (spec 5). Moves only go to these.
 const BOARD_COLUMNS = ['backlog', 'active', 'waiting', 'paused', 'blocked', 'done'];
 const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting', paused: 'Paused', blocked: 'Blocked', done: 'Done' };
+
+/* Activity (spec 17): the board's history, in plugin data only, never in a
+ * note. settings.activity = [{ at: ms, text: 'You moved X to Waiting.' }],
+ * newest first, at most ACTIVITY_CAP; the Activity tab reads it as is. */
+const ACTIVITY_CAP = 200;
+function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(list) ? list : [])].slice(0, ACTIVITY_CAP); }
 const GOALS_FOLDER = '04 Inner World/My Life/Goals';
 
 /* ========================================================================== *
@@ -1602,7 +1608,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  BOARD_COLUMNS, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -2053,7 +2059,7 @@ const SOURCES = [
   { id: 'tasknotes', name: 'TaskNotes', desc: 'Ticks, new tasks and repeats go through the TaskNotes plugin (it must be turned on).' },
   { id: 'checkbox', name: 'Obsidian checkboxes (not built yet)', desc: 'Plain - [ ] lines in your notes. Planned for the public version.' },
 ];
-const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {} } };
+const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], activity: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {} } };
 
 function normalizeSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
@@ -2068,6 +2074,7 @@ function normalizeSettings(raw) {
       later: s.ui && s.ui.later && typeof s.ui.later === 'object' ? s.ui.later : {},
       someday: s.ui && s.ui.someday && typeof s.ui.someday === 'object' ? s.ui.someday : {},
     },
+    activity: Array.isArray(s.activity) ? s.activity.filter((e) => e && Number.isFinite(e.at) && typeof e.text === 'string').slice(0, ACTIVITY_CAP) : [],
   };
 }
 
@@ -2726,12 +2733,24 @@ class A4ProjectsPlugin extends Plugin {
     catch (e) { console.error('[a4-projects] project write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
     if (!ok) return null;
     return async () => {
-      if (this.engine.file(f.path) !== f) { new Notice(`Could not undo: "${f.basename}" was deleted.`); return; }
+      if (this.engine.file(f.path) !== f) { new Notice(`Could not undo: "${f.basename}" was deleted.`); return false; }
       let kept = [];
       try { await this.app.fileManager.processFrontMatter(f, (fm) => { kept = undoFields(fm, before, after); }); }
-      catch (e) { console.error('[a4-projects] undo failed', f.path, e); new Notice(`Could not undo the change to "${f.basename}".`); return; }
+      catch (e) { console.error('[a4-projects] undo failed', f.path, e); new Notice(`Could not undo the change to "${f.basename}".`); return false; }
       if (kept.length) new Notice(`Undone, but your later change to ${kept.join(', ')} on "${f.basename}" was kept.`);
+      return true;
     };
+  }
+  // A failed save never fails the move itself: the note is already changed.
+  async logActivity(text) {
+    this.settings.activity = addActivity(this.settings.activity, text, Date.now());
+    try { await this.save(); } catch (e) { console.error('[a4-projects] activity save failed', e); }
+  }
+  // Board actions only; the List, Today and hand edits are not logged (spec 17).
+  // Undo adds its own entry when it went through; history is never rewritten.
+  async logged(text, undo) {
+    await this.logActivity(text);
+    return async () => { if (await undo()) await this.logActivity(`Undone: ${text[0].toLowerCase()}${text.slice(1)}`); };
   }
   async moveProject(path, status) {
     const f = this.projectFile(path);
@@ -2744,7 +2763,7 @@ class A4ProjectsPlugin extends Plugin {
       applyProjectStatus(fm, status, today);
     });
     if (!undo) return false;
-    this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, undo);
+    this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, await this.logged(`You moved ${f.basename} to ${COLUMN_LABEL[status]}.`, undo));
     return true;
   }
   // Only from a board column (the cards that offer it).
@@ -2761,7 +2780,7 @@ class A4ProjectsPlugin extends Plugin {
       applyColdStorage(fm, why, today);
     });
     if (!undo) return false;
-    this.toast.show(`Moved "${f.basename}" to Cold Storage`, undo);
+    this.toast.show(`Moved "${f.basename}" to Cold Storage`, await this.logged(`You moved ${f.basename} to Cold Storage.`, undo));
     return true;
   }
   async restoreProject(path) {
@@ -2772,7 +2791,7 @@ class A4ProjectsPlugin extends Plugin {
     const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'cold-storage') return false; r = applyRestore(fm, today); });
     if (!undo) return false;
     if (r.fellBack) new Notice(`"${f.basename}" had no earlier column saved, so it went to Backlog.`);
-    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, undo);
+    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, await this.logged(`You restored ${f.basename} to ${COLUMN_LABEL[r.status]}.`, undo));
     return true;
   }
   async promoteIdea(path) {
@@ -2787,7 +2806,7 @@ class A4ProjectsPlugin extends Plugin {
     const today = this.engine.today();
     const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'idea') return false; applyPromote(fm, goal, today); });
     if (!undo) return false;
-    this.toast.show(`Promoted "${f.basename}" to a project`, undo);
+    this.toast.show(`Promoted "${f.basename}" to a project`, await this.logged(`You promoted ${f.basename} to a project.`, undo));
     return true;
   }
   // Cold Storage cards only (spec 10). Only this note, to the vault's own
@@ -2800,6 +2819,7 @@ class A4ProjectsPlugin extends Plugin {
     try { await this.app.vault.trash(f, false); }
     catch (e) { console.error('[a4-projects] delete failed', f.path, e); new Notice(`Could not delete "${f.basename}".`); return false; }
     new Notice("Moved to Obsidian's trash. You can get it back from there.");
+    await this.logActivity(`You deleted ${f.basename}.`);
     return true;
   }
   // Open goals (not achieved), A to Z, for Promote.
