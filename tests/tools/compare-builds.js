@@ -20,11 +20,17 @@ const VALS = [null, undefined, '', '2026-10-05', '2026-10-05T09:30', ' 2026-10-0
 const ORDERS = [[], [0], [0, 0, 0], [10, 20, 30], [10, 10, 40], [-5, 7.5, 100]];
 const fakeApp = (all) => ({ metadataCache: { getFirstLinkpathDest: (l) => { const n = all.find((x) => x.base === l); return n ? { path: n.path, basename: n.base } : null; }, getFileCache: (f) => { const n = all.find((x) => x.path === f.path); return n ? { frontmatter: n.fm } : null; } } });
 let calls = 0; const diffs = [];
+// Every helper below must be exposed by BOTH builds and called at least once; a rename or a dropped
+// export fails here instead of silently shrinking the call count.
+const ALL = ['taskTitleOf', 'taskFromFrontmatter', 'blockerLinks', 'isSomeday', 'applySomeday', 'blockerHolds', 'ruleTimeOf', 'applyMove', 'isTaskDone', 'taskOnDay', 'openBlockersOf', 'sortByOrder', 'timeOf', 'onDay', 'movedDate', 'orderForInsert', 'planInsert', 'untimedSlot'];
+const NOT_EXPOSED = { 'main.js': ['planInsert'], 'dist/a4-today/main.js': ['blockerLinks', 'blockerHolds', 'openBlockersOf'], 'dist/a4-planner/main.js': ['blockerLinks', 'blockerHolds', 'openBlockersOf'] };
 const cl = (x) => (x === undefined ? undefined : x instanceof Date ? new Date(x) : JSON.parse(JSON.stringify(x)));
 const J = (x) => JSON.stringify(x === undefined ? '__undef' : x);
 for (const f of ['main.js', 'dist/a4-today/main.js', 'dist/a4-planner/main.js']) {
-  const A = load(OLD, f); const B = load(NEW, f);
-  const same = (fn, args) => { if (typeof A[fn] !== 'function') return; calls++; const a1 = args.map(cl); const b1 = args.map(cl); let ra; let rb; try { ra = A[fn](...a1); } catch (e) { ra = 'THROW ' + e.message; } try { rb = B[fn](...b1); } catch (e) { rb = 'THROW ' + e.message; } if (J(ra) !== J(rb) || J(a1) !== J(b1)) diffs.push(`${f} ${fn} ${J(args).slice(0, 120)}`); };
+  const A = load(OLD, f); const B = load(NEW, f); const called = new Set();
+  const expected = ALL.filter((x) => !NOT_EXPOSED[f].includes(x));
+  for (const x of expected) for (const [side, L] of [['old', A], ['new', B]]) if (typeof L[x] !== 'function') diffs.push(`${f} ${side} build does not expose ${x}`);
+  const same = (fn, args) => { if (typeof A[fn] !== 'function' || typeof B[fn] !== 'function') return; calls++; called.add(fn); const a1 = args.map(cl); const b1 = args.map(cl); let ra; let rb; try { ra = A[fn](...a1); } catch (e) { ra = 'THROW ' + e.message; } try { rb = B[fn](...b1); } catch (e) { rb = 'THROW ' + e.message; } if (J(ra) !== J(rb) || J(a1) !== J(b1)) diffs.push(`${f} ${fn} ${J(args).slice(0, 120)}`); };
   const items = [];
   for (const n of notes) {
     same('taskTitleOf', [n.fm, n.base]); same('taskFromFrontmatter', [n.fm, n.path, n.base]); same('blockerLinks', [n.fm]); same('isSomeday', [n.fm]);
@@ -34,10 +40,11 @@ for (const f of ['main.js', 'dist/a4-today/main.js', 'dist/a4-planner/main.js'])
     const it = A.taskFromFrontmatter && n.fm ? A.taskFromFrontmatter(cl(n.fm), n.path, n.base) : null;
     if (it) { items.push(it); for (const d of DAYS) { same('isTaskDone', [it, d]); same('isTaskDone', [it, d, ['done']]); same('taskOnDay', [it, d]); } }
   }
-  if (A.openBlockersOf) { const app = fakeApp(notes); for (const it of items) { calls++; const ra = J(A.openBlockersOf(app, it)); const rb = J(B.openBlockersOf(app, it)); if (ra !== rb) diffs.push(`${f} openBlockersOf ${it.path}`); } }
+  if (A.openBlockersOf) { const app = fakeApp(notes); for (const it of items) { calls++; const ra = J(A.openBlockersOf(app, it)); const rb = J(B.openBlockersOf(app, it)); called.add('openBlockersOf'); if (ra !== rb) diffs.push(`${f} openBlockersOf ${it.path}`); } }
   same('sortByOrder', [items]);
   for (const v of VALS) { same('timeOf', [v]); for (const d of DAYS) { same('onDay', [v, d]); for (const h of HALVES) same('movedDate', [v, d, h]); } }
   for (const ord of ORDERS) for (const i of [-1, 0, 1, 2, 3, 9, null]) { same('orderForInsert', [ord, i]); same('planInsert', [ord, i]); same('untimedSlot', [items.slice(0, ord.length + 2), i]); }
+  for (const x of expected) if (!called.has(x)) diffs.push(`${f} ${x} was never called`);
 }
 console.log(`${notes.length} notes, ${calls} calls compared, ${diffs.length} differences`); if (diffs.length) console.log(diffs.slice(0, 20).join('\n'));
 process.exit(diffs.length ? 1 : 0);
