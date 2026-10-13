@@ -515,6 +515,10 @@ html:not(#a4pj-guard) .a4pj-root [data-col="waiting"] { --c: var(--pj-warning); 
 html:not(#a4pj-guard) .a4pj-root [data-col="paused"] { --c: var(--pj-dim); }
 html:not(#a4pj-guard) .a4pj-root [data-col="blocked"] { --c: var(--pj-danger); }
 html:not(#a4pj-guard) .a4pj-root [data-col="done"] { --c: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root [data-col="open"] { --c: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root [data-col="in-progress"] { --c: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root [data-col="someday"] { --c: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root [data-col="closed"] { --c: var(--pj-warning); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tabs { display: flex; border-bottom: 1px solid var(--pj-hair); margin-bottom: 14px; overflow-x: auto; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tabs button { flex: 1 0 auto; text-align: center; padding: 9px 14px 10px; color: var(--pj-faint); font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tabs button.is-on { color: var(--pj-paper); border-bottom-color: var(--pj-marker); }
@@ -552,6 +556,10 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-btop { display: flex; justify-content: sp
 html:not(#a4pj-guard) .a4pj-root .a4pj-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-pill { --a: var(--pj-marker); display: inline-block; font: 500 10px/1.8 var(--pj-f-mono); letter-spacing: .06em; text-transform: uppercase; padding: 0 8px; border-radius: 999px; color: var(--a); border: 1px solid color-mix(in srgb, var(--a) 50%, transparent); background: color-mix(in srgb, var(--a) 10%, transparent); white-space: nowrap; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-personal { --a: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-proj { --a: var(--pj-dim); text-transform: none; letter-spacing: 0; font: 600 11.5px/1.8 var(--pj-f-body); border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-high { --a: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-low { --a: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bwhen.is-late { color: var(--pj-danger); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-bwhen { font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); text-align: right; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-btitle { font-weight: 500; font-size: 16px; line-height: 1.3; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-bdesc { color: var(--pj-dim); font-size: 13px; margin-top: 3px; }

@@ -112,6 +112,11 @@ const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting',
 const COLUMN_SUB = { backlog: 'Ready to start', active: 'Actively moving', waiting: 'Needs a response', paused: 'Active, but not for now', blocked: 'Waiting on something', done: 'Finished work' };
 // Page title per board tab (mockup).
 const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed' };
+// The tasks board (spec 14): the task statuses A4 already has, plus A4's Someday. No new status.
+const TASK_COLUMNS = ['open', 'in-progress', 'blocked', 'someday', 'done', 'closed'];
+const TASK_COLUMN_LABEL = { open: 'Open', 'in-progress': 'In progress', blocked: 'Blocked', someday: 'Someday', done: 'Done', closed: 'Closed' };
+const TASK_COLUMN_SUB = { open: 'Ready to do', 'in-progress': 'Being worked on', blocked: 'Stuck on something', someday: 'No day, kept for later', done: 'Finished', closed: 'Finished without doing it' };
+const TASK_BOARD_TITLE = { projects: 'What needs doing', activity: 'What changed' };
 
 /* Activity (spec 17): the board's history, in plugin data only, never in a
  * note. settings.activity = [{ at: ms, text: 'You moved X to Waiting.' }],
@@ -1098,6 +1103,33 @@ function onBoard(p, area, query, extra) {
   return !!p && BOARD_COLUMNS.includes(p.status) && (!area || p.sphere === area)
     && (!q || [p.name, p.why, ...(extra || [])].some((x) => String(x || '').toLowerCase().includes(q)));
 }
+// Tasks board column of a task status: none or blank sits in Open; a status the
+// board has no column for shows nowhere (as a project with an unknown status).
+function taskColumn(status) { const s = String(status == null ? '' : status).trim(); return s === '' || s === 'none' ? 'open' : TASK_COLUMNS.includes(s) ? s : null; }
+// The columns this vault's task settings have (Someday is A4's own, always there).
+function taskColumns(cfg) { return TASK_COLUMNS.filter((k) => k === 'someday' || cfg.statuses.some((x) => x.value === k)); }
+// Tasks board cards: { t, p (its project or null), col }. An archived task that is
+// still open is left out (as the List's task search). Area: the project's; a task
+// with no project only when no area is chosen. Search: task or project name.
+function taskBoardRows(tasks, projects, cfg, area, query) {
+  const byKey = new Map(projects.map((p) => [p.key, p]));
+  const q = String(query || '').trim().toLowerCase();
+  return tasks.filter((t) => !t.archived || !isOpenTask(t, cfg))
+    .map((t) => ({ t, p: (t.projectKey && byKey.get(t.projectKey)) || null, col: taskColumn(t.status) }))
+    .filter((x) => x.col && (!area || (x.p && x.p.sphere === area))
+      && (!q || [x.t.title, x.p ? x.p.name : x.t.project].some((v) => String(v || '').toLowerCase().includes(q))));
+}
+// One column's cards: Done and Closed newest finished first, the latest DONE_PREVIEW
+// (as the done preview); the others in the List's open-task order.
+function taskColumnCards(rows, col, today, cfg) {
+  if (col === 'done' || col === 'closed') {
+    const day = (x) => x.t.completedDate || x.t.modified || '';
+    return [...rows].sort((a, b) => day(b).localeCompare(day(a)) || a.t.title.localeCompare(b.t.title)).slice(0, DONE_PREVIEW);
+  }
+  const by = new Map(rows.map((x) => [x.t.path, x]));
+  return sortOpenTasks(rows.map((x) => x.t), today, cfg).map((t) => by.get(t.path));
+}
+
 // A note's short description: its first body line that is not a heading or an embed.
 // Only real syntax is skipped: "#1 priority", "#beach" and "!important call" are text.
 function firstBodyLine(text) {
@@ -1652,7 +1684,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, TASK_COLUMNS, taskColumn, taskColumns, taskBoardRows, taskColumnCards, firstBodyLine, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -2870,6 +2902,42 @@ class A4ProjectsPlugin extends Plugin {
     this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, this.logged(`You moved ${f.basename} to ${COLUMN_LABEL[status]}.`, undo));
     return true;
   }
+  // Tasks board move (spec 16): today's actions only, never a new writer. Done on a
+  // one-off task and every other column but Someday: the status setter the task
+  // card uses (completedDate, dateModified, auto-archive as today; for done that
+  // is exactly the tick). Done on a repeating task: the tick, this occurrence only,
+  // so it stays open. Someday: the Someday action (a one-off task loses its day
+  // and due date). Out of Someday: the status only, no date invented.
+  async moveTask(t, column) {
+    const cfg = this.engine.cfg();
+    const f = this.engine.file(t.path);
+    if (!f || !taskColumns(cfg).includes(column)) return false;
+    const fm = this.engine.fm(f) || {};
+    if (taskColumn(statusString(fm[cfg.F.status])) === column) return false; // dropped back in its own column: silent
+    const today = this.engine.today(), label = TASK_COLUMN_LABEL[column];
+    let w, msg = `Moved "${t.title}" to ${label}`, text = `You moved the task "${t.title}" to ${label}.`;
+    try {
+      if (column === 'done' && t.recurrenceRaw) {
+        const task = tnTaskOf(fm, cfg.F), day = actionDay(task, today), d = owningDay(task, day) || day;
+        // The tick toggles: a second Done must not undo the first.
+        if (strList(fm[cfg.F.completeInstances]).includes(d)) { new Notice(`"${t.title}" is already done for ${shortDay(d, today)}. It repeats, so it stays open.`); return false; }
+        w = await this.completeTask(t, true);
+        const r = (w && w.result) || { day: d };
+        msg = `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}. It repeats, so it stays open`;
+        text = `You marked the task "${t.title}" done for ${shortDay(r.day, today)}.`;
+      } else if (column === 'someday') {
+        // A finished one-off task is reopened first (as unticking does), so no completedDate stays behind.
+        const reopen = !t.recurrenceRaw && isCompletedIn(cfg, statusString(fm[cfg.F.status])) ? await this.engine.setStatus(t.path, cfg.defaultStatus) : null;
+        const sd = await this.engine.someday(t.path);
+        w = { undo: async () => { await sd.undo(); if (reopen) await reopen.undo(); } };
+        if (t.due && !t.recurrenceRaw) msg += '. The due date was taken off';
+      } else w = await this.engine.setStatus(t.path, column);
+    } catch (e) { console.error('[a4-projects] task move failed', t.path, e); new Notice(`Could not move "${t.title}".`); return false; }
+    const undo = w && w.undo;
+    if (undo) this.toast.show(msg, this.logged(text, async () => { await undo(); return true; }));
+    else { this.logActivity(text); this.toast.show(msg); }
+    return true;
+  }
   // Only from a board column (the cards that offer it).
   // Re-checked after the dialog: a second dialog on a stored note only updates the why.
   // `log` false: the project page's status menu, not the board (spec 17 logs board actions only).
@@ -3683,15 +3751,19 @@ class ProjectsView extends ItemView {
     // Opened from the sidebar's Work / Personal item: that list only (the crumb goes back to all).
     const sp = this.state.focus;
     const ui = this.plugin.settings.ui;
-    const board = ui.kind === 'projects' && ui.view === 'board';
+    const tasksKind = ui.kind === 'tasks'; // Tasks is always a board (spec 14)
+    if (tasksKind && this.tab !== 'activity') this.tab = 'projects'; // Ideas and Cold Storage are for projects only
+    const board = tasksKind || ui.view === 'board';
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], board ? BOARD_TITLE[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [
+    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [
       this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
     ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
       { label: `Inbox · ${inbox.length}`, icon: 'inbox', run: () => this.go({ page: 'inbox' }) },
-      board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() } : null,
+      // + Add task: the plugin's own New task box (Inbox page, as the "Add a task" command); new tasks start in Open.
+      tasksKind ? { label: '+ Add task', cls: 'is-primary', run: () => this.go({ page: 'inbox', focusAdd: true }) }
+        : board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() } : null,
     ]);
     // Projects / Tasks, then List / Board (Projects only: Tasks is a board), as in the mockup.
     const act = page.querySelector('.a4pj-actions');
@@ -3707,8 +3779,7 @@ class ProjectsView extends ItemView {
       }
       act.prepend(seg);
     }
-    // shortcut: Tasks (section 9) is a placeholder until that section lands.
-    if (ui.kind === 'tasks') { el(page, 'div', 'a4pj-empty', 'the tasks board comes in a later section'); return; }
+    if (tasksKind) { this.renderTaskBoard(page); return; }
     if (board) { this.renderBoard(page); return; }
     const tools = el(page, 'div', 'a4pj-tools');
     const seg = el(tools, 'div', 'a4pj-seg');
@@ -3790,27 +3861,44 @@ class ProjectsView extends ItemView {
 
   /* ---- projects board (spec 5, 6, 13; mockup approved 2026-10-13) ---------- */
 
-  renderBoard(page) {
+  // Tab counts are full totals, whatever area is chosen.
+  boardTabs(page, list) {
     const tabs = el(page, 'div', 'a4pj-tabs'); tabs.setAttr('role', 'tablist');
-    // Tab counts are full totals, whatever area is chosen.
-    const count = { projects: this.projects.filter((p) => onBoard(p)).length, ideas: this.projects.filter((p) => p.status === 'idea').length, cold: this.projects.filter((p) => p.status === 'cold-storage').length };
-    for (const [k, l] of [['projects', 'Projects'], ['ideas', 'Ideas'], ['cold', 'Cold Storage'], ['activity', 'Activity']]) {
+    for (const [k, l, n] of list) {
       const b = el(tabs, 'button', this.tab === k ? 'is-on' : '', l);
       b.setAttr('role', 'tab'); b.setAttr('aria-selected', String(this.tab === k));
-      if (k in count) el(b, 'span', 'a4pj-badge', String(count[k]));
+      if (n != null) el(b, 'span', 'a4pj-badge', String(n));
       b.addEventListener('click', () => { if (this.tab === k) return; this.tab = k; this.query = ''; this.render(true, true); });
     }
+  }
+
+  renderBoard(page) {
+    this.boardTabs(page, [['projects', 'Projects', this.projects.filter((p) => onBoard(p)).length], ['ideas', 'Ideas', this.projects.filter((p) => p.status === 'idea').length],
+      ['cold', 'Cold Storage', this.projects.filter((p) => p.status === 'cold-storage').length], ['activity', 'Activity']]);
     if (this.tab === 'activity') { this.renderActivity(page); return; }
     if (this.tab === 'cold') { this.renderCold(page); return; }
     this.areaButtons(page);
     if (this.tab === 'ideas') { this.renderIdeas(page); return; }
+    this.boardFrame(page, 'Find a project', 'Search title, reason, next step', (tiles, board, refill) => this.fillBoard(tiles, board, refill));
+  }
+
+  // Tasks board (spec 14, 15): Tasks and Activity tabs, the same area buttons,
+  // tiles, search, columns, Move and drag as the projects board.
+  renderTaskBoard(page) {
+    this.boardTabs(page, [['projects', 'Tasks', taskBoardRows(this.tasks, this.projects, this.cfg).length], ['activity', 'Activity']]);
+    if (this.tab === 'activity') { this.renderActivity(page); return; }
+    this.areaButtons(page);
+    this.boardFrame(page, 'Find a task', 'Search task or project name', (tiles, board) => this.fillTaskBoard(tiles, board));
+  }
+
+  boardFrame(page, label, placeholder, fillWith) {
     const tiles = el(page, 'div', 'a4pj-tiles');
     const find = el(page, 'label', 'a4pj-bfind');
-    el(find, 'span', null, 'Find a project');
-    const inp = el(find, 'input'); inp.type = 'search'; inp.placeholder = 'Search title, reason, next step'; inp.value = this.query; inp.dataset.focus = 'board-search';
+    el(find, 'span', null, label);
+    const inp = el(find, 'input'); inp.type = 'search'; inp.placeholder = placeholder; inp.value = this.query; inp.dataset.focus = 'board-search';
     const board = el(page, 'div', 'a4pj-board');
     // Typing redraws the tiles and columns only, so the box keeps focus.
-    const fill = () => this.fillBoard(tiles, board, fill);
+    const fill = () => fillWith(tiles, board, fill);
     inp.addEventListener('input', () => { this.query = inp.value; fill(); });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Escape' && inp.value) { e.preventDefault(); inp.value = ''; this.query = ''; fill(); } });
     // render() waits while the search box has text in it; leaving the box catches up.
@@ -3827,19 +3915,92 @@ class ProjectsView extends ItemView {
       .sort((a, b) => b.p.mtime - a.p.mtime || a.p.name.localeCompare(b.p.name));
     for (const k of BOARD_COLUMNS) {
       const items = shown.filter((x) => x.p.status === k);
-      const t = el(tiles, 'button', 'a4pj-tile'); t.dataset.col = k;
-      el(t, 'b', null, String(items.length)); el(t, 'span', null, COLUMN_LABEL[k]);
-      const col = el(board, 'div', 'a4pj-col'); col.dataset.col = k;
-      t.addEventListener('click', () => { col.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }); col.removeClass('is-flash'); void col.offsetWidth; col.addClass('is-flash'); });
-      const hd = el(col, 'div', 'a4pj-colhead'); el(hd, 'h3', null, COLUMN_LABEL[k]); el(hd, 'span', 'a4pj-badge', String(items.length));
-      el(col, 'div', 'a4pj-colsub', COLUMN_SUB[k]);
-      const list = el(col, 'div', 'a4pj-cards');
-      if (!items.length) el(list, 'div', this.query ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : 'Drop a project here');
+      const list = this.boardColumn(tiles, board, k, COLUMN_LABEL[k], COLUMN_SUB[k], items.length, 'Drop a project here', (path) => this.dropOn(path, k));
       for (const { p, st } of items) this.boardCard(list, p, st);
-      col.addEventListener('dragover', (e) => { if (!this.dragPath) return; e.preventDefault(); col.addClass('is-drop'); });
-      col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.removeClass('is-drop'); });
-      col.addEventListener('drop', (e) => { col.removeClass('is-drop'); if (!this.dragPath) return; e.preventDefault(); this.dropOn(this.dragPath, k); });
     }
+  }
+
+  // One column with its tile; returns the card list. `n` is the full count.
+  boardColumn(tiles, board, k, label, sub, n, dropText, onDrop) {
+    const t = el(tiles, 'button', 'a4pj-tile'); t.dataset.col = k;
+    el(t, 'b', null, String(n)); el(t, 'span', null, label);
+    const col = el(board, 'div', 'a4pj-col'); col.dataset.col = k;
+    t.addEventListener('click', () => { col.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }); col.removeClass('is-flash'); void col.offsetWidth; col.addClass('is-flash'); });
+    const hd = el(col, 'div', 'a4pj-colhead'); el(hd, 'h3', null, label); el(hd, 'span', 'a4pj-badge', String(n));
+    el(col, 'div', 'a4pj-colsub', sub);
+    const list = el(col, 'div', 'a4pj-cards');
+    if (!n) el(list, 'div', this.query ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : dropText);
+    col.addEventListener('dragover', (e) => { if (!this.dragPath) return; e.preventDefault(); col.addClass('is-drop'); });
+    col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.removeClass('is-drop'); });
+    col.addEventListener('drop', (e) => { col.removeClass('is-drop'); if (!this.dragPath) return; e.preventDefault(); onDrop(this.dragPath); });
+    return list;
+  }
+
+  fillTaskBoard(tiles, board) {
+    tiles.empty(); board.empty();
+    const cfg = this.cfg; const today = this.today;
+    const rows = taskBoardRows(this.tasks, this.projects, cfg, this.area, this.query);
+    for (const k of taskColumns(cfg)) {
+      const all = rows.filter((x) => x.col === k);
+      const cards = taskColumnCards(all, k, today, cfg);
+      const list = this.boardColumn(tiles, board, k, TASK_COLUMN_LABEL[k], TASK_COLUMN_SUB[k], all.length, 'Drop a task here', (path) => this.dropTask(path, k));
+      for (const x of cards) this.taskCard(list, x);
+      if (all.length > cards.length) el(list, 'div', 'a4pj-by', `The latest ${cards.length} of ${all.length}`);
+    }
+  }
+
+  // Same rules as dropOn: same column makes no call; the board redraws from the notes.
+  dropTask(path, column) {
+    this.dragPath = null;
+    const t = this.tasks.find((x) => x.path === path);
+    if (!t || t.archived || taskColumn(t.status) === column) return;
+    this.plugin.moveTask(t, column);
+  }
+
+  // Desktop drag; phones use the Move menu (spec 18).
+  draggable(c, path, name) {
+    if (Platform.isMobile) return;
+    c.draggable = true;
+    c.addEventListener('dragstart', (e) => {
+      this.dragPath = path;
+      const a = document.activeElement; if (a && a.tagName === 'INPUT' && this.contentEl.contains(a)) a.blur(); // or the drop's redraw waits on the search box
+      if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', name); }
+      c.addClass('is-dragging');
+    });
+    c.addEventListener('dragend', () => { c.removeClass('is-dragging'); this.dragPath = null; });
+  }
+
+  // Task card (spec 15): name, project with its area tag, due date (red when
+  // overdue), High or Low priority. An archived task (finished and filed away)
+  // has no Move: no existing action takes it out of the archive.
+  taskCard(host, { t, p, col }) {
+    const today = this.today;
+    const c = el(host, 'div', 'a4pj-bcard');
+    c.tabIndex = 0; c.setAttr('aria-label', `Open ${t.title}`); c.dataset.focus = `tcard:${t.path}`;
+    if (!t.archived) this.draggable(c, t.path, t.title);
+    const top = el(c, 'div', 'a4pj-btop');
+    const pills = el(top, 'div', 'a4pj-pills');
+    if (p && (p.sphere === 'work' || p.sphere === 'personal')) el(pills, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
+    el(pills, 'span', 'a4pj-pill is-proj', p ? p.name : t.projectKey ? (t.project || t.projectKey) : 'No project');
+    if (t.archived) el(pills, 'span', 'a4pj-pill is-proj', 'Archived');
+    const late = !!t.due && t.due < today && col !== 'done' && col !== 'closed';
+    el(top, 'span', 'a4pj-bwhen' + (late ? ' is-late' : ''), t.due ? `${late ? 'Overdue' : 'Due'} ${shortDay(t.due, today)}` : 'No due date');
+    el(c, 'div', 'a4pj-btitle', t.title);
+    // Normal is the default, so only High and Low get a tag (mockup).
+    if (t.priority === 'high' || t.priority === 'low') el(el(c, 'div', 'a4pj-by'), 'span', `a4pj-pill is-${t.priority}`, t.priority === 'high' ? 'High priority' : 'Low priority');
+    const acts = el(c, 'div', 'a4pj-bacts');
+    if (!t.archived) { const mv = el(acts, 'button', null, 'Move'); mv.addEventListener('click', () => this.taskMoveMenu(mv, t, col)); }
+    const open = () => this.plugin.openFile(t.path); // as the List opens a task
+    el(acts, 'button', null, 'Edit').addEventListener('click', open);
+    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
+  }
+
+  taskMoveMenu(anchor, t, col) {
+    const m = new obsidian.Menu();
+    for (const k of taskColumns(this.cfg)) m.addItem((i) => i.setTitle(TASK_COLUMN_LABEL[k] + (k === col ? ' (here now)' : '')).setDisabled(k === col).onClick(() => this.plugin.moveTask(t, k)));
+    const r = anchor.getBoundingClientRect();
+    m.showAtPosition({ x: r.left, y: r.bottom });
   }
 
   areaButtons(page) {
@@ -3944,16 +4105,7 @@ class ProjectsView extends ItemView {
   boardCard(host, p, st) {
     const c = el(host, 'div', 'a4pj-bcard');
     c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `bcard:${p.path}`;
-    if (!Platform.isMobile) { // phones: the Move menu (spec 18)
-      c.draggable = true;
-      c.addEventListener('dragstart', (e) => {
-        this.dragPath = p.path;
-        const a = document.activeElement; if (a && a.tagName === 'INPUT' && this.contentEl.contains(a)) a.blur(); // or the drop's redraw waits on the search box
-        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.name); }
-        c.addClass('is-dragging');
-      });
-      c.addEventListener('dragend', () => { c.removeClass('is-dragging'); this.dragPath = null; });
-    }
+    this.draggable(c, p.path, p.name);
     const top = el(c, 'div', 'a4pj-btop');
     const pills = el(top, 'div', 'a4pj-pills');
     if (p.sphere === 'work' || p.sphere === 'personal') el(pills, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
