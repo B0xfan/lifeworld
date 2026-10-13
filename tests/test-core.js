@@ -1,6 +1,6 @@
 // The shared core (src/core/): one copy of each shared helper, and no plugin keeps its own copy
 // (phase 1 section 5: dates and repeat rules; section 6: quick add, reminders, asList, clock
-// times). Whether a file declares or uses a name is decided by esbuild's scope analysis
+// times; section 7: task reading, links, titles, moves, Someday, dependencies, task folders). Whether a file declares or uses a name is decided by esbuild's scope analysis
 // (tests/lib/core-use.js), so a copy written as let/var/class or an indented local is seen too.
 const assert = require('assert');
 const fs = require('fs');
@@ -13,6 +13,7 @@ const EXPORTS = {
   dates: ['pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
   lists: ['asList'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
+  tasks: ['TASKS_FOLDER', 'ARCHIVE_FOLDER', 'DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   quickadd: ['DOW_NAMES', 'DOW_CODES', 'MON_NAMES', 'dowIndex', 'nextDow', 'validDay', 'parseDayWord', 'DAY_RE', 'repeatRule', 'REPEAT_RE', 'understand', 'parseClock', 'whenValue', 'firstOccurrence', 'DOW_LONG', 'joinWords', 'ordinal', 'repeatWords', 'shortDay', 'halfWord', 'quickAddChips', 'quickAddPlan'],
 };
 let n = 0;

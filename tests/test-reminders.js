@@ -97,8 +97,8 @@ const remOf = (fm) => fm.reminders;
   for (const [i, logic] of [L, T, PL].entries()) for (const x of names) ok(logic[x] !== undefined, `${['Projects', 'Today', 'Planner'][i]} still offers ${x}`);
   for (const src of srcs) eq(((/^const \{ ([^}]*) \} = require\('\.\.\/core\/reminders'\);$/m.exec(src) || [null, ''])[1]).split(', '), names, 'takes every reminder helper from the shared core');
   eq(Object.keys(R), names, 'the core offers exactly these');
-  const extract = (src, name) => { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); return m ? src.slice(m.index, src.indexOf('\n}\n', m.index) + 2) : null; };
-  ok(extract(srcs[0], 'taskFromFrontmatter') && extract(srcs[0], 'taskFromFrontmatter') === extract(srcs[1], 'taskFromFrontmatter') && extract(srcs[0], 'taskFromFrontmatter') === extract(srcs[2], 'taskFromFrontmatter'), 'same code in all three plugins: taskFromFrontmatter');
+  // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
+  ok(srcs.every((s) => (require('./lib/core-use').importsOf(s).tasks || []).includes('taskFromFrontmatter')), 'all three take taskFromFrontmatter from the shared core');
 }
 
 /* ---- 2. the field --------------------------------------------------------------- */

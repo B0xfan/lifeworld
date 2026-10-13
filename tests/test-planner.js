@@ -54,26 +54,17 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 /* ---- 1. shared code is a verbatim copy of A4 Today's ---------------------- */
 // Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
 // Updated in section 6: asList, halfOfTime, timeText and the reminder helpers moved to src/core/ too.
+// Updated in section 7: the task-reading helpers and the task folder constants moved to src/core/tasks.js
+// (tests/test-core.js checks no plugin keeps its own copy); what is left here: each takes them from the core.
+const { fromCore } = require('./lib/core-use');
 const SHARED = [
-  'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
-function extract(src, name) {
-  const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);
-  if (!m) return null;
-  const first = src.slice(m.index, src.indexOf('\n', m.index));
-  if (/^const /.test(first) && first.trim().endsWith(';')) return first;
-  const code = first.replace(/\/\/.*$/, '');
-  const o = (code.match(/\{/g) || []).length; const c = (code.match(/\}/g) || []).length;
-  if (o > 0 && o === c) return first;
-  return src.slice(m.index, src.indexOf('\n}\n', m.index) + 2);
-}
+  'TASKS_FOLDER', 'ARCHIVE_FOLDER', 'DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
 const srcP = fs.readFileSync(SRC, 'utf8');
 const srcT = fs.readFileSync(TODAY_SRC, 'utf8');
-for (const name of SHARED) {
-  const a = extract(srcP, name); const b = extract(srcT, name);
-  ok(a && b && a === b, `shared code identical: ${name}`);
-}
+const viaCore = [fromCore(srcP, SHARED), fromCore(srcT, SHARED)];
+for (const name of SHARED) ok(viaCore.every((f) => f(name)), `Planner and Today take ${name} from the shared core (no own copy)`);
 // The constants the shared code reads must agree too.
-for (const c of ['TASKS_FOLDER', 'ARCHIVE_FOLDER', 'CALENDAR_NOTE', 'DEFAULT_COMPLETED_STATUSES']) {
+for (const c of ['CALENDAR_NOTE']) {
   const re = new RegExp(`^const ${c} = (.*);$`, 'm');
   const a = re.exec(srcP); const b = re.exec(srcT);
   ok(a && b && a[1] === b[1], `same constant: ${c}`);

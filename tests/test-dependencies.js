@@ -62,9 +62,12 @@ const DONE = ['done', 'closed'];
 
 /* ---- 1. shared code is the same in all three plugins ------------------------ */
 const fs = require('fs');
-function extract(src, name) { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); return m ? src.slice(m.index, src.indexOf('\n}\n', m.index) + 2) : null; }
 const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
-for (const name of ['blockerLinks', 'blockerHolds', 'openBlockersOf', 'taskTitleOf', 'taskFromFrontmatter']) ok(extract(srcs[0], name) && extract(srcs[0], name) === extract(srcs[1], name) && extract(srcs[0], name) === extract(srcs[2], name), `shared code identical in all three: ${name}`);
+// Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
+const { fromCore } = require('./lib/core-use');
+const DEP = ['blockerLinks', 'blockerHolds', 'openBlockersOf', 'taskTitleOf', 'taskFromFrontmatter'];
+const viaCore = srcs.map((s) => fromCore(s, DEP));
+for (const name of DEP) ok(viaCore.every((f) => f(name)), `all three take ${name} from the shared core (no own copy)`);
 ok(typeof Today === 'function' && typeof Planner === 'function', 'Today and Planner load');
 
 /* ---- 2. reading TaskNotes' blockedBy --------------------------------------- */

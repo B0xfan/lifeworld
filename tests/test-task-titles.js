@@ -42,8 +42,9 @@ const URL_F = 'Check out example.com';
 
 /* ---- 1. one copy of the rule in all three plugins --------------------------- */
 const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
-function extract(src, name) { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); return m ? src.slice(m.index, src.indexOf('\n}\n', m.index) + 2) : null; }
-for (const name of ['taskTitleOf', 'taskFromFrontmatter', 'openBlockersOf']) ok(extract(srcs[0], name) && srcs.every((s) => extract(s, name) === extract(srcs[0], name)), `shared code identical in all three: ${name}`);
+// Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
+const { importsOf } = require('./lib/core-use');
+for (const name of ['taskTitleOf', 'taskFromFrontmatter', 'openBlockersOf']) ok(srcs.every((s) => (importsOf(s).tasks || []).includes(name)), `all three take ${name} from the shared core`);
 for (const lg of [J, T, L]) ok(lg.taskTitleOf === undefined || typeof lg.taskTitleOf === 'function', 'exported');
 
 /* ---- 2. the reading rule ---------------------------------------------------- */

@@ -65,26 +65,14 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 /* ---- 1. shared code ---------------------------------------------------------- */
 // Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
 // Updated in section 6: asList, halfOfTime, timeText and the reminder helpers moved to src/core/ too.
+// Updated in section 7: the task-reading helpers and the task folder constants moved to src/core/tasks.js
+// (tests/test-core.js checks no plugin keeps its own copy); what is left here: each takes them from the core.
+const { fromCore } = require('./lib/core-use');
 const SHARED = [
-  'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
-function extract(src, name) {
-  const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);
-  if (!m) return null;
-  const first = src.slice(m.index, src.indexOf('\n', m.index));
-  if (/^const /.test(first) && first.trim().endsWith(';')) return first;
-  const code = first.replace(/\/\/.*$/, '');
-  const o = (code.match(/\{/g) || []).length; const c = (code.match(/\}/g) || []).length;
-  if (o > 0 && o === c) return first;
-  return src.slice(m.index, src.indexOf('\n}\n', m.index) + 2);
-}
-const srcJ = fs.readFileSync(SRC, 'utf8');
-for (const other of ['a4-planner', 'a4-today']) {
-  const srcO = fs.readFileSync(source(other), 'utf8');
-  for (const name of SHARED) { const a = extract(srcJ, name); const b = extract(srcO, name); ok(a && b && a === b, `shared code identical with ${other}: ${name}`); }
-  for (const c of ['TASKS_FOLDER', 'ARCHIVE_FOLDER', 'DEFAULT_COMPLETED_STATUSES']) {
-    const re = new RegExp(`^const ${c} = (.*);$`, 'm'); const a = re.exec(srcJ); const b = re.exec(srcO);
-    ok(a && b && a[1] === b[1], `same constant as ${other}: ${c}`);
-  }
+  'TASKS_FOLDER', 'ARCHIVE_FOLDER', 'DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
+for (const id of ['a4-projects', 'a4-planner', 'a4-today']) {
+  const viaCore = fromCore(fs.readFileSync(source(id), 'utf8'), SHARED);
+  for (const name of SHARED) ok(viaCore(name), `${id} takes ${name} from the shared core (no own copy)`);
 }
 
 /* ---- config from A4's real TaskNotes settings ------------------------------- */

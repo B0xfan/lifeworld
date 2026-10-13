@@ -62,11 +62,11 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 /* ---- 1. same code in all three --------------------------------------------- */
 {
   const srcs = ['a4-projects', 'a4-today', 'a4-planner'].map((p) => fs.readFileSync(source(p), 'utf8'));
-  const extract = (src, name) => { const m = new RegExp(`^function ${name}\\(`, 'm').exec(src); if (!m) return null; const first = src.slice(m.index, src.indexOf('\n', m.index)); const o = (first.match(/\{/g) || []).length; const c = (first.match(/\}/g) || []).length; return o && o === c ? first : src.slice(m.index, src.indexOf('\n}\n', m.index) + 2); };
   // Updated in section 6: halfOfTime and timeText moved to src/core/dates.js (tests/test-core.js).
+  // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
+  const { importsOf } = require('./lib/core-use');
   for (const name of ['timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'sortByOrder', 'applyMove']) {
-    const a = extract(srcs[0], name);
-    ok(a && a === extract(srcs[1], name) && a === extract(srcs[2], name), `same code in all three plugins: ${name}`);
+    ok(srcs.every((s) => (importsOf(s).tasks || []).includes(name)), `all three take ${name} from the shared core`);
   }
   const wu = (s) => { const i = s.indexOf('async function writeWithUndo('); return s.slice(i, s.indexOf('\n}\n', i)); };
   ok(wu(srcs[1]) && wu(srcs[1]) === wu(srcs[2]), 'Today and Planner: the same writeWithUndo');
