@@ -2717,28 +2717,46 @@ class A4ProjectsPlugin extends Plugin {
   /* ---- projects board actions (spec 7-10, 12) ----------------------------
    * One processFrontMatter write each, touching only MOVE_FIELDS. Each
    * resolves true when the note changed, false when cancelled, refused or
-   * failed (a failed write shows a notice and changes nothing). */
+   * failed (a refusal or failed write shows a notice and changes nothing).
+   * The metadata cache lags a just-made write, so every guard reads the note
+   * itself: inside the write, or (Delete, Promote's goal) a fresh read. */
 
+  refused(name) { new Notice(`Could not do that to "${name}". Try again in a moment.`); return false; }
+  // Only the place and kind of file; whether it is a project is decided from the note itself.
   projectFile(path) {
     const f = this.engine.file(path);
-    return f && f.path.startsWith(`${PROJECTS_FOLDER}/`) && readProject(this.engine.fm(f), f.path, f.basename) ? f : null;
+    if (f && f.extension === 'md' && f.path.startsWith(`${PROJECTS_FOLDER}/`)) return f;
+    this.refused(String(path).split('/').pop().replace(/\.md$/i, ''));
+    return null;
   }
-  projectStatus(f) { return statusOf(this.engine.fm(f)); }
-  // The write; returns its Undo, or null when it failed or apply refused
-  // (returned false). Guards decide inside apply, from the fresh frontmatter:
-  // the metadata cache lags a just-made write (a quick move and move back).
+  // The frontmatter read from disk (not the cache); null when unreadable.
+  async freshFm(f) {
+    try {
+      const info = obsidian.getFrontMatterInfo(await this.app.vault.read(f));
+      return info.exists ? obsidian.parseYaml(info.frontmatter) : null;
+    } catch (e) { console.error('[a4-projects] could not read', f.path, e); return null; }
+  }
+  // The write; returns its Undo, or null when it failed or was refused (not a
+  // project, or apply returned false).
   async writeProject(f, apply) {
     let before, after, ok = false;
-    try { await this.app.fileManager.processFrontMatter(f, (fm) => { before = fieldsOf(fm); ok = apply(fm) !== false; after = fieldsOf(fm); }); }
-    catch (e) { console.error('[a4-projects] project write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
-    if (!ok) return null;
+    try {
+      await this.app.fileManager.processFrontMatter(f, (fm) => {
+        if (fm.type !== 'project') return;
+        before = fieldsOf(fm); ok = apply(fm) !== false; after = fieldsOf(fm);
+      });
+    } catch (e) { console.error('[a4-projects] project write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
+    if (!ok) { this.refused(f.basename); return null; }
+    const changed = MOVE_FIELDS.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])).length;
+    // Resolves true only when at least one field was put back.
     return async () => {
       if (this.engine.file(f.path) !== f) { new Notice(`Could not undo: "${f.basename}" was deleted.`); return false; }
       let kept = [];
       try { await this.app.fileManager.processFrontMatter(f, (fm) => { kept = undoFields(fm, before, after); }); }
       catch (e) { console.error('[a4-projects] undo failed', f.path, e); new Notice(`Could not undo the change to "${f.basename}".`); return false; }
-      if (kept.length) new Notice(`Undone, but your later change to ${kept.join(', ')} on "${f.basename}" was kept.`);
-      return true;
+      const undone = kept.length < changed;
+      if (kept.length) new Notice(`${undone ? 'Undone, but your' : 'Nothing undone: your'} later change to ${kept.join(', ')} on "${f.basename}" was kept.`);
+      return undone;
     };
   }
   // A failed save never fails the move itself: the note is already changed.
@@ -2747,9 +2765,10 @@ class A4ProjectsPlugin extends Plugin {
     try { await this.save(); } catch (e) { console.error('[a4-projects] activity save failed', e); }
   }
   // Board actions only; the List, Today and hand edits are not logged (spec 17).
-  // Undo adds its own entry when it went through; history is never rewritten.
-  async logged(text, undo) {
-    await this.logActivity(text);
+  // Undo adds its own entry when it put something back; history is never rewritten.
+  // Not awaited: the entry is in memory at once, the toast does not wait for the disk.
+  logged(text, undo) {
+    this.logActivity(text);
     return async () => { if (await undo()) await this.logActivity(`Undone: ${text[0].toLowerCase()}${text.slice(1)}`); };
   }
   async moveProject(path, status) {
@@ -2763,7 +2782,7 @@ class A4ProjectsPlugin extends Plugin {
       applyProjectStatus(fm, status, today);
     });
     if (!undo) return false;
-    this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, await this.logged(`You moved ${f.basename} to ${COLUMN_LABEL[status]}.`, undo));
+    this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, this.logged(`You moved ${f.basename} to ${COLUMN_LABEL[status]}.`, undo));
     return true;
   }
   // Only from a board column (the cards that offer it).
@@ -2780,7 +2799,7 @@ class A4ProjectsPlugin extends Plugin {
       applyColdStorage(fm, why, today);
     });
     if (!undo) return false;
-    this.toast.show(`Moved "${f.basename}" to Cold Storage`, await this.logged(`You moved ${f.basename} to Cold Storage.`, undo));
+    this.toast.show(`Moved "${f.basename}" to Cold Storage`, this.logged(`You moved ${f.basename} to Cold Storage.`, undo));
     return true;
   }
   async restoreProject(path) {
@@ -2791,31 +2810,43 @@ class A4ProjectsPlugin extends Plugin {
     const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'cold-storage') return false; r = applyRestore(fm, today); });
     if (!undo) return false;
     if (r.fellBack) new Notice(`"${f.basename}" had no earlier column saved, so it went to Backlog.`);
-    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, await this.logged(`You restored ${f.basename} to ${COLUMN_LABEL[r.status]}.`, undo));
+    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, this.logged(`You restored ${f.basename} to ${COLUMN_LABEL[r.status]}.`, undo));
     return true;
   }
+  // The goal is mandatory outside ideas: the fresh read decides whether to ask,
+  // the write refuses a promote that would still leave no goal.
   async promoteIdea(path) {
     const f = this.projectFile(path);
-    if (!f || this.projectStatus(f) !== 'idea') return false;
+    if (!f) return false;
     let goal = null;
-    if (!hasGoalLink(this.engine.fm(f))) {
+    if (!hasGoalLink(await this.freshFm(f))) {
       const g = await this.pickGoal(f.basename);
       if (!g) return false;
       goal = `[[${g.basename}]]`;
     }
     const today = this.engine.today();
-    const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'idea') return false; applyPromote(fm, goal, today); });
+    const undo = await this.writeProject(f, (fm) => {
+      if (statusOf(fm) !== 'idea' || (!goal && !hasGoalLink(fm))) return false;
+      applyPromote(fm, goal, today);
+    });
     if (!undo) return false;
-    this.toast.show(`Promoted "${f.basename}" to a project`, await this.logged(`You promoted ${f.basename} to a project.`, undo));
+    this.toast.show(`Promoted "${f.basename}" to a project`, this.logged(`You promoted ${f.basename} to a project.`, undo));
     return true;
   }
   // Cold Storage cards only (spec 10). Only this note, to the vault's own
   // .trash folder whatever the trash setting; tasks, goal and links untouched.
+  // No write to check inside, so it reads the note itself, before and after the confirm.
   async deleteProjectPermanently(path) {
     const f = this.projectFile(path);
-    if (!f || this.projectStatus(f) !== 'cold-storage') return false;
+    if (!f) return false;
+    const stored = async () => {
+      const fm = f.path.startsWith(`${PROJECTS_FOLDER}/`) && await this.freshFm(f);
+      return !!fm && fm.type === 'project' && statusOf(fm) === 'cold-storage';
+    };
+    if (!(await stored())) return this.refused(f.basename);
     const ok = await this.confirmAction('Delete permanently', `Delete "${f.basename}"? The project note goes to Obsidian's trash, so you can still get it back from there.`, 'Delete');
-    if (!ok || this.projectFile(f.path) !== f || this.projectStatus(f) !== 'cold-storage') return false;
+    if (!ok) return false;
+    if (!(await stored())) return this.refused(f.basename);
     try { await this.app.vault.trash(f, false); }
     catch (e) { console.error('[a4-projects] delete failed', f.path, e); new Notice(`Could not delete "${f.basename}".`); return false; }
     new Notice("Moved to Obsidian's trash. You can get it back from there.");

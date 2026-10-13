@@ -7,10 +7,11 @@
 const path = require('path');
 const Module = require('module');
 const assert = require('assert');
-class TFile { constructor(p, fm) { this.path = p; this.basename = path.basename(p, '.md'); this.extension = 'md'; this.fm = fm; } }
+class TFile { constructor(p, fm) { this.path = p; this.extension = path.extname(p).slice(1); this.basename = path.basename(p, `.${this.extension}`); this.fm = fm; } }
 class TFolder { constructor(p, children) { this.path = p; this.children = children; } }
 const notices = [];
-const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {} };
+const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {},
+  getFrontMatterInfo: (t) => { const m = /^---\n([\s\S]*?)\n---\n/.exec(t); return { exists: !!m, frontmatter: m ? m[1] : '' }; }, parseYaml: JSON.parse };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
 const Plugin = require(path.join(__dirname, '..', 'main.js'));
@@ -114,12 +115,13 @@ for (const bad of [undefined, '', 'idea', 'failed', 'nonsense']) {
 /* ---- plugin actions on a fake vault ------------------------------------- */
 const PD = '04 Inner World/My Life/Projects';
 function world(notes, answers) {
-  const files = Object.entries(notes).map(([name, fm]) => new TFile(`${name.includes('/') ? name : `${PD}/${name}`}.md`, clone(fm)));
+  const files = Object.entries(notes).map(([name, fm]) => new TFile(`${name.includes('/') ? name : `${PD}/${name}`}${/\.\w+$/.test(name) ? '' : '.md'}`, clone(fm)));
   const goals = new TFolder('04 Inner World/My Life/Goals', files.filter((f) => f.path.startsWith('04 Inner World/My Life/Goals/')));
   const trashed = []; const writes = [];
   const app = {
     vault: {
       getAbstractFileByPath: (p) => (p === goals.path ? goals : files.find((f) => f.path === p) || null),
+      read: async (f) => { if (!files.includes(f)) throw new Error('gone'); return f.fm ? `---\n${JSON.stringify(f.fm)}\n---\nbody` : 'body'; },
       trash: async (f, system) => { trashed.push([f.path, system]); files.splice(files.indexOf(f), 1); },
       delete: () => { throw new Error('never a permanent delete'); },
     },
@@ -141,29 +143,41 @@ const P = (name) => `${PD}/${name}.md`;
   const notes = {
     Act: { ...BASE, status: 'active' }, Done: { ...BASE, status: 'done', end_date: '2026-01-02' }, Cold: { ...BASE, status: 'cold-storage', stored_from: 'waiting' },
     Idea: { type: 'project', sphere: 'work', status: 'idea', why: 'w' }, IdeaG: { type: 'project', sphere: 'work', status: 'idea', goal: '[[Old]]' },
-    'Other/Act': { ...BASE, status: 'active' }, NotProject: { type: 'note', status: 'cold-storage' },
+    'Other/Act': { ...BASE, status: 'active' }, NotProject: { type: 'note', status: 'cold-storage' }, 'Scan.pdf': { type: 'project', status: 'cold-storage' },
   };
 
   // Cancel / refuse: nothing written
   let w = world(notes, { ask: null, confirm: false, goal: null });
+  notices.length = 0;
   assert.strictEqual(await w.p.coldStoreProject(P('Act')), false, 'cold storage cancelled');
   assert.strictEqual(await w.p.deleteProjectPermanently(P('Cold')), false, 'delete cancelled');
   assert.strictEqual(await w.p.promoteIdea(P('Idea')), false, 'promote without goal cancelled');
+  assert.deepStrictEqual(notices, [], 'a cancel shows no notice');
   assert.strictEqual(await w.p.moveProject(P('Act'), 'active'), false, 'same column: no write');
   assert.strictEqual(await w.p.moveProject(P('Act'), 'cold-storage'), false, 'move only to board columns');
   assert.strictEqual(await w.p.moveProject(P('Idea'), 'active'), false, 'ideas go through Promote');
   assert.strictEqual(await w.p.moveProject(P('Cold'), 'active'), false, 'cold storage goes through Restore');
   assert.strictEqual(await w.p.moveProject('Other/Act.md', 'done'), false, 'outside the Projects folder');
   assert.strictEqual(await w.p.restoreProject(P('Act')), false, 'restore only from cold storage');
+  w.p.ask = async () => 'x';
   assert.strictEqual(await w.p.coldStoreProject(P('Idea')), false, 'cold storage only from a board column');
+  for (const n2 of ['NotProject', 'Scan.pdf']) {
+    assert.strictEqual(await w.p.moveProject(`${PD}/${n2}${n2.includes('.') ? '' : '.md'}`, 'done'), false, `${n2}: no move`);
+    assert.strictEqual(await w.p.coldStoreProject(`${PD}/${n2}${n2.includes('.') ? '' : '.md'}`), false, `${n2}: no cold storage`);
+  }
+  assert.strictEqual(await w.p.writeProject(w.files.find((f) => f.basename === 'NotProject'), (fm) => { fm.status = 'done'; }), null, 'the List write refuses a non-project too');
+  assert.ok(!w.writes.includes(`${PD}/Scan.pdf`), 'a non-note is never written');
+  assert.strictEqual(notices.length, 11, 'every refusal shows a notice (not a move to a non-column, a caller error)');
+  assert.ok(notices.every((m) => /^Could not do that to "/.test(m)), 'the refusal notice');
   // Guards now decide inside the write, so a refusal may open it but changes nothing.
-  for (const f of w.files) assert.deepStrictEqual(f.fm, notes[Object.keys(notes).find((k) => f.path.endsWith(`${k}.md`))], `${f.path} unchanged`);
+  for (const f of w.files) assert.deepStrictEqual(f.fm, notes[Object.keys(notes).find((k) => f.path === `${PD}/${k}` || f.path.endsWith(`${k}.md`))], `${f.path} unchanged`);
   assert.deepStrictEqual(w.trashed, [], 'nothing trashed');
   assert.deepStrictEqual(w.log(), [], 'cancelled or refused: nothing logged');
 
   // Delete: only from cold storage, only that note, to the vault .trash
   w = world(notes, { confirm: true });
   for (const n2 of ['Act', 'Done', 'Idea', 'NotProject']) assert.strictEqual(await w.p.deleteProjectPermanently(P(n2)), false, `no delete for ${n2}`);
+  assert.strictEqual(await w.p.deleteProjectPermanently(`${PD}/Scan.pdf`), false, 'no delete for a file that is not a note');
   assert.strictEqual(await w.p.deleteProjectPermanently(P('Cold')), true);
   assert.deepStrictEqual(w.trashed, [[P('Cold'), false]], "only the note, to Obsidian's trash");
   assert.deepStrictEqual(w.writes, [], 'delete writes no note');
@@ -257,6 +271,7 @@ const P = (name) => `${PD}/${name}.md`;
   notices.length = 0;
   await w.toasts[1][1]();
   assert.ok(/Could not undo: "B" was deleted/.test(notices[0]), 'deleted note: a clear notice');
+  assert.ok(!w.log().some((t) => t.startsWith('Undone: you moved B')), 'deleted note: no Undone entry');
   w = world({ A: { ...BASE, status: 'active' } }, {});
   await w.p.moveProject(P('A'), 'done');
   w.p.app.fileManager.processFrontMatter = async () => { throw new Error('disk'); };
@@ -267,10 +282,68 @@ const P = (name) => `${PD}/${name}.md`;
   // A failed save of the history never fails the move.
   w = world({ A: { ...BASE, status: 'active' } }, {});
   w.p.saveData = async () => { throw new Error('disk'); };
-  const err = console.error; console.error = () => {};
-  assert.strictEqual(await w.p.moveProject(P('A'), 'done'), true, 'move still succeeds');
-  console.error = err;
+  const err = console.error; const errs = []; console.error = (...a) => errs.push(a);
+  try {
+    assert.strictEqual(await w.p.moveProject(P('A'), 'done'), true, 'move still succeeds');
+    await new Promise((r) => setImmediate(r));
+  } finally { console.error = err; }
   assert.strictEqual(w.fmOf('A').status, 'done');
+  assert.deepStrictEqual(w.log(), ['You moved A to Done.'], 'the entry stays in memory');
+  assert.ok(errs.some((a) => /activity save failed/.test(a[0])), 'the failed save goes to the console');
+
+  // The toast does not wait for the history save.
+  w = world({ A: { ...BASE, status: 'active' } }, {});
+  w.p.saveData = () => new Promise(() => {}); // a save that never finishes
+  assert.strictEqual(await w.p.moveProject(P('A'), 'done'), true);
+  assert.strictEqual(w.toasts.length, 1, 'toast shown before the save finished');
+  assert.deepStrictEqual(w.log(), ['You moved A to Done.']);
+
+  // Undo that puts nothing back (every moved field edited by hand since): no Undone entry.
+  w = world({ A: { ...BASE, status: 'active' } }, { ask: 'stored' });
+  await w.p.coldStoreProject(P('A'));
+  Object.assign(w.fmOf('A'), { status: 'paused', stored_from: 'mine', why: 'mine' });
+  notices.length = 0;
+  await w.toasts[0][1]();
+  assert.deepStrictEqual([w.fmOf('A').status, w.fmOf('A').why], ['paused', 'mine'], 'hand edits kept');
+  assert.ok(/^Nothing undone: your later change/.test(notices[0]), 'says nothing was undone');
+  assert.deepStrictEqual(w.log(), ['You moved A to Cold Storage.'], 'no Undone entry when nothing went back');
+
+  // Empty metadata cache (just after a write): every action decides from the note itself.
+  w = world({ A: { ...BASE, status: 'active' }, I: { type: 'project', status: 'idea' } }, { ask: 'x', confirm: true, goal: { basename: 'G1' } });
+  w.p.engine.fm = () => undefined;
+  assert.strictEqual(await w.p.coldStoreProject(P('A')), true);
+  assert.strictEqual(await w.p.restoreProject(P('A')), true, 'restore straight after cold storage, empty cache');
+  assert.strictEqual(w.fmOf('A').status, 'active');
+  assert.strictEqual(await w.p.coldStoreProject(P('A')), true);
+  assert.strictEqual(await w.p.deleteProjectPermanently(P('A')), true, 'delete straight after cold storage, empty cache');
+  assert.strictEqual(await w.p.promoteIdea(P('I')), true, 'promote, empty cache');
+  assert.strictEqual(w.fmOf('I').goal, '[[G1]]');
+
+  // Promote, Undo, Promote with a stale cache still showing the goal: the picker is asked again.
+  w = world({ I: { type: 'project', status: 'idea' } }, { goal: { basename: 'G1' } });
+  await w.p.promoteIdea(P('I'));
+  const stale = clone(w.fmOf('I'));
+  w.p.engine.fm = () => stale;
+  await w.toasts[0][1]();
+  assert.ok(!('goal' in w.fmOf('I')), 'undo removed the goal');
+  let asked = 0; w.p.pickGoal = async () => { asked++; return { basename: 'G2' }; };
+  assert.strictEqual(await w.p.promoteIdea(P('I')), true);
+  assert.deepStrictEqual([asked, w.fmOf('I').goal], [1, '[[G2]]'], 'goal picker asked from the note itself');
+  // The goal disappears between the read and the write: the write refuses.
+  w = world({ I: { type: 'project', status: 'idea' } }, {});
+  w.p.freshFm = async () => ({ type: 'project', status: 'idea', goal: '[[Gone]]' });
+  w.p.pickGoal = async () => { throw new Error('must not ask'); };
+  notices.length = 0;
+  assert.strictEqual(await w.p.promoteIdea(P('I')), false, 'no promote without a goal');
+  assert.deepStrictEqual(w.fmOf('I'), { type: 'project', status: 'idea' }, 'unchanged');
+  assert.ok(/^Could not do that/.test(notices[0]));
+
+  // Delete re-checks after the confirm: restored meanwhile, nothing trashed.
+  w = world({ C: { ...BASE, status: 'cold-storage', stored_from: 'waiting' } }, {});
+  w.p.confirmAction = async () => { await w.p.restoreProject(P('C')); return true; };
+  assert.strictEqual(await w.p.deleteProjectPermanently(P('C')), false, 'restored during the confirm: no delete');
+  assert.deepStrictEqual(w.trashed, []);
+  assert.strictEqual(w.fmOf('C').status, 'waiting');
 
   // Goal list: open goals only
   const GD = '04 Inner World/My Life/Goals';
