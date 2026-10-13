@@ -6,4 +6,4 @@ The code here is the Projects part (currently named "A4 Projects" in its manifes
 
 Source lives in `src/`; `npm run build` bundles it with esbuild into `main.js` at the repo root, and Today, Planner and Sidebar into `dist/<id>/` (none of it committed). Optional owner-only values (`userName`, `syncPython`) go in `local.json`, which git ignores.
 
-Tests: `npm test` (builds, then runs every `tests/test-*.js`). They run on every push and pull request.
+Tests: `npm test` (builds, then runs every `tests/test-*.js`). They run on every push and pull request. A few checks read a real vault and run only when `A4_VAULT=<vault folder>` is set.
