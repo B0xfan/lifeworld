@@ -84,6 +84,7 @@
 const obsidian = require('obsidian');
 const { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform } = obsidian;
 const SuggestModal = obsidian.SuggestModal || class {}; // the Find window (stand-in when tests load this file)
+const Modal = obsidian.Modal || class {};
 
 /* ========================================================================== *
  * Constants
@@ -102,7 +103,13 @@ const NARROW_WIDTH = 760;
 const DONE_PREVIEW = 30;
 const CLOSED_STATUSES = ['done', 'failed', 'dropped'];
 const PROJECT_STATUSES = ['active', 'paused', 'backlog', 'done', 'failed', 'dropped'];
-const OPEN_ORDER = { active: 0, paused: 1, backlog: 2 };
+// Shelved: not open and not closed; they live on the board's Ideas and Cold Storage tabs.
+const SHELVED_STATUSES = ['idea', 'cold-storage'];
+const OPEN_ORDER = { active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 };
+// The projects board's columns, in order (spec 5). Moves only go to these.
+const BOARD_COLUMNS = ['backlog', 'active', 'waiting', 'paused', 'blocked', 'done'];
+const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting', paused: 'Paused', blocked: 'Blocked', done: 'Done' };
+const GOALS_FOLDER = '04 Inner World/My Life/Goals';
 
 /* ========================================================================== *
  * SHARED with a4-today and a4-planner (verbatim copies; do not edit here
@@ -1055,11 +1062,12 @@ function projectStats(project, tasks, today, cfg) {
   };
 }
 
-// Open = what the overview lists (active, paused, backlog, anything not closed).
-// The one rule: the overview, the Closed list and the sidebar's counts all use it.
-function isOpenProject(p) { return !!p && !CLOSED_STATUSES.includes(p.status); }
+// Open = what the overview lists (active, paused, waiting, blocked, backlog, anything
+// not closed or shelved). The one rule: the overview, the task pickers and the
+// sidebar's counts all use it.
+function isOpenProject(p) { return !!p && !CLOSED_STATUSES.includes(p.status) && !SHELVED_STATUSES.includes(p.status); }
 
-// Overview lists: [{ sphere, label, projects }], active then paused then backlog, A to Z.
+// Overview lists: [{ sphere, label, projects }], active, paused, waiting, blocked, backlog, A to Z.
 // `sphere` ('work' / 'personal', from the sidebar's Work / Personal items) keeps that list only.
 function overviewGroups(projects, filter, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
@@ -1067,14 +1075,14 @@ function overviewGroups(projects, filter, query, sphere) {
   for (const [sp, label] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
     if (sphere && sp !== sphere) continue;
     const list = projects.filter((p) => p.sphere === sp && isOpenProject(p) && (filter === 'all' || p.status === filter) && (!q || p.name.toLowerCase().includes(q)))
-      .sort((a, b) => ((OPEN_ORDER[a.status] ?? 3) - (OPEN_ORDER[b.status] ?? 3)) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      .sort((a, b) => ((OPEN_ORDER[a.status] ?? 5) - (OPEN_ORDER[b.status] ?? 5)) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     if (list.length) out.push({ sphere: sp, label, projects: list });
   }
   return out;
 }
 function closedProjects(projects, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
-  return projects.filter((p) => !isOpenProject(p) && (!sphere || p.sphere === sphere) && (!q || p.name.toLowerCase().includes(q)))
+  return projects.filter((p) => CLOSED_STATUSES.includes(p.status) && (!sphere || p.sphere === sphere) && (!q || p.name.toLowerCase().includes(q)))
     .sort((a, b) => String(b.endDate || '').localeCompare(String(a.endDate || '')) || a.name.localeCompare(b.name));
 }
 // Tasks that belong to a project of one sphere (no sphere: all of them).
@@ -1125,11 +1133,53 @@ function doneGroups(tasks, cfg) {
 }
 
 // Project status change -> the frontmatter writes (GL-002 end_date rule).
+// stored_from lives only while the note is in cold storage (GL-002).
 function applyProjectStatus(fm, status, today) {
   fm.status = status;
   if (CLOSED_STATUSES.includes(status)) { if (!fm.end_date) fm.end_date = today; }
   else if (fm.end_date != null) delete fm.end_date;
+  if (status !== 'cold-storage' && fm.stored_from !== undefined) delete fm.stored_from;
   return fm;
+}
+
+// Board actions (projects board, section 4). Every one changes only these
+// fields; fieldsOf/undoFields are the Undo.
+const MOVE_FIELDS = ['status', 'end_date', 'stored_from', 'why', 'goal'];
+function fieldsOf(fm) { const o = {}; for (const k of MOVE_FIELDS) if (fm[k] !== undefined) o[k] = fm[k]; return o; }
+// Undo puts a field back only while it still holds what the move wrote, so a
+// later hand edit survives; returns the moved fields it left alone.
+function undoFields(fm, before, after) {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const kept = [];
+  for (const k of MOVE_FIELDS) {
+    if (!same(fm[k], after[k])) { if (!same(before[k], after[k])) kept.push(k); continue; }
+    if (k in before) fm[k] = before[k]; else delete fm[k];
+  }
+  return kept;
+}
+function statusOf(fm) { return String((fm && fm.status) || '').trim().toLowerCase(); }
+// Move to Cold Storage: remember the column it left; an empty answer keeps the old why.
+// Storing twice (two dialogs) keeps the first column; a Done project keeps its finish date.
+function applyColdStorage(fm, why, today) {
+  const from = statusOf(fm), end = fm.end_date;
+  applyProjectStatus(fm, 'cold-storage', today);
+  if (from && from !== 'cold-storage') fm.stored_from = from;
+  if (end != null && (from === 'done' || from === 'cold-storage')) fm.end_date = end;
+  const w = String(why || '').trim();
+  if (w) fm.why = w;
+  return fm;
+}
+// Where Restore sends a note: its stored_from column, else Backlog.
+function restoreTarget(fm) {
+  const s = String((fm && fm.stored_from) || '').trim().toLowerCase();
+  return BOARD_COLUMNS.includes(s) ? { status: s, fellBack: false } : { status: 'backlog', fellBack: true };
+}
+function applyRestore(fm, today) { const r = restoreTarget(fm); applyProjectStatus(fm, r.status, today); return r; }
+function hasGoalLink(fm) { return asList(fm && fm.goal).some((g) => String(g).includes('[[')); }
+// Promote an idea: Backlog, with the goal link when one was picked.
+function applyPromote(fm, goalLink, today) {
+  if (goalLink) fm.goal = goalLink;
+  return applyProjectStatus(fm, 'backlog', today);
 }
 
 // A task's project link, written the way A4 Menu Bar Capture writes it.
@@ -1551,7 +1601,8 @@ const logic = {
   engineConfig, snapshotTaskNotes, isCompletedIn, completedStatusesOf, tnTimestamp, tnDatePart, tnTaskOf, ruleOfTask, instancesBetween, nextUncompleted, nextDates,
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
-  searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
+  BOARD_COLUMNS, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -2361,6 +2412,45 @@ class FindTaskModal extends SuggestModal {
   onChooseSuggestion(t) { this.plugin.openFile(t.path); }
 }
 
+/* Small dialogs for the board actions. Each calls done() once, on close:
+ * the answer, or null / false when cancelled or dismissed. */
+class AskModal extends Modal {
+  constructor(app, question, value, done) { super(app); this.question = question; this.value = value || ''; this.done = done; this.answer = null; }
+  onOpen() {
+    this.titleEl.setText(this.question);
+    const input = this.contentEl.createEl('input', { type: 'text', cls: 'a4pj-ask-input' });
+    input.value = this.value;
+    const ok = () => { this.answer = input.value; this.close(); };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok(); } });
+    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    row.createEl('button', { cls: 'mod-cta', text: 'OK' }).addEventListener('click', ok);
+    row.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+    window.setTimeout(() => input.focus(), 0);
+  }
+  onClose() { this.contentEl.empty(); this.done(this.answer); }
+}
+
+class ConfirmModal extends Modal {
+  constructor(app, title, text, okLabel, done) { super(app); this.title = title; this.text = text; this.okLabel = okLabel; this.done = done; this.ok = false; }
+  onOpen() {
+    this.titleEl.setText(this.title);
+    this.contentEl.createEl('p', { text: this.text });
+    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    row.createEl('button', { cls: 'mod-warning', text: this.okLabel }).addEventListener('click', () => { this.ok = true; this.close(); });
+    row.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+  }
+  onClose() { this.contentEl.empty(); this.done(this.ok); }
+}
+
+class GoalPickModal extends SuggestModal {
+  constructor(app, goals, name, done) { super(app); this.goals = goals; this.done = done; this.picked = null; this.setPlaceholder(`Which goal does "${name}" serve?`); }
+  getSuggestions(q) { const s = String(q || '').trim().toLowerCase(); return this.goals.filter((g) => g.basename.toLowerCase().includes(s)); }
+  renderSuggestion(g, row) { row.setText(g.basename); }
+  onChooseSuggestion(g) { this.picked = g; this.finish(); }
+  onClose() { window.setTimeout(() => this.finish(), 0); } // SuggestModal may close before it reports the choice
+  finish() { const d = this.done; this.done = null; if (d) d(this.picked); }
+}
+
 class A4ProjectsPlugin extends Plugin {
   async onload() {
     this.settings = normalizeSettings(await this.loadData().catch(() => null));
@@ -2616,6 +2706,119 @@ class A4ProjectsPlugin extends Plugin {
     this.toast.show(`${undos.length} overdue task${undos.length === 1 ? '' : 's'} moved to today`, async () => { for (const u of undos.reverse()) await u(); });
     return undos.length;
   }
+
+  /* ---- projects board actions (spec 7-10, 12) ----------------------------
+   * One processFrontMatter write each, touching only MOVE_FIELDS. Each
+   * resolves true when the note changed, false when cancelled, refused or
+   * failed (a failed write shows a notice and changes nothing). */
+
+  projectFile(path) {
+    const f = this.engine.file(path);
+    return f && f.path.startsWith(`${PROJECTS_FOLDER}/`) && readProject(this.engine.fm(f), f.path, f.basename) ? f : null;
+  }
+  projectStatus(f) { return statusOf(this.engine.fm(f)); }
+  // The write; returns its Undo, or null when it failed or apply refused
+  // (returned false). Guards decide inside apply, from the fresh frontmatter:
+  // the metadata cache lags a just-made write (a quick move and move back).
+  async writeProject(f, apply) {
+    let before, after, ok = false;
+    try { await this.app.fileManager.processFrontMatter(f, (fm) => { before = fieldsOf(fm); ok = apply(fm) !== false; after = fieldsOf(fm); }); }
+    catch (e) { console.error('[a4-projects] project write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
+    if (!ok) return null;
+    return async () => {
+      if (this.engine.file(f.path) !== f) { new Notice(`Could not undo: "${f.basename}" was deleted.`); return; }
+      let kept = [];
+      try { await this.app.fileManager.processFrontMatter(f, (fm) => { kept = undoFields(fm, before, after); }); }
+      catch (e) { console.error('[a4-projects] undo failed', f.path, e); new Notice(`Could not undo the change to "${f.basename}".`); return; }
+      if (kept.length) new Notice(`Undone, but your later change to ${kept.join(', ')} on "${f.basename}" was kept.`);
+    };
+  }
+  async moveProject(path, status) {
+    const f = this.projectFile(path);
+    if (!f || !BOARD_COLUMNS.includes(status)) return false;
+    const today = this.engine.today();
+    // Ideas go through Promote (goal), Cold Storage through Restore.
+    const undo = await this.writeProject(f, (fm) => {
+      const s = statusOf(fm);
+      if (s === status || SHELVED_STATUSES.includes(s)) return false;
+      applyProjectStatus(fm, status, today);
+    });
+    if (!undo) return false;
+    this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, undo);
+    return true;
+  }
+  // Only from a board column (the cards that offer it).
+  // Re-checked after the dialog: a second dialog on a stored note only updates the why.
+  async coldStoreProject(path) {
+    const f = this.projectFile(path);
+    if (!f) return false;
+    const why = await this.ask(`Why are you storing "${f.basename}"?`, '');
+    if (why == null) return false;
+    const today = this.engine.today();
+    const undo = await this.writeProject(f, (fm) => {
+      const s = statusOf(fm);
+      if (!BOARD_COLUMNS.includes(s) && s !== 'cold-storage') return false;
+      applyColdStorage(fm, why, today);
+    });
+    if (!undo) return false;
+    this.toast.show(`Moved "${f.basename}" to Cold Storage`, undo);
+    return true;
+  }
+  async restoreProject(path) {
+    const f = this.projectFile(path);
+    if (!f) return false;
+    const today = this.engine.today();
+    let r;
+    const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'cold-storage') return false; r = applyRestore(fm, today); });
+    if (!undo) return false;
+    if (r.fellBack) new Notice(`"${f.basename}" had no earlier column saved, so it went to Backlog.`);
+    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, undo);
+    return true;
+  }
+  async promoteIdea(path) {
+    const f = this.projectFile(path);
+    if (!f || this.projectStatus(f) !== 'idea') return false;
+    let goal = null;
+    if (!hasGoalLink(this.engine.fm(f))) {
+      const g = await this.pickGoal(f.basename);
+      if (!g) return false;
+      goal = `[[${g.basename}]]`;
+    }
+    const today = this.engine.today();
+    const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'idea') return false; applyPromote(fm, goal, today); });
+    if (!undo) return false;
+    this.toast.show(`Promoted "${f.basename}" to a project`, undo);
+    return true;
+  }
+  // Cold Storage cards only (spec 10). Only this note, to the vault's own
+  // .trash folder whatever the trash setting; tasks, goal and links untouched.
+  async deleteProjectPermanently(path) {
+    const f = this.projectFile(path);
+    if (!f || this.projectStatus(f) !== 'cold-storage') return false;
+    const ok = await this.confirmAction('Delete permanently', `Delete "${f.basename}"? The project note goes to Obsidian's trash, so you can still get it back from there.`, 'Delete');
+    if (!ok || this.projectFile(f.path) !== f || this.projectStatus(f) !== 'cold-storage') return false;
+    try { await this.app.vault.trash(f, false); }
+    catch (e) { console.error('[a4-projects] delete failed', f.path, e); new Notice(`Could not delete "${f.basename}".`); return false; }
+    new Notice("Moved to Obsidian's trash. You can get it back from there.");
+    return true;
+  }
+  // Open goals (not achieved), A to Z, for Promote.
+  goalFiles() {
+    const root = this.app.vault.getAbstractFileByPath(GOALS_FOLDER);
+    const out = [];
+    if (root instanceof TFolder) for (const c of root.children) {
+      const fm = c instanceof TFile && c.extension === 'md' ? this.engine.fm(c) : null;
+      if (fm && fm.type === 'goal' && statusOf(fm) !== 'achieved') out.push(c);
+    }
+    return out.sort((a, b) => a.basename.localeCompare(b.basename));
+  }
+  pickGoal(name) {
+    const goals = this.goalFiles();
+    if (!goals.length) { new Notice('There are no open goals yet. Make the goal first, then promote this idea.'); return Promise.resolve(null); }
+    return new Promise((resolve) => new GoalPickModal(this.app, goals, name, resolve).open());
+  }
+  ask(question, value) { return new Promise((resolve) => new AskModal(this.app, question, value, resolve).open()); }
+  confirmAction(title, text, okLabel) { return new Promise((resolve) => new ConfirmModal(this.app, title, text, okLabel, resolve).open()); }
 }
 
 /* ========================================================================== *
@@ -3400,12 +3603,9 @@ class ProjectsView extends ItemView {
     sel.value = p.status;
     sel.addEventListener('change', async () => {
       const f = this.plugin.engine.file(p.path); if (!f) return;
-      const before = p.status; const v = sel.value;
-      try {
-        let endBefore;
-        await this.app.fileManager.processFrontMatter(f, (fm) => { endBefore = fm.end_date; applyProjectStatus(fm, v, today); });
-        this.plugin.toast.show(`Status: ${v}`, async () => { await this.app.fileManager.processFrontMatter(f, (fm) => { fm.status = before; if (endBefore == null) delete fm.end_date; else fm.end_date = endBefore; }); });
-      } catch (e) { console.error(e); new Notice('Could not change the status.'); }
+      const v = sel.value;
+      const undo = await this.plugin.writeProject(f, (fm) => { applyProjectStatus(fm, v, today); });
+      if (undo) this.plugin.toast.show(`Status: ${v}`, undo);
     });
     if (p.goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(p.goal)); a.addEventListener('click', () => this.openLink(p.goal, p.path)); }
     if (p.client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(p.client)); a.addEventListener('click', () => this.openLink(p.client, p.path)); }
@@ -3756,7 +3956,7 @@ class ProjectsView extends ItemView {
         host.empty();
         const q = find.value.trim().toLowerCase();
         for (const [sp, lab] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
-          const list = this.plugin.engine.collectProjects().filter((p) => p.sphere === sp && !CLOSED_STATUSES.includes(p.status) && p.status !== 'backlog' && (!q || p.name.toLowerCase().includes(q)))
+          const list = this.plugin.engine.collectProjects().filter((p) => p.sphere === sp && isOpenProject(p) && p.status !== 'backlog' && (!q || p.name.toLowerCase().includes(q)))
             .sort((a, b) => (a.status !== 'active') - (b.status !== 'active') || a.name.localeCompare(b.name));
           if (!list.length) continue;
           el(host, 'div', 'a4pj-grp', lab);
@@ -4198,8 +4398,8 @@ class TaskCardManager {
         host.empty();
         const q = find.value.trim().toLowerCase();
         for (const [sp, lab] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
-          const list = engine.collectProjects().filter((p) => p.sphere === sp && !CLOSED_STATUSES.includes(p.status) && (!q || p.name.toLowerCase().includes(q)))
-            .sort((a, b) => ((OPEN_ORDER[a.status] ?? 3) - (OPEN_ORDER[b.status] ?? 3)) || a.name.localeCompare(b.name));
+          const list = engine.collectProjects().filter((p) => p.sphere === sp && isOpenProject(p) && (!q || p.name.toLowerCase().includes(q)))
+            .sort((a, b) => ((OPEN_ORDER[a.status] ?? 5) - (OPEN_ORDER[b.status] ?? 5)) || a.name.localeCompare(b.name));
           if (!list.length) continue;
           el(host, 'div', 'a4pj-grp', lab);
           for (const p of list) { const b = el(host, 'button', 'a4pj-pop-q'); el(b, 'span', null, p.name); if (p.key === t.projectKey) el(b, 'span', 'a4pj-k', 'current'); else if (p.status !== 'active') el(b, 'span', 'a4pj-k', p.status); b.addEventListener('click', () => choose(p)); }

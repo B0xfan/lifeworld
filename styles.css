@@ -499,3 +499,6 @@ html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-rep svg { width: 12px; height: 12px; }
 html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-date { margin-left: 6px; font-size: 0.7em; color: var(--text-muted); white-space: nowrap; }
 html:not(#a4pj-guard) .a4pj-tl.is-done { opacity: 0.6; }
 html:not(#a4pj-guard) .a4pj-tl.is-done .a4pj-tl-title { color: var(--text-muted); text-decoration: line-through; }
+
+/* Board action dialogs (section 4) */
+.a4pj-ask-input { width: 100%; }
