@@ -42,6 +42,7 @@
 
 const obsidian = require('obsidian');
 const { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } = obsidian;
+const { dayOf } = require('../core/dates'); // the one shared copy of the date helpers
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
 // and the drawer closes after something opens, as the Files tab does.
@@ -564,8 +565,7 @@ const ROSTER = '06 AI Team/Agents/agent-index.md';
 // New canvas path: 00 Daily Scratchpad/YYYY-MM-DD_canvas.canvas, then
 // _canvas-1, _canvas-2... when the name is taken (the naming already in use).
 function canvasPath(date, exists) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const base = `${SCRATCHPAD}/${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_canvas`;
+  const base = `${SCRATCHPAD}/${dayOf(date)}_canvas`;
   let p = `${base}.canvas`;
   for (let i = 1; exists(p); i++) p = `${base}-${i}.canvas`;
   return p;

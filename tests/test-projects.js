@@ -63,8 +63,8 @@ function ok(cond, name, extra) { n++; if (!cond) { failed++; console.log(`FAIL [
 function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(b); ok(x === y, name, `got ${x} want ${y}`); }
 
 /* ---- 1. shared code ---------------------------------------------------------- */
-const SHARED = ['pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth',
-  'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn',
+// Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
+const SHARED = [
   'wikilinkTarget', 'wikilinkLabel', 'asList', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'halfOfTime', 'timeText', 'REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'sortByOrder', 'orderForInsert', 'applyMove', 'blockerLinks', 'blockerHolds', 'openBlockersOf', 'isSomeday', 'applySomeday'];
 function extract(src, name) {
   const m = new RegExp(`^(function ${name}\\(|const ${name} = )`, 'm').exec(src);

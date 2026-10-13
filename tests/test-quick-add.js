@@ -76,7 +76,9 @@ async function main() {
   // ReferenceError waiting for a phrase the tests didn't try).
   const used = [...new Set((B.pj.match(/(?<![\\.\w])[A-Za-z_][A-Za-z0-9_]*(?=\()/g) || []))].filter((x) => !['function', 'if', 'for', 'while', 'return', 'String', 'Number', 'RegExp', 'Array', 'Math', 'Date', 'Set', 'isNaN', 'exec', 'test', 'push', 'slice', 'replace', 'join', 'map', 'filter', 'split', 'trim', 'toLowerCase', 'toUpperCase', 'startsWith', 'includes', 'findIndex', 'indexOf', 'sort', 'cut', 'fn', 'ahead', 'padStart', 'every', 'source', 'flags', 'endsWith'].includes(x));
   for (const k of ['pj', 'pl']) {
-    const missing = used.filter((x) => !new RegExp(`^(?:function ${x}\\(|const ${x} = )`, 'm').test(src[k]));
+    // Updated in section 5: a name may also come from the shared core (src/core/dates.js).
+    const core = (/^const \{ ([^}]*) \} = require\('\.\.\/core\/dates'\);$/m.exec(src[k]) || [null, ''])[1].split(', ');
+    const missing = used.filter((x) => !new RegExp(`^(?:function ${x}\\(|const ${x} = )`, 'm').test(src[k]) && !core.includes(x));
     eq(missing, [], `${k}: every function the shared block calls is defined`);
   }
 
