@@ -781,11 +781,19 @@ function sameLayout(a, b) { return JSON.stringify(normalizeLayout(a)) === JSON.s
  * Mockup approved 2026-10-04 (03 WiP/2026-09-22-business-ideas/
  * mockup-calendar-picker.html). Scripts/sync-calendar.py writes every calendar
  * on the account into Calendar Events.md's `calendars` frontmatter list
- * (GL-002, amendment 2026-10-04); the choice is saved HERE, in this plugin's
- * data.json as calendars.selected (calendar ids), and the sync reads it and
+ * (GL-002, amendment 2026-10-04); the choice is saved HERE, in this part's
+ * settings as calendars.selected (calendar ids), and the sync reads it (told
+ * where by syncEnv) and
  * fetches only those. Ids are stable hashes, so a rename never loses a tick.
  */
 const CAL_GROUP_ORDER = ['My calendars', 'Shared', 'Subscribed', 'Other'];
+
+// The sync script's environment: where this part's settings file is, and the corner in it
+// (inside LifeWorld, one file holds every part's settings under its old id; built alone, the
+// file is this plugin's own and the script reads its top level when the corner is absent).
+function syncEnv(env, base, manifest) {
+  return { ...env, A4_ROOT: base, A4_TODAY_DATA_PATH: `${base}/${manifest.dir}/data.json`, A4_TODAY_DATA_KEY: manifest.id };
+}
 
 // Saved choice -> array of ids, or null when nothing has been saved yet.
 function normalizeCalSel(raw) {
@@ -860,7 +868,7 @@ const logic = {
   greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES,
-  normalizeCalSel, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
+  normalizeCalSel, syncEnv, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
 };
@@ -978,7 +986,7 @@ class A4TodayPlugin extends Plugin {
         const out = fs.openSync(logPath, 'a');
         const args = [path.join(base, SYNC_SCRIPT)];
         if (refresh) args.push('--refresh');
-        const child = cp.spawn(SYNC_PYTHON, args, { cwd: base, env: { ...process.env, A4_ROOT: base }, stdio: ['ignore', out, out] });
+        const child = cp.spawn(SYNC_PYTHON, args, { cwd: base, env: syncEnv(process.env, base, this.manifest), stdio: ['ignore', out, out] });
         const done = (ok) => { try { fs.closeSync(out); } catch { /* closed */ } resolve(ok); };
         child.on('error', (e) => { console.warn('[a4-today] calendar sync could not start', e); done(false); });
         child.on('exit', (code) => done(code === 0));

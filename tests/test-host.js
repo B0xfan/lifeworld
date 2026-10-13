@@ -3,7 +3,8 @@
 // Obsidian's plugin list, stops them all on unload. The fake Plugin below copies what Obsidian
 // 1.14.4 does (read from its app bundle 2026-10-13): load() awaits onload() then loads children;
 // addChild() loads a child only when the parent is loaded and not yet that child; addCommand()
-// prefixes the manifest id; loadData()/saveData() read and write <dir>/data.json.
+// prefixes the manifest id; loadData()/saveData() read and write <dir>/data.json, and loadData()
+// gives null for a missing file and undefined for one it cannot parse (it logs, never throws).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +12,9 @@ const Module = require('module');
 
 const ROOT = path.join(__dirname, '..');
 const disk = {}; // dir -> data.json contents (a string, as on disk)
+const files = {}; // any other file, by path
+const notices = [];
+let failCopy = false;
 const writes = []; // 'begin' / 'end' of each write, in order
 let writeDelay = () => 0;
 class Component {
@@ -26,10 +30,11 @@ class Plugin extends Component {
   constructor(app, manifest) { super(); this.app = app; this.manifest = manifest; }
   addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
   addSettingTab(tab) { this.app.tabs.push(tab); }
-  async loadData() { const s = disk[this.manifest.dir]; return s === undefined ? null : JSON.parse(s); }
+  async loadData() { const s = disk[this.manifest.dir]; if (s === undefined) return null; try { return JSON.parse(s); } catch { return undefined; } }
   async saveData(d) { const s = JSON.stringify(d); writes.push('begin'); await new Promise((r) => setTimeout(r, writeDelay())); disk[this.manifest.dir] = s; writes.push('end'); }
 }
-const fakeObsidian = new Proxy({ Plugin, Component }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
+class Notice { constructor(m) { notices.push(m); } }
+const fakeObsidian = new Proxy({ Plugin, Component, Notice }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
 
@@ -42,11 +47,12 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); n++; };
 // The parts' real onload needs a whole Obsidian; here each part's start is a small stand-in that
 // uses only what LifeWorld changes (start order, its data, a command, a settings tab).
 const log = [];
+const started = {}; // the newest instance of each part
 let failing = null;
 for (const id of IDS) {
   const P = LW.parts[id].prototype;
   P.onload = async function () {
-    log.push(`start ${id}`);
+    log.push(`start ${id}`); started[id] = this;
     if (failing === id) throw new Error('planted start failure');
     await new Promise((r) => setTimeout(r, 5));
     this.addCommand({ id: 'open', name: 'Open' });
@@ -57,10 +63,15 @@ for (const id of IDS) {
   P.onunload = function () { log.push(`stop ${id}`); };
   P.onExternalSettingsChange = async function () { this.saved = await this.loadData(); log.push(`external ${id}`); };
 }
-const newApp = () => ({ commands: {}, tabs: [], workspace: {} }); // no app.plugins: lookups must not need it
+const DATA = /\/data\.json$/;
+const adapter = {
+  async read(p) { const s = DATA.test(p) ? disk[p.replace(DATA, '')] : files[p]; if (s === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return s; },
+  async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
+};
+const newApp = () => ({ commands: {}, tabs: [], workspace: {}, vault: { configDir: '.obsidian', adapter } }); // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
-  if (data !== undefined) disk[dir] = JSON.stringify(data);
+  if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
   const app = newApp();
   const host = new LW(app, { id: 'lifeworld', name: 'LifeWorld', dir });
   await host.load();
@@ -141,8 +152,66 @@ const start = async (data) => {
   console.error = ce; failing = null;
   eq(log.filter((x) => x.startsWith('started')), ['started a4-projects', 'started a4-planner', 'started a4-sidebar'], 'the others still start');
   ok(errs.length === 1 && /A4 Today did not start/.test(errs[0]), 'the failure is logged once, naming the part');
-  ok(second.host._children.length === 4, 'the failed part is still stopped with LifeWorld');
+  eq(second.host._children.map((p) => p.manifest.id), ['a4-projects', 'a4-planner', 'a4-sidebar'], 'the failed part is left out');
+  ok(log.includes('stop a4-today') && second.parts['a4-planner'].projectsPlugin() === second.parts['a4-projects'], 'the failed part is stopped at once; the others still find each other');
+  ok(!Object.keys(second.app.commands).some((c) => c.startsWith('a4-today:')), 'the failed part leaves no command behind');
+  started['a4-today'].look = { accent: 'green' };
+  ok(LW.parts['a4-projects'].cardAccent.cardAccentId(second.app) !== 'green', 'Projects does not find the failed Today (it is off, as a failed plugin was)');
   second.host.unload();
+
+  // A damaged settings file: copied aside first, a notice, defaults; the original is not written
+  // over before the copy exists.
+  const quiet = (fn) => async (...a) => { const w = console.warn, e = console.error; console.warn = console.error = () => {}; try { return await fn(...a); } finally { console.warn = w; console.error = e; } };
+  const startQuiet = quiet(start);
+  notices.length = 0;
+  const bad = '{"a4-today": {"layout": ["weather"]}, "a4-sid';
+  const dmg = await startQuiet(bad);
+  const copies = Object.keys(files).filter((f) => f.startsWith(`${dmg.dir}/data.damaged-`));
+  ok(copies.length === 1 && /data\.damaged-\d{8}-\d{6}\.json$/.test(copies[0]) && files[copies[0]] === bad, 'damaged file copied aside, byte for byte, with a time stamp');
+  ok(notices.length === 1 && notices[0].includes(copies[0]), 'one notice, naming the copy');
+  eq(IDS.map((id) => dmg.parts[id].saved), [null, null, null, null], 'every part starts on defaults');
+  eq(disk[dmg.dir], bad, 'the original is not written over at start');
+  await dmg.parts['a4-today'].saveData({ layout: [] });
+  eq(JSON.parse(disk[dmg.dir]), { 'a4-today': { layout: [] } }, 'after the copy exists, saving works again');
+  dmg.host.unload();
+
+  notices.length = 0; failCopy = true;
+  const stuck = await startQuiet(bad);
+  ok(notices.length === 1 && /could not be copied/.test(notices[0]), 'copy failed: a notice says nothing will be saved');
+  await stuck.parts['a4-today'].saveData({ layout: [] });
+  eq(disk[stuck.dir], bad, 'copy failed: the damaged original is never written over');
+  failCopy = false; stuck.host.unload();
+
+  // Settings changed outside to a damaged file (a half-synced copy): ignored, the current settings stay.
+  const live = await start({ 'a4-sidebar': { sort: 'az' } });
+  log.length = 0; disk[live.dir] = bad;
+  await quiet(() => live.host.onExternalSettingsChange())();
+  eq(log, [], 'no part hears a damaged outside change');
+  eq(await live.parts['a4-sidebar'].loadData(), { sort: 'az' }, 'the current settings stay');
+  live.host.unload();
+
+  // Carried over from the old plugins: once per part with no corner, read only, without a script.
+  const OLD = (id) => `.obsidian/plugins/${id}`;
+  disk[OLD('a4-today')] = JSON.stringify({ layout: ['calendar'], calendars: { selected: ['x'] } });
+  disk[OLD('a4-planner')] = '{"folded": [';
+  disk[OLD('a4-sidebar')] = JSON.stringify({ sort: 'old' });
+  const oldFiles = { ...disk };
+  const warns = []; const cw = console.warn; console.warn = (...a) => warns.push(a.join(' '));
+  const mig = await start({ 'a4-sidebar': { sort: 'az' } });
+  console.warn = cw;
+  eq(mig.parts['a4-today'].saved, { layout: ['calendar'], calendars: { selected: ['x'] } }, 'present old file: Today takes it');
+  eq(mig.parts['a4-planner'].saved, null, 'malformed old file: the Planner starts on defaults');
+  ok(warns.length === 1 && warns[0].includes('a4-planner'), 'malformed old file: one warning naming it');
+  eq(mig.parts['a4-projects'].saved, null, 'missing old file: Projects starts on defaults');
+  eq(mig.parts['a4-sidebar'].saved, { sort: 'az' }, 'a corner already there wins over the old file');
+  eq(JSON.parse(disk[mig.dir]), { 'a4-sidebar': { sort: 'az' }, 'a4-today': { layout: ['calendar'], calendars: { selected: ['x'] } } }, 'what was taken is saved at once');
+  for (const id of ['a4-today', 'a4-planner', 'a4-sidebar']) eq(disk[OLD(id)], oldFiles[OLD(id)], `old ${id} file left as it was`);
+  mig.host.unload();
+  disk[OLD('a4-today')] = JSON.stringify({ layout: ['changed later'] });
+  const again = await startQuiet(JSON.parse(disk[mig.dir]));
+  eq(again.parts['a4-today'].saved, { layout: ['calendar'], calendars: { selected: ['x'] } }, 'second start: the old file is not read again');
+  again.host.unload();
+  for (const id of IDS) delete disk[OLD(id)];
 
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

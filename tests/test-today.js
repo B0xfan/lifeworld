@@ -425,6 +425,9 @@ const ev = L.eventsWindow([
   { date: '2026-10-11', all_day: true, summary: 'too far' },
 ], '2026-10-03', 7);
 eq(ev.map((e) => e.summary), ['All day', 'Market', 'edge'], 'calendar window today..+7, all-day first');
+// The calendar sync is told where Today's settings live: inside LifeWorld, its corner of the one file.
+eq(L.syncEnv({ PATH: '/bin' }, '/v', { id: 'a4-today', dir: '.obsidian/plugins/lifeworld' }), { PATH: '/bin', A4_ROOT: '/v', A4_TODAY_DATA_PATH: '/v/.obsidian/plugins/lifeworld/data.json', A4_TODAY_DATA_KEY: 'a4-today' }, 'calendar sync: settings file and corner passed to the script');
+ok(/spawn\(SYNC_PYTHON, args, \{[^}]*env: syncEnv\(process\.env, base, this\.manifest\)/.test(require('fs').readFileSync(SRC, 'utf8')), 'calendar sync is started with that environment');
 eq(L.eventDayLabel('2026-10-05', '2026-10-03'), 'Mon 5', 'event day label');
 eq(L.longDate('2026-10-03'), 'Saturday, October 3', 'long date');
 const je = L.journalExcerpt('# Head\n\nWent to [[Corner Shop]] and [[04 Inner World/My Life/Guide/Swim Club|Swim Club]]. **Good** day.', 260);
