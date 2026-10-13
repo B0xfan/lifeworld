@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
-const MAIN = path.join(__dirname, '..', 'main.js');
+const MAIN = path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js');
 const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };

@@ -24,7 +24,7 @@ class Menu { constructor() { this.items = []; menus.push(this); } addItem(f) { c
 const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder: class {}, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {}, Menu };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
-const Plugin = require(path.join(__dirname, '..', 'main.js'));
+const Plugin = require(path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js'));
 const L = Plugin.logic;
 const V = Plugin.ProjectsView.prototype;
 const clone = (o) => JSON.parse(JSON.stringify(o));

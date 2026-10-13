@@ -2,8 +2,8 @@
 
 An Obsidian plugin for projects, tasks and planning. In development, not yet released.
 
-The code here is the Projects part (currently named "A4 Projects" in its manifest), plus the Today, Planner and Sidebar parts in `src/`, each still its own plugin until they are joined into one.
+LifeWorld is one plugin with four parts: Projects (with the task engine), Today, Planner and Sidebar. `src/main.js` starts them; each part's code is in `src/<part>/`, the shared helpers in `src/core/`.
 
-Source lives in `src/`; `npm run build` bundles it with esbuild into `main.js` at the repo root, and Today, Planner and Sidebar into `dist/<id>/` (none of it committed). Optional owner-only values (`userName`, `syncPython`) go in `local.json`, which git ignores.
+`npm run build` bundles `src/` with esbuild into `main.js` and `styles.css` at the repo root (with `manifest.json`, the plugin as Obsidian loads it), and each part alone into `dist/<id>/` for the tests (built files are never committed). Optional owner-only values (`userName`, `syncPython`) go in `local.json`, which git ignores.
 
 Tests: `npm test` (builds, then runs every `tests/test-*.js`). They run on every push and pull request. A few checks read a real vault and run only when `A4_VAULT=<vault folder>` is set.

@@ -14,6 +14,7 @@ const EXPORTS = {
   lists: ['asList'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['TASKS_FOLDER', 'ARCHIVE_FOLDER', 'DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
+  parts: ['PARTS', 'partOf'],
   quickadd: ['DOW_NAMES', 'DOW_CODES', 'MON_NAMES', 'dowIndex', 'nextDow', 'validDay', 'parseDayWord', 'DAY_RE', 'repeatRule', 'REPEAT_RE', 'understand', 'parseClock', 'whenValue', 'firstOccurrence', 'DOW_LONG', 'joinWords', 'ordinal', 'repeatWords', 'shortDay', 'halfWord', 'quickAddChips', 'quickAddPlan'],
 };
 let n = 0;

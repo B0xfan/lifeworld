@@ -3,7 +3,7 @@
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const PART = { 'a4-projects': 'projects', 'a4-today': 'today', 'a4-planner': 'planner', 'a4-sidebar': 'sidebar' };
-exports.built = (id) => (id === 'a4-projects' ? path.join(ROOT, 'main.js') : path.join(ROOT, 'dist', id, 'main.js'));
+exports.built = (id) => path.join(ROOT, 'dist', id, 'main.js');
 exports.source = (id) => path.join(ROOT, 'src', PART[id], 'main.js');
 // Notes the vault-reading checks read: the owner's vault with A4_VAULT, else the frozen,
 // made-up copy in tests/fixtures/vault (so those checks also run on GitHub).

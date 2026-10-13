@@ -43,6 +43,7 @@
 const obsidian = require('obsidian');
 const { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } = obsidian;
 const { dayOf } = require('../core/dates'); // the one shared copy of the date helpers
+const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
 // and the drawer closes after something opens, as the Files tab does.
@@ -838,7 +839,7 @@ class A4SidebarView extends ItemView {
     const f = this.folder(`${MY_LIFE}/Projects`);
     if (!f) return [];
     const list = [];
-    const isOpen = openRuleFrom(this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-projects']);
+    const isOpen = openRuleFrom(partOf(this.app, 'a4-projects'));
     for (const c of f.children) {
       if (!(c instanceof TFile) || c.extension !== 'md') continue;
       const fm = (this.app.metadataCache.getFileCache(c) || {}).frontmatter;
@@ -861,7 +862,7 @@ class A4SidebarView extends ItemView {
       // overview at that list, and a project opens its project page. The
       // arrow still folds the list; Cmd/Ctrl-click a project opens its note.
       const pjCmd = v.kind === 'unsorted' ? null : `a4-projects:open-${v.kind}`;
-      const pj = pjCmd && this.hasCommand(pjCmd) ? this.app.plugins.plugins['a4-projects'] : null;
+      const pj = pjCmd && this.hasCommand(pjCmd) ? partOf(this.app, 'a4-projects') : null;
       this.folderRow(box, f, {
         cls: 'a4sb-life', label: name, icon: itemIcon(name), depth: 0, count: openProjectCount(members),
         landing: pj ? { kind: 'command', id: pjCmd } : { kind: 'toggle' }, attrs: { 'data-life': name, 'data-virtual': v.kind },

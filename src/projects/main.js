@@ -133,6 +133,7 @@ const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
 const { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } = require('../core/quickadd');
 const { TASKS_FOLDER, ARCHIVE_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } = require('../core/tasks');
+const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: configuration
@@ -2939,7 +2940,7 @@ const CARD_ACCENTS = {
   amber: ['#8a5a00', '#efb54a'],
 };
 function cardAccentId(app) {
-  const td = app && app.plugins && app.plugins.plugins ? app.plugins.plugins['a4-today'] : null;
+  const td = partOf(app, 'a4-today');
   const id = td && td.look && td.look.accent;
   return typeof id === 'string' && (id === 'accent' || CARD_ACCENTS[id]) ? id : 'blue';
 }

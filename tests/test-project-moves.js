@@ -14,7 +14,7 @@ const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Mod
   getFrontMatterInfo: (t) => { const m = /^---\n([\s\S]*?)\n---\n/.exec(t); return { exists: !!m, frontmatter: m ? m[1] : '' }; }, parseYaml: JSON.parse };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
-const Plugin = require(path.join(__dirname, '..', 'main.js'));
+const Plugin = require(path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js'));
 const L = Plugin.logic;
 
 const TODAY = '2026-10-13';

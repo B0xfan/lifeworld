@@ -112,7 +112,8 @@ ok(!/\u2014/.test(S.nameTakenMessage('a.md', 'b')), 'message: no em dash');
 // Static: the sidebar uses the count and A4 Projects' rule, and keeps no copy of the closed statuses.
 const src = fs.readFileSync(source('a4-sidebar'), 'utf8');
 ok(/count: openProjectCount\(members\)/.test(src) && !/count: members\.length/.test(src), 'sidebar: the Work / Personal item shows the open count');
-ok(/openRuleFrom\(this\.app\.plugins[^\n]*\['a4-projects'\]\)/.test(src), "sidebar: the rule comes from A4 Projects");
+// Updated in phase 2 section 1: the parts find each other through LifeWorld (core/parts.js).
+ok(/openRuleFrom\(partOf\(this\.app, 'a4-projects'\)\)/.test(src), "sidebar: the rule comes from A4 Projects");
 ok(!/'failed'|'dropped'|CLOSED_STATUSES/.test(src), 'sidebar: no copy of the closed statuses');
 ok(/const members = openProjects\(this\.projectsOf\(v\.kind\)\)/.test(src), 'sidebar: the folded-out list uses openProjects');
 ok(/if \(!x \|\| !dropAccepts\(x\.p\)\) return;/.test(src) && /if \(x\.p\.ok\) row\.addClass\('is-drop'\)/.test(src), 'sidebar: dragover uses dropAccepts, highlights only a real move');

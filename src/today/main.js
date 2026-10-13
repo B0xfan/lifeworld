@@ -123,6 +123,7 @@ const { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRR
 const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
 const { TASKS_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
+const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
 
 /* ---- tasks ---------------------------------------------------------------- */
 
@@ -272,7 +273,7 @@ async function openProjectPage(app, ref, e, sourcePath) {
   if (ref == null || ref === '') return false;
   const ob = require('obsidian');
   const newTab = !!(e && ob.Keymap && ob.Keymap.isModEvent(e));
-  const pj = app.plugins && app.plugins.plugins ? app.plugins.plugins['a4-projects'] : null;
+  const pj = partOf(app, 'a4-projects');
   if (pj && typeof pj.openProjectPage === 'function') {
     try { if (await pj.openProjectPage(ref, { newTab })) return 'page'; } catch (err) { console.error('[a4] opening the project page failed', err); }
   }
@@ -1058,7 +1059,7 @@ class A4TodayPlugin extends Plugin {
 
   // The Find window lives in A4 Projects (its search, its engine): one window for Today, the Planner and the command.
   openFind() {
-    const pj = this.app.plugins && this.app.plugins.plugins ? this.app.plugins.plugins['a4-projects'] : null;
+    const pj = partOf(this.app, 'a4-projects');
     if (pj && typeof pj.openFind === 'function') { pj.openFind(); return true; }
     new Notice('Find needs A4 Projects turned on.');
     return false;
@@ -1119,7 +1120,7 @@ class A4TodayPlugin extends Plugin {
 
   /* ---- tasks (A4 Projects' task engine) -------------------------------- */
 
-  projectsPlugin() { const p = this.app.plugins && this.app.plugins.plugins; return p ? p['a4-projects'] : null; }
+  projectsPlugin() { return partOf(this.app, 'a4-projects'); }
 
   // A4 Projects' task engine, when it is the chosen task source (Settings › A4 Projects).
   tasksApi() {

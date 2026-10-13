@@ -5,6 +5,7 @@ data.json
 !tests/fixtures/vault/.obsidian/plugins/*/data.json
 # built by npm run build, never committed (directory rule)
 /main.js
+/styles.css
 /dist/
 # owner-only build values (name, local paths); never committed
 /local.json

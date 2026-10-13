@@ -1,6 +1,5 @@
-// Bundles src/ with esbuild. Projects builds to the repo-root main.js (this repo's plugin);
-// Today, Planner and Sidebar build to dist/<plugin id>/ as complete plugin folders (phase 1:
-// four plugins, same behaviour; phase 2 makes them one).
+// Bundles src/ with esbuild: the one LifeWorld plugin at the repo root (phase 2 section 1), and
+// each of its four parts alone in dist/<old plugin id>/ for the tests.
 import esbuild from 'esbuild';
 import { builtinModules } from 'node:module';
 import fs from 'node:fs';
@@ -23,18 +22,21 @@ const common = {
   logLevel: 'warning',
 };
 
-await esbuild.build({
-  ...common,
-  entryPoints: ['src/projects/main.js'],
-  outfile: 'main.js',
-  // esbuild drops ordinary comments; the third-party credit must stay in the shipped file.
-  banner: { js: '/* LifeWorld. Contains code ported from TaskNotes (https://github.com/callumalpass/tasknotes) and @tasknotes/model,\n * Copyright 2025 Callum Alpass, MIT License. Full notice: THIRD_PARTY_NOTICES.md. */' },
-});
+// esbuild drops ordinary comments; the third-party credit must stay in every built file with Projects in it.
+const banner = { js: '/* LifeWorld. Contains code ported from TaskNotes (https://github.com/callumalpass/tasknotes) and @tasknotes/model,\n * Copyright 2025 Callum Alpass, MIT License. Full notice: THIRD_PARTY_NOTICES.md. */' };
+const PARTS = ['projects', 'today', 'planner', 'sidebar'];
 
-for (const part of ['today', 'planner', 'sidebar']) {
+// The one plugin Obsidian loads: repo-root main.js, styles.css (the four parts' styles in start
+// order) and manifest.json.
+await esbuild.build({ ...common, entryPoints: ['src/main.js'], outfile: 'main.js', banner });
+fs.writeFileSync('styles.css', PARTS.map((p) => fs.readFileSync(`src/${p}/styles.css`, 'utf8')).join('\n'));
+
+// Each part also built alone to dist/a4-<part>/, for the moved test suites (section 8 points
+// them at the one file).
+for (const part of PARTS) {
   const out = `dist/a4-${part}`;
   fs.rmSync(out, { recursive: true, force: true });
-  await esbuild.build({ ...common, entryPoints: [`src/${part}/main.js`], outfile: `${out}/main.js` });
+  await esbuild.build({ ...common, entryPoints: [`src/${part}/main.js`], outfile: `${out}/main.js`, ...(part === 'projects' ? { banner } : {}) });
   for (const f of ['manifest.json', 'styles.css']) fs.copyFileSync(`src/${part}/${f}`, `${out}/${f}`);
   if (fs.existsSync(`src/${part}/fonts`)) fs.cpSync(`src/${part}/fonts`, `${out}/fonts`, { recursive: true });
 }
