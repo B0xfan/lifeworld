@@ -26,10 +26,10 @@ const common = {
 const banner = { js: '/* LifeWorld. Contains code ported from TaskNotes (https://github.com/callumalpass/tasknotes) and @tasknotes/model,\n * Copyright 2025 Callum Alpass, MIT License. Full notice: THIRD_PARTY_NOTICES.md. */' };
 const PARTS = ['projects', 'today', 'planner', 'sidebar'];
 
-// The one plugin Obsidian loads: repo-root main.js, styles.css (the four parts' styles in start
-// order) and manifest.json.
+// The one plugin Obsidian loads: repo-root main.js, styles.css (LifeWorld's own, then the four
+// parts' styles in start order) and manifest.json.
 await esbuild.build({ ...common, entryPoints: ['src/main.js'], outfile: 'main.js', banner });
-fs.writeFileSync('styles.css', PARTS.map((p) => fs.readFileSync(`src/${p}/styles.css`, 'utf8')).join('\n'));
+fs.writeFileSync('styles.css', ['src', ...PARTS.map((p) => `src/${p}`)].map((d) => fs.readFileSync(`${d}/styles.css`, 'utf8')).join('\n'));
 
 // Each part also built alone to dist/a4-<part>/, for the moved test suites (section 8 points
 // them at the one file).

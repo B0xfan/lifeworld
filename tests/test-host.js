@@ -29,12 +29,24 @@ class Component {
 class Plugin extends Component {
   constructor(app, manifest) { super(); this.app = app; this.manifest = manifest; }
   addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
-  addSettingTab(tab) { this.app.tabs.push(tab); }
+  registerView(type) { this.app.views.push(type); }
+  addSettingTab(tab) { this.settingTab = tab; this.app.tabs.push(tab); }
+  removeChild(c) { const i = this._children.indexOf(c); if (i !== -1) { this._children.splice(i, 1); c.unload(); } return c; }
   async loadData() { const s = disk[this.manifest.dir]; if (s === undefined) return null; try { return JSON.parse(s); } catch { return undefined; } }
   async saveData(d) { const s = JSON.stringify(d); writes.push('begin'); await new Promise((r) => setTimeout(r, writeDelay())); disk[this.manifest.dir] = s; writes.push('end'); }
 }
 class Notice { constructor(m) { notices.push(m); } }
-const fakeObsidian = new Proxy({ Plugin, Component, Notice }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
+// Settings page stand-ins: a Setting records what it shows; an element records what is put in it.
+const fakeEl = () => ({ kids: [], cls: [], empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, createDiv() { const d = fakeEl(); this.kids.push(d); return d; } });
+class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = fakeEl(); } }
+class Setting {
+  constructor(el) { this.settingEl = fakeEl(); this.rec = {}; el.kids.push(this); }
+  setName(v) { this.rec.name = v; return this; }
+  setDesc(v) { this.rec.desc = v; return this; }
+  setHeading() { this.rec.heading = true; return this; }
+  addToggle(cb) { const r = this.rec; const t = { setValue(v) { r.on = v; return t; }, setDisabled(v) { r.disabled = v; return t; }, onChange(f) { r.change = f; return t; } }; cb(t); return this; }
+}
+const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
 
@@ -56,7 +68,8 @@ for (const id of IDS) {
     if (failing === id) throw new Error('planted start failure');
     await new Promise((r) => setTimeout(r, 5));
     this.addCommand({ id: 'open', name: 'Open' });
-    this.addSettingTab({ part: id, containerEl: { isConnected: false }, display() { log.push(`redraw ${id}`); } });
+    this.registerView(`${id}-view`, () => null);
+    this.addSettingTab({ part: id, containerEl: { isConnected: false }, display() { log.push(`redraw ${id}`); this.drawnIn = this.containerEl; }, hide() { log.push(`hide ${id}`); } });
     this.saved = await this.loadData();
     log.push(`started ${id}`);
   };
@@ -68,7 +81,7 @@ const adapter = {
   async read(p) { const s = DATA.test(p) ? disk[p.replace(DATA, '')] : files[p]; if (s === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return s; },
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
-const newApp = () => ({ commands: {}, tabs: [], workspace: {}, vault: { configDir: '.obsidian', adapter } }); // no app.plugins: lookups must not need it
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -88,7 +101,7 @@ const start = async (data) => {
   const ver = (v) => v.split('.').map(Number).reduce((a, x) => a * 1000 + x, 0);
   for (const id of IDS) ok(ver(man.minAppVersion) >= ver(JSON.parse(fs.readFileSync(path.join(ROOT, 'src', id.slice(3), 'manifest.json'), 'utf8')).minAppVersion), `minAppVersion covers ${id}`);
   // Styles: the four parts' styles, in start order.
-  eq(fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8'), IDS.map((id) => fs.readFileSync(path.join(ROOT, 'src', id.slice(3), 'styles.css'), 'utf8')).join('\n'), 'styles.css is the four parts in start order');
+  eq(fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8'), ['src', ...IDS.map((id) => path.join('src', id.slice(3)))].map((d) => fs.readFileSync(path.join(ROOT, d, 'styles.css'), 'utf8')).join('\n'), "styles.css is LifeWorld's own, then the four parts in start order");
 
   // Start: in order, one after the other, each under its old id, in LifeWorld's folder.
   const { app, host, parts, dir } = await start({ 'a4-today': { layout: ['weather'] }, 'a4-sidebar': { sort: 'az' } });
@@ -96,7 +109,8 @@ const start = async (data) => {
   eq(Object.keys(parts), IDS, 'four parts, each under its old id');
   for (const id of IDS) eq(parts[id].manifest.dir, dir, `${id} sits in LifeWorld's folder`);
   eq(Object.keys(app.commands).sort(), IDS.map((id) => `${id}:open`).sort(), 'commands keep their old ids, no clash between parts');
-  eq(app.tabs.map((t) => t.part), IDS, 'each part keeps its settings page');
+  ok(app.tabs.length === 1 && app.tabs[0] === host.settingTab && app.tabs[0].plugin === host, 'one settings page, LifeWorld\'s; the parts add none of their own');
+  eq(Object.keys(host.tabs), IDS, 'each part\'s own settings are kept for that page');
 
   // Settings: each part reads its own corner, as its own copy; a part with none gets null, as before.
   eq(parts['a4-today'].saved, { layout: ['weather'] }, 'Today reads its corner');
@@ -132,7 +146,7 @@ const start = async (data) => {
   // Settings changed outside (Sync): only the part whose corner changed hears it, with the new data,
   // and its settings page is redrawn when open.
   log.length = 0;
-  app.tabs.find((t) => t.part === 'a4-sidebar').containerEl.isConnected = true;
+  host.tabs['a4-sidebar'].containerEl.isConnected = true;
   disk[dir] = JSON.stringify({ ...file, 'a4-sidebar': { sort: 'za' } });
   await host.onExternalSettingsChange();
   eq(log, ['external a4-sidebar', 'redraw a4-sidebar'], 'only the Sidebar hears it, its open page redrawn');
@@ -141,7 +155,8 @@ const start = async (data) => {
   // Stop: every part stops, its commands go, and the parts no longer find each other.
   log.length = 0;
   host.unload();
-  eq(log.sort(), IDS.map((id) => `stop ${id}`).sort(), 'every part stops with LifeWorld');
+  eq(log.filter((x) => x.startsWith('stop')).sort(), IDS.map((id) => `stop ${id}`).sort(), 'every part stops with LifeWorld');
+  eq(app.closed, [], 'turning LifeWorld off leaves open tabs alone');
   eq(Object.keys(app.commands), [], 'their commands are gone');
   eq(parts['a4-today'].projectsPlugin(), null, 'after stopping, Today no longer finds Projects');
 
@@ -158,6 +173,76 @@ const start = async (data) => {
   started['a4-today'].look = { accent: 'green' };
   ok(LW.parts['a4-projects'].cardAccent.cardAccentId(second.app) !== 'green', 'Projects does not find the failed Today (it is off, as a failed plugin was)');
   second.host.unload();
+
+  // Section 2: one settings page, the Parts switches.
+  const draw = (h) => { h.settingTab.display(); return h.settingTab.containerEl.kids.map((k) => (k.rec ? k.rec : 'section')); };
+  const rows = (h) => draw(h).filter((r) => r !== 'section' && !r.heading);
+  const heads = (h) => draw(h).filter((r) => r.heading).map((r) => r.name);
+  const cmds = (a) => Object.keys(a.commands).map((c) => c.split(':')[0]).sort();
+  const pg = await start({ 'a4-today': { layout: ['weather'] } });
+  eq(rows(pg.host).map((r) => [r.name, r.desc, r.on, !!r.disabled]), [
+    ['Today page', 'Your day at a glance', true, false],
+    ['Planner', 'Week and day board, drag tasks onto mornings and afternoons', true, false],
+    ['Projects and tasks', 'The task list everything shares. Today and the Planner need it.', true, false],
+    ['Sidebar', "The LifeWorld panel on the left. Off: Obsidian's normal file list.", true, false],
+  ], 'Parts: the four switches as drawn, all on for a setup that never switched one');
+  eq(heads(pg.host), ['Parts', 'Tasks', 'Today page', 'Sidebar'], 'then each part\'s own settings under the mockup\'s heading, in its order');
+  const secs = pg.host.settingTab.containerEl.kids.filter((k) => !k.rec);
+  ok(secs.length === 3 && secs.every((d, i) => pg.host.tabs[['a4-projects', 'a4-today', 'a4-sidebar'][i]].drawnIn === d), 'each part draws its own settings into its section');
+  ok(pg.host.settingTab.containerEl.cls.includes('lw-settings'), 'the page carries LifeWorld\'s class');
+
+  // Planner off: not running, no command, its choice saved; the others untouched.
+  log.length = 0;
+  await draw(pg.host).find((r) => r.name === 'Planner').change(false);
+  eq(log.filter((x) => x.startsWith('st')), ['stop a4-planner'], 'Planner off: only the Planner stops');
+  eq(cmds(pg.app), ['a4-projects', 'a4-sidebar', 'a4-today'], 'its command is gone');
+  eq(pg.app.closed, ['a4-planner-view'], 'its open tabs are closed');
+  eq(JSON.parse(disk[pg.dir]).lifeworld, { parts: { 'a4-planner': false } }, 'the switch is saved in LifeWorld\'s corner');
+  eq(JSON.parse(disk[pg.dir])['a4-today'], { layout: ['weather'] }, 'the parts\' own settings are untouched');
+
+  // Projects off: Today and the Planner go with it, dimmed and not switchable; Projects on brings them back.
+  log.length = 0;
+  await pg.host.setPart('a4-projects', false);
+  eq(log.filter((x) => x.startsWith('stop')), ['stop a4-today', 'stop a4-projects'], 'Projects off: Today stops first, then Projects');
+  ok(log.includes('hide a4-today') && log.includes('hide a4-projects'), 'a stopped part\'s settings let go of what they listen to');
+  eq(cmds(pg.app), ['a4-sidebar'], 'only the Sidebar is left');
+  eq(pg.app.closed.slice(1), ['a4-today-view', 'a4-projects-view'], 'their open tabs are closed');
+  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', false, true], ['Planner', false, true], ['Projects and tasks', false, false], ['Sidebar', true, false]], 'Today and the Planner shown off and not switchable');
+  const dims = pg.host.settingTab.containerEl.kids.filter((k) => k.rec && k.settingEl.cls.includes('lw-dim')).map((k) => k.rec.name);
+  eq(dims, ['Today page', 'Planner'], 'their rows dimmed, as drawn');
+  eq(heads(pg.host), ['Parts', 'Sidebar'], 'only the running part\'s settings are shown');
+  log.length = 0;
+  await pg.host.setPart('a4-projects', true);
+  eq(log.filter((x) => x.startsWith('started')), ['started a4-projects', 'started a4-today', 'started a4-planner'], 'Projects on: Projects starts first, Today and the Planner come back');
+  eq(cmds(pg.app), IDS.slice().sort(), 'all four commands back');
+  eq(pg.host.running['a4-today'].saved, { layout: ['weather'] }, 'a part started again reads its saved settings');
+  eq(JSON.parse(disk[pg.dir]).lifeworld.parts, { 'a4-planner': true, 'a4-projects': true, 'a4-today': true }, 'saved');
+
+  // Two switches at once: one change at a time, never two copies of a part.
+  log.length = 0;
+  await pg.host.setPart('a4-sidebar', false);
+  await Promise.all([pg.host.setPart('a4-sidebar', true), pg.host.setPart('a4-sidebar', true)]);
+  eq(log.filter((x) => /^start(ed)? a4-sidebar/.test(x)), ['start a4-sidebar', 'started a4-sidebar'], 'switched on twice at once: the Sidebar starts once');
+  ok(pg.app.closed.includes('reveal files'), "Sidebar off: Obsidian's file list brought forward");
+  eq(pg.host._children.filter((c) => c.manifest.id === 'a4-sidebar').length, 1, 'one Sidebar');
+  pg.host.unload();
+
+  // Next start: a part switched off is not started; Today or the Planner on without Projects stay off.
+  log.length = 0;
+  const off = await start({ lifeworld: { parts: { 'a4-sidebar': false } } });
+  ok(!log.includes('start a4-sidebar') && !('a4-sidebar' in off.host.running), 'switched off: not started at all');
+  eq(cmds(off.app), ['a4-planner', 'a4-projects', 'a4-today'], 'no command from it');
+  ok(!off.host.tabs['a4-sidebar'] && heads(off.host).indexOf('Sidebar') === -1, 'no settings from it');
+  off.host.unload();
+  log.length = 0;
+  const odd = await start({ lifeworld: { parts: { 'a4-projects': false } } }); // edited by hand
+  eq(log.filter((x) => x.startsWith('started')), ['started a4-sidebar'], 'Projects off in the file: Today and the Planner do not start either');
+
+  // Switched on the phone: followed here.
+  disk[odd.dir] = JSON.stringify({ lifeworld: { parts: { 'a4-projects': true, 'a4-today': true, 'a4-planner': false } } });
+  await odd.host.onExternalSettingsChange();
+  eq(Object.keys(odd.host.running).sort(), ['a4-projects', 'a4-sidebar', 'a4-today'], 'switches changed outside: parts started and stopped to match');
+  odd.host.unload();
 
   // A damaged settings file: copied aside first, a notice, defaults; the original is not written
   // over before the copy exists.

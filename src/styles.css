@@ -1,0 +1,2 @@
+/* LifeWorld's own settings page (Settings › Parts): a part that cannot be on without Projects is dimmed, as drawn. */
+.lw-settings .lw-dim { opacity: .45; }
