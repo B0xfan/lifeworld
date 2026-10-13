@@ -524,7 +524,7 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-areas button { padding: 6px 12px; border:
 html:not(#a4pj-guard) .a4pj-root .a4pj-areas button:hover { background: var(--pj-bg3); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-areas button.is-on { border-color: var(--pj-marker); background: var(--pj-wash); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-tile { border: 1px solid var(--pj-hair); border-top: 3px solid var(--c); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 8px 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tile { display: block; text-align: left; border: 1px solid var(--pj-hair); border-top: 3px solid var(--c); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 8px 12px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tile:hover { border-color: var(--pj-hair2); border-top-color: var(--c); background: var(--pj-bg2); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tile b { display: block; font: 640 22px/1.1 var(--pj-f-display); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tile span { font-size: 12px; color: var(--pj-dim); }
@@ -567,7 +567,7 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-bacts2 button { color: var(--pj-danger); 
 html:not(#a4pj-guard) .a4pj-root :is(.a4pj-bacts, .a4pj-bacts2) button:hover { text-decoration: underline; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-activity { display: flex; flex-direction: column; gap: 8px; max-width: 820px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-log { font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--pj-hair); display: flex; gap: 12px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-log .a4pj-when { font: 500 10.5px/2 var(--pj-f-mono); color: var(--pj-faint); flex: none; width: 120px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-log .a4pj-when { font: 500 10.5px/2 var(--pj-f-mono); color: var(--pj-faint); flex: none; width: 120px; margin-left: 0; }
 /* phone: tiles 3 by 2, one column per screen, swiped (section 10 checks it) */
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-tiles { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-bfind { width: 100%; }
