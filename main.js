@@ -3569,7 +3569,8 @@ class ProjectsView extends ItemView {
       for (const [k, l] of opts) {
         const b = el(seg, 'button', ui[key] === k ? 'is-on' : '', l);
         b.setAttr('aria-pressed', String(ui[key] === k));
-        b.addEventListener('click', async () => { if (ui[key] === k) return; ui[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); });
+        // Read settings at click time: a Sync reload swaps the settings object under this page.
+        b.addEventListener('click', async () => { const u = this.plugin.settings.ui; if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); });
       }
       act.prepend(seg);
     }
@@ -4546,4 +4547,5 @@ A4ProjectsPlugin.logic = logic;
 module.exports = A4ProjectsPlugin;
 module.exports.TaskEngine = TaskEngine;
 module.exports.TaskLinks = TaskLinks; // for Scripts/tests (dependencies)
+module.exports.ProjectsView = ProjectsView; // for tests (switch clicks)
 module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for Scripts/tests (task card colour)
