@@ -34,15 +34,23 @@ const copy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
 class LifeWorldPlugin extends Plugin {
   async onload() {
     this.saving = Promise.resolve();
+    this.gone = false;
     const found = await this.readStore();
     if (!found) await this.setAsideDamaged();
     this.store = found || {};
+    this.ondisk = copy(this.store); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
     this.tabs = {};
     // A part with no corner yet takes its old plugin's settings file once (read only, left as it
     // was), so switching over needs no script and works for anyone who had the old plugins.
+    // Not after a damaged file: older settings must never quietly replace the newer ones in the
+    // copy kept aside, and the notice promises default settings.
     let carried = false;
-    for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
-    if (carried) await this.writeStore();
+    if (found) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
+    // A failed save here must not stop LifeWorld: it runs on what was carried, the next save retries.
+    if (carried) await this.writeStore().catch((e) => {
+      console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
+      new Notice('LifeWorld: your old settings were taken over but could not be saved yet. LifeWorld will try again at the next change.', 0);
+    });
     this.running = {};
     this.views = {};
     this.applying = Promise.resolve();
@@ -62,6 +70,7 @@ class LifeWorldPlugin extends Plugin {
   }
 
   async startPart([manifest, Part]) {
+    if (this.gone) return;
     const id = manifest.id;
     const part = new Part(this.app, { ...manifest, dir: this.manifest.dir });
     part.loadData = async () => copy(this.store[id]);
@@ -87,6 +96,8 @@ class LifeWorldPlugin extends Plugin {
       delete PARTS[id];
       return;
     }
+    // LifeWorld was turned off while this part was starting: stop it, or it would run on alone.
+    if (this.gone) { part.unload(); delete PARTS[id]; return; }
     this.running[id] = part;
     this.addChild(part);
   }
@@ -95,6 +106,7 @@ class LifeWorldPlugin extends Plugin {
   // Projects starts first. One change at a time.
   applyParts() {
     this.applying = this.applying.catch(() => {}).then(async () => {
+      if (this.gone) return;
       for (const [m] of PART_LIST.slice().reverse()) {
         const part = this.running[m.id];
         if (!part || this.wanted(m.id)) continue;
@@ -109,17 +121,18 @@ class LifeWorldPlugin extends Plugin {
     return this.applying;
   }
 
-  // A switch in Settings › Parts. Projects off takes Today and the Planner with it; Projects on
-  // brings them back (as the mockup does).
+  // A switch in Settings › Parts. Projects off takes Today and the Planner with it (wanted());
+  // Projects on brings back each of them that was on before, so their own switches are kept.
   async setPart(id, on) {
     const parts = { ...((this.store[HOST] && this.store[HOST].parts) || {}), [id]: on };
-    if (id === 'a4-projects') for (const x of SWITCHES) if (x.needsProjects) parts[x.id] = on;
     this.store[HOST] = { ...(this.store[HOST] || {}), parts };
     await this.writeStore();
     await this.applyParts();
   }
 
   onunload() {
+    this.gone = true; // a switch or outside change still under way starts nothing more
+    this.running = {};
     for (const [m] of PART_LIST) delete PARTS[m.id];
   }
 
@@ -166,7 +179,11 @@ class LifeWorldPlugin extends Plugin {
   // One write at a time, each with every part's newest settings, so a slower write never lands last.
   writeStore() {
     if (this.noWrites) return Promise.resolve();
-    this.saving = this.saving.catch(() => {}).then(() => this.saveData(this.store));
+    this.saving = this.saving.catch(() => {}).then(async () => {
+      const snap = copy(this.store);
+      this.writing = true;
+      try { await this.saveData(snap); this.ondisk = snap; } finally { this.writing = false; }
+    });
     return this.saving;
   }
 
@@ -177,7 +194,17 @@ class LifeWorldPlugin extends Plugin {
     const now = await this.readStore();
     // shortcut: a damaged file arriving by Sync is ignored (usually half-synced; the full one follows).
     if (!now) { console.warn('LifeWorld: settings changed outside but the file is damaged; kept the current settings'); return; }
-    this.store = now;
+    // A corner changed here and not yet on disk (its save queued or under way) keeps the change
+    // made here; every other corner takes the file's. A write under way carries the corners from
+    // before this change, so one more write follows it.
+    const merged = { ...now };
+    for (const k of new Set([...Object.keys(before), ...Object.keys(this.ondisk)])) {
+      if (JSON.stringify(before[k]) === JSON.stringify(this.ondisk[k])) continue;
+      if (k in before) merged[k] = before[k]; else delete merged[k];
+    }
+    this.ondisk = now;
+    this.store = merged;
+    if (this.writing) this.writeStore().catch(() => {});
     for (const [m] of PART_LIST) {
       const p = this.running[m.id];
       if (!p || typeof p.onExternalSettingsChange !== 'function') continue;

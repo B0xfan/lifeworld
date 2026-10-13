@@ -15,6 +15,7 @@ const disk = {}; // dir -> data.json contents (a string, as on disk)
 const files = {}; // any other file, by path
 const notices = [];
 let failCopy = false;
+let failSave = false;
 const writes = []; // 'begin' / 'end' of each write, in order
 let writeDelay = () => 0;
 class Component {
@@ -28,12 +29,12 @@ class Component {
 }
 class Plugin extends Component {
   constructor(app, manifest) { super(); this.app = app; this.manifest = manifest; }
-  addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
+  addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; c.name = `${this.manifest.name}: ${c.name}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
   registerView(type) { this.app.views.push(type); }
   addSettingTab(tab) { this.settingTab = tab; this.app.tabs.push(tab); }
   removeChild(c) { const i = this._children.indexOf(c); if (i !== -1) { this._children.splice(i, 1); c.unload(); } return c; }
   async loadData() { const s = disk[this.manifest.dir]; if (s === undefined) return null; try { return JSON.parse(s); } catch { return undefined; } }
-  async saveData(d) { const s = JSON.stringify(d); writes.push('begin'); await new Promise((r) => setTimeout(r, writeDelay())); disk[this.manifest.dir] = s; writes.push('end'); }
+  async saveData(d) { if (failSave) throw new Error('disk full'); const s = JSON.stringify(d); writes.push('begin'); await new Promise((r) => setTimeout(r, writeDelay())); disk[this.manifest.dir] = s; writes.push('end'); }
 }
 class Notice { constructor(m) { notices.push(m); } }
 // Settings page stand-ins: a Setting records what it shows; an element records what is put in it.
@@ -61,11 +62,13 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); n++; };
 const log = [];
 const started = {}; // the newest instance of each part
 let failing = null;
+let gate = null; // { id, wait }: that part's start waits until released
 for (const id of IDS) {
   const P = LW.parts[id].prototype;
   P.onload = async function () {
     log.push(`start ${id}`); started[id] = this;
     if (failing === id) throw new Error('planted start failure');
+    if (gate && gate.id === id) await gate.wait;
     await new Promise((r) => setTimeout(r, 5));
     this.addCommand({ id: 'open', name: 'Open' });
     this.registerView(`${id}-view`, () => null);
@@ -213,10 +216,13 @@ const start = async (data) => {
   eq(heads(pg.host), ['Parts', 'Sidebar'], 'only the running part\'s settings are shown');
   log.length = 0;
   await pg.host.setPart('a4-projects', true);
-  eq(log.filter((x) => x.startsWith('started')), ['started a4-projects', 'started a4-today', 'started a4-planner'], 'Projects on: Projects starts first, Today and the Planner come back');
-  eq(cmds(pg.app), IDS.slice().sort(), 'all four commands back');
+  eq(log.filter((x) => x.startsWith('started')), ['started a4-projects', 'started a4-today'], 'Projects on: Projects starts first, Today comes back; the Planner, off before, stays off');
+  eq(cmds(pg.app), ['a4-projects', 'a4-sidebar', 'a4-today'], 'commands back for the parts that were on');
+  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and tasks', true, false], ['Sidebar', true, false]], 'the Planner\'s own switch kept');
   eq(pg.host.running['a4-today'].saved, { layout: ['weather'] }, 'a part started again reads its saved settings');
-  eq(JSON.parse(disk[pg.dir]).lifeworld.parts, { 'a4-planner': true, 'a4-projects': true, 'a4-today': true }, 'saved');
+  eq(JSON.parse(disk[pg.dir]).lifeworld.parts, { 'a4-planner': false, 'a4-projects': true }, 'saved');
+  await pg.host.setPart('a4-planner', true);
+  eq(cmds(pg.app), IDS.slice().sort(), 'Planner on again: all four commands back');
 
   // Two switches at once: one change at a time, never two copies of a part.
   log.length = 0;
@@ -296,7 +302,70 @@ const start = async (data) => {
   const again = await startQuiet(JSON.parse(disk[mig.dir]));
   eq(again.parts['a4-today'].saved, { layout: ['calendar'], calendars: { selected: ['x'] } }, 'second start: the old file is not read again');
   again.host.unload();
+
+  // Review p2-s2 must-fix: after a damaged LifeWorld file, no carry-over (the notice promises defaults,
+  // and older settings must not quietly replace the ones in the copy kept aside).
+  disk[OLD('a4-today')] = JSON.stringify({ layout: ['old'] });
+  notices.length = 0;
+  const dmg2 = await startQuiet(bad);
+  eq(dmg2.parts['a4-today'].saved, null, 'damaged file and an old Today file: Today starts on defaults');
+  eq(disk[dmg2.dir], bad, 'nothing saved at start');
+  ok(notices.length === 1 && /default settings/.test(notices[0]), 'the notice says default settings, and that is true');
+  dmg2.host.unload();
+
+  // The save after a carry-over fails (disk full): LifeWorld still starts, on what was carried, with a notice.
+  notices.length = 0; failSave = true;
+  const full = await startQuiet();
+  failSave = false;
+  ok(Object.keys(full.host.running).length === 4 && full.parts['a4-today'].saved && full.parts['a4-today'].saved.layout[0] === 'old', 'carry-over save failed: every part starts, Today with the carried settings');
+  ok(notices.length === 1 && /could not be saved/.test(notices[0]), 'one notice says so');
+  await full.parts['a4-sidebar'].saveData({ sort: 'az' });
+  eq(JSON.parse(disk[full.dir])['a4-today'], { layout: ['old'] }, 'the next save writes the carried settings too');
+  full.host.unload();
   for (const id of IDS) delete disk[OLD(id)];
+
+  // LifeWorld turned off while a switch is starting a part: the part does not run on alone.
+  const mid = await start({ lifeworld: { parts: { 'a4-sidebar': false } } });
+  let release; gate = { id: 'a4-sidebar', wait: new Promise((res) => { release = res; }) };
+  log.length = 0;
+  const flip = mid.host.setPart('a4-sidebar', true);
+  while (!log.includes('start a4-sidebar')) await new Promise((res) => setTimeout(res, 1));
+  mid.host.unload();
+  release(); await flip; gate = null;
+  ok(log.includes('stop a4-sidebar'), 'the late-started part is stopped');
+  eq(Object.keys(mid.app.commands), [], 'no command left behind');
+  eq(mid.host.running, {}, 'nothing listed as running');
+  await mid.host.applyParts();
+  ok(!log.slice(log.indexOf('stop a4-sidebar')).some((x) => x.startsWith('start')), 'after LifeWorld is off, nothing starts again');
+
+  // Sync changes the file while a save is under way or queued: the change made here and the one
+  // from outside both survive, in memory and on disk.
+  const race = await start({ 'a4-today': { layout: ['a'] }, 'a4-sidebar': { sort: 'az' } });
+  writeDelay = () => 20;
+  const s1 = race.parts['a4-today'].saveData({ layout: ['b'] }); // under way when Sync lands
+  const s2 = race.parts['a4-planner'].saveData({ folded: ['x'] }); // queued behind it
+  await new Promise((res) => setTimeout(res, 5));
+  disk[race.dir] = JSON.stringify({ 'a4-today': { layout: ['a'] }, 'a4-sidebar': { sort: 'synced' } });
+  log.length = 0;
+  await race.host.onExternalSettingsChange();
+  eq(log, ['external a4-sidebar'], 'only the Sidebar hears the outside change');
+  await s1; await s2; await race.host.saving;
+  writeDelay = () => 0;
+  eq(JSON.parse(disk[race.dir]), { 'a4-today': { layout: ['b'] }, 'a4-sidebar': { sort: 'synced' }, 'a4-planner': { folded: ['x'] } }, 'on disk: both saves made here and the Sync change');
+  eq([await race.parts['a4-today'].loadData(), await race.parts['a4-sidebar'].loadData()], [{ layout: ['b'] }, { sort: 'synced' }], 'in memory the same');
+  disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-today': { layout: ['phone'] } });
+  await race.host.onExternalSettingsChange();
+  eq(await race.parts['a4-today'].loadData(), { layout: ['phone'] }, 'with nothing waiting to be saved, an outside change to a corner is taken');
+  // Only one save, under way when Sync lands: one more write follows, so the Sync change is not lost on disk.
+  writeDelay = () => 20;
+  const s3 = race.parts['a4-today'].saveData({ layout: ['c'] });
+  await new Promise((res) => setTimeout(res, 5));
+  disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-sidebar': { sort: 'synced again' } });
+  await race.host.onExternalSettingsChange();
+  await s3; await race.host.saving;
+  writeDelay = () => 0;
+  eq([JSON.parse(disk[race.dir])['a4-today'], JSON.parse(disk[race.dir])['a4-sidebar']], [{ layout: ['c'] }, { sort: 'synced again' }], 'a save under way alone: the file ends with both');
+  race.host.unload();
 
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });
