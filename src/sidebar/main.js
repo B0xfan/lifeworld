@@ -1,4 +1,4 @@
-/* A4 Sidebar: the left sidebar laid out like the Lifeworld app
+/* A4 Sidebar: the left sidebar laid out like the Lifeworld desktop app
  * (Lifeworld/src/renderer/components/Sidebar.tsx), approved from
  * 03 WiP/2026-09-22-business-ideas/mockup-sidebar.html on 2026-10-03.
  *
@@ -1423,7 +1423,7 @@ class A4SidebarPlugin extends Plugin {
   }
 
   // The Bases drop-down. Always Obsidian's own drawn menu (not the Mac
-  // system menu on elsewhere), so the folder names can sit faintly
+  // system menu used elsewhere), so the folder names can sit faintly
   // on the right as mocked. Arrow keys and Enter come with Obsidian's menu.
   showBases(btn) {
     const bases = listBases(this.app.vault.getFiles().map((f) => f.path));

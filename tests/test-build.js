@@ -24,4 +24,9 @@ for (const [id, cls] of [['a4-today', 'A4TodayPlugin'], ['a4-planner', 'A4Planne
   assert.strictEqual(require(path.join(dir, 'main.js')).name, cls, `${id} exports its plugin class`);
 }
 assert.strictEqual(fs.readdirSync(path.join(__dirname, '..', 'dist', 'a4-today', 'fonts')).length, 4, 'Today ships its four font licence texts');
+// Greeting: the build-time name when local.json has one, else no trailing comma.
+const localFile = path.join(__dirname, '..', 'local.json');
+const name = fs.existsSync(localFile) ? JSON.parse(fs.readFileSync(localFile, 'utf8')).userName || '' : '';
+const T = require(path.join(__dirname, '..', 'dist', 'a4-today', 'main.js')).logic;
+assert.strictEqual(T.greetingLine(9), name ? `Good morning, ${name}` : 'Good morning', 'greeting line');
 console.log('build self-check: OK');

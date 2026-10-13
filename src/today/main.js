@@ -512,6 +512,8 @@ function greeting(hour) {
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 }
+// No name set (no local.json): no trailing comma.
+function greetingLine(hour) { return USER_NAME ? `${greeting(hour)}, ${USER_NAME}` : greeting(hour); }
 
 /* ---- moving a task (same writes as the A4 Daily Planner's assignItem) ----- */
 
@@ -1292,7 +1294,7 @@ const logic = {
   normalizeOpenOnStartup, startupOpensToday,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
-  scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
+  greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES,
   normalizeCalSel, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
@@ -1395,7 +1397,7 @@ class A4TodayPlugin extends Plugin {
   }
 
   canRunSync() {
-    return !!(Platform && Platform.isDesktopApp && this.app.vault.adapter && this.app.vault.adapter.basePath);
+    return !!(SYNC_PYTHON && Platform && Platform.isDesktopApp && this.app.vault.adapter && this.app.vault.adapter.basePath);
   }
 
   // Runs Scripts/sync-calendar.py now (desktop). Resolves true on success.
@@ -1784,7 +1786,7 @@ class TodaySettingTab extends PluginSettingTab {
       });
     preview = containerEl.createDiv({ cls: 'a4t-preview' });
     preview.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
-    preview.createDiv({ cls: 'a4t-pv-title', text: `${greeting(new Date().getHours())}, ${USER_NAME}` });
+    preview.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours()) });
     preview.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
     const dark = () => document.body.classList.contains('theme-dark');
     const paintSwatches = () => {
@@ -2163,8 +2165,8 @@ class TodayView extends ItemView {
     this.zoneEls.top = this.page.createDiv({ cls: 'a4t-zone a4t-zone-top', attr: { 'data-zone': 'top' } });
     const grid = this.page.createDiv({ cls: 'a4t-grid' });
     for (const z of ['c1', 'c2', 'c3']) this.zoneEls[z] = grid.createDiv({ cls: 'a4t-zone a4t-col', attr: { 'data-zone': z } });
-    // The closing line rides at the end of the right-hand column (
-    // 2026-10-03), under whichever widget is last there; in one column (phone)
+    // The closing line rides at the end of the right-hand column
+    // (2026-10-03), under whichever widget is last there; in one column (phone)
     // that column is last, so the line ends the page.
     this.clockEl = this.zoneEls.c3.createDiv({ cls: 'a4t-hand-aside' });
   }
@@ -2241,7 +2243,7 @@ class TodayView extends ItemView {
     const d = this.data;
     const now = new Date();
     this.kickerEl.setText(longDate(d.today));
-    this.titleEl.setText(`${greeting(now.getHours())}, ${USER_NAME}`);
+    this.titleEl.setText(greetingLine(now.getHours()));
     this.plateEl.setText(plateText(this.openCount(), d.lists.total));
   }
 
