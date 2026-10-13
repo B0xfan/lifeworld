@@ -1099,17 +1099,18 @@ function onBoard(p, area, query, extra) {
     && (!q || [p.name, p.why, ...(extra || [])].some((x) => String(x || '').toLowerCase().includes(q)));
 }
 // A note's short description: its first body line that is not a heading or an embed.
+// Only real syntax is skipped: "#1 priority", "#beach" and "!important call" are text.
 function firstBodyLine(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
-  for (const l of s.slice(frontmatterEnd(s)).split('\n')) { const t = l.trim(); if (t && !t.startsWith('#') && !t.startsWith('![[')) return t; }
+  for (const l of s.slice(frontmatterEnd(s)).split('\n')) { const t = l.trim(); if (t && !/^#{1,6}(\s|$)/.test(t) && !t.startsWith('![[')) return t; }
   return '';
 }
 // + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
 // idea and no goal; the one line is the first body line. `why` (free text) goes
 // through the YAML writer; the other values are fixed or checked by the caller.
-// A line starting with # or ![[ would read as a heading or embed (firstBodyLine): that start is dropped.
+// The one line is saved as typed (line breaks become spaces), never shortened.
 function ideaNote(title, line, why, sphere, today, stringify) {
-  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim().replace(/^[#!\s]+/, '');
+  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim();
   const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
   return `---\ntype: project\nstatus: idea\ncreated: ${today}\nsphere: ${sphere}\n${y}---\n\n# ${title}\n\n${l ? `${l}\n` : ''}`;
 }

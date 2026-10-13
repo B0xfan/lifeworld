@@ -49,8 +49,13 @@ assert.strictEqual(L.ideaNote('Beach cleanup', '  A signup   page. ', 'No date: 
 assert.strictEqual(L.ideaNote('X', '', '  ', 'work', '2026-10-13', yaml), '---\ntype: project\nstatus: idea\ncreated: 2026-10-13\nsphere: work\n---\n\n# X\n\n', 'no why, no line: the New Project shape');
 assert.strictEqual(L.firstBodyLine(L.ideaNote('X', 'One line.', '', 'work', '2026-10-13', yaml)), 'One line.', 'the one line is the card description');
 assert.ok(L.ideaNote('X', '', 'w', 'work', 'd', (o) => `why: ${o.why}`).includes('why: w\n---'), 'a YAML writer without a final newline still closes the block');
-for (const [typed, shown] of [['#beach cleanup ideas', 'beach cleanup ideas'], ['## Plan', 'Plan'], ['![[pic.png]] the spot', '[[pic.png]] the spot']])
-  assert.strictEqual(L.firstBodyLine(L.ideaNote('X', typed, '', 'work', 'd', yaml)), shown, `"${typed}" still shows as the card description`);
+// The one line is saved exactly as typed (hard rule: never delete what the user wrote).
+for (const typed of ['!important call', '#1 priority', '#beach cleanup ideas', '!!! urgent', '## Plan', '![[pic.png]] the spot', '#'])
+  assert.ok(L.ideaNote('X', typed, '', 'work', 'd', yaml).endsWith(`# X\n\n${typed}\n`), `"${typed}" is saved as typed`);
+// The card shows it as is unless it is a real heading or embed (then the note keeps it, the card shows none).
+for (const [typed, shown] of [['!important call', '!important call'], ['#1 priority', '#1 priority'], ['#beach cleanup ideas', '#beach cleanup ideas'],
+  ['!!! urgent', '!!! urgent'], ['## Plan', ''], ['#', ''], ['![[pic.png]] the spot', ''], ['![alt](x.png)', '![alt](x.png)']])
+  assert.strictEqual(L.firstBodyLine(L.ideaNote('X', typed, '', 'work', 'd', yaml)), shown, `"${typed}" shows as "${shown}"`);
 
 /* ---- fake DOM -------------------------------------------------------------- */
 const node = (tag) => { const n = { tag, kids: [], listeners: {}, className: '', textContent: '', dataset: {}, attrs: {},
