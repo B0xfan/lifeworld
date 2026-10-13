@@ -125,6 +125,7 @@ function world(notes, answers) {
       trash: async (f, system) => { trashed.push([f.path, system]); files.splice(files.indexOf(f), 1); },
       delete: () => { throw new Error('never a permanent delete'); },
     },
+    workspace: { getLeavesOfType: () => [] },
     fileManager: { processFrontMatter: async (f, cb) => { writes.push(f.path); const c = clone(f.fm); cb(c); f.fm = c; }, trashFile: () => { throw new Error('use vault.trash'); } },
   };
   const toasts = []; const saves = [];

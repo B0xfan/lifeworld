@@ -3,12 +3,16 @@
  * projects the board shows (columns only, area, search), the card description
  * line, tab counts stay full totals while tiles follow the area, a drop in the
  * same column makes no call, Edit writes only `why`, and Activity rows are set
- * as plain text. Drag, the Move menu and the page look need a real Obsidian. */
+ * as plain text, a card opens the project page, a description found by search
+ * survives a note change, a redraw forgets a drag, a new Activity entry redraws
+ * the Activity tab, and the phone's "+ Add project" message. Drag, the Move
+ * menu and the page look need a real Obsidian. */
 'use strict';
 const path = require('path');
 const Module = require('module');
 const assert = require('assert');
-const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
+const notices = [];
+const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {}, Platform: {}, Component: class {} };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
 const plugin = require(path.join(__dirname, '..', 'main.js'));
@@ -59,10 +63,17 @@ assert.ok(walk(page, (n) => n.className === 'a4pj-bcard').every((c) => c.draggab
 view.dropOn('P/A.md', 'active');
 assert.deepStrictEqual(moves, [], 'same column: no move call');
 view.dropOn('P/A.md', 'waiting');
-view.dropOn('P/I.md', 'waiting'); // an idea is not on the board, its path is not a board card
+view.dropOn('P/I.md', 'waiting'); // not a board card: the view still hands it on (moveProject's own refusal is tested in test-project-moves.js)
 view.dropOn('elsewhere.md', 'done');
-assert.deepStrictEqual(moves.map((m) => m.join('>')), ['P/A.md>waiting', 'P/I.md>waiting'], 'other columns go through moveProject, which refuses ideas itself');
+assert.deepStrictEqual(moves.map((m) => m.join('>')), ['P/A.md>waiting', 'P/I.md>waiting'], 'other columns go through moveProject');
 assert.strictEqual(view.dragPath, null);
+
+// A card click opens the plugin's project page, as the List does.
+const gone = []; view.go = (st) => gone.push(st);
+const card = walk(page, (n) => n.className === 'a4pj-bcard')[0];
+card.listeners.click({ target: { closest: () => null } });
+card.listeners.click({ target: { closest: () => ({}) } }); // a click on Move / Edit is not a card click
+assert.deepStrictEqual(gone, [{ page: 'project', project: 'P/A.md' }], 'card click opens the project page');
 
 // Activity: entries are set as text, never parsed (they carry note names).
 const ap = node('div'); view.tab = 'activity'; view.renderBoard(ap);
@@ -70,13 +81,52 @@ const row = walk(ap, (n) => n.className === 'a4pj-log')[0];
 assert.strictEqual(row.kids[1].textContent, 'You moved <b>X</b> to Waiting.');
 assert.ok(!/innerHTML/.test(V.renderActivity.toString()), 'no innerHTML in the Activity tab');
 
-/* ---- Edit (why only) ------------------------------------------------------- */
+/* ---- a redraw forgets the dragged card (its dragend may never come) -------- */
+global.document = { activeElement: null, querySelector: () => null };
+{
+  const root = Object.assign(node('div'), { contains: () => false, querySelector: () => null, toggleClass() {}, clientWidth: 0 });
+  const rv = Object.assign(Object.create(V), { plugin: { engine: { cfg: () => ({}), today: () => '2026-10-13', collectTasks: () => [], collectProjects: () => [] } },
+    contentEl: root, state: { page: 'overview' }, dragPath: 'P/A.md', renderOverview() {} });
+  rv.render();
+  assert.strictEqual(rv.dragPath, null, 'redraw clears the dragged card');
+}
+
+/* ---- phone: "+ Add project" says where it works ---------------------------- */
+fake.Platform.isMobile = true;
+notices.length = 0;
+assert.strictEqual(plugin.prototype.addProject.call({ app: { plugins: { plugins: {} } } }), false);
+assert.ok(/Mac/.test(notices[0]) && !/turned on/.test(notices[0]), 'phone: no "turn on the plugin" advice');
+fake.Platform.isMobile = false;
+
 (async () => {
-  const toasts = []; let fm = { type: 'project', status: 'active', why: 'old', goal: '[[G]]' };
+  /* ---- description search survives a note change ---------------------------- */
+  const tick = () => new Promise((r) => setImmediate(r));
+  const D = { path: 'P/M.md', name: 'M', key: 'M', status: 'active', sphere: 'work', why: '', mtime: 2 }; // just moved: newer than the kept line
+  const dv = Object.assign(Object.create(V), { plugin: { engine: { file: () => ({}) } }, app: { vault: { cachedRead: async () => '# M\n\nNew menu page.\n' } },
+    cfg: { statuses: [], priorities: [] }, today: '2026-10-13', tasks: [], projects: [D], tab: 'projects', area: null, render() {} });
+  const shownTitles = (pg) => walk(pg, (n) => n.className === 'a4pj-btitle').map(text);
+  dv.descs = new Map([['P/M.md', { mtime: 1, line: 'Old notes.' }]]); dv.query = 'old notes';
+  let pg = node('div'); dv.renderBoard(pg);
+  assert.deepStrictEqual(shownTitles(pg), ['M'], 'a stale description still finds the card until the new one is read');
+  dv.descs = new Map(); dv.query = 'menu page'; // hidden card, never read yet
+  pg = node('div'); dv.renderBoard(pg);
+  await tick(); await tick();
+  assert.deepStrictEqual(shownTitles(pg), ['M'], 'a hidden card is read and the search re-runs');
+
+  /* ---- a new Activity entry redraws an open Activity tab --------------------- */
+  const redrawn = [];
+  const lp = Object.assign(Object.create(plugin.prototype), { settings: L.normalizeSettings({}), saveData: async () => {},
+    app: { workspace: { getLeavesOfType: () => [{ view: { tab: 'activity', scheduleRender: () => redrawn.push('activity') } }, { view: { tab: 'projects', scheduleRender: () => redrawn.push('projects') } }] } } });
+  await lp.logActivity('Undone: you moved M to Waiting.');
+  assert.deepStrictEqual(redrawn, ['activity'], 'only the Activity tab redraws');
+
+  /* ---- Edit (why only) ------------------------------------------------------- */
+  const toasts = []; const undos = []; let fm = { type: 'project', status: 'active', why: 'old', goal: '[[G]]' };
   const P2 = plugin.prototype;
+  const file = { path: '04 Inner World/My Life/Projects/A.md', extension: 'md', basename: 'A' }; // one object: Undo checks the note is still there
   const self = Object.assign(Object.create(P2), {
-    toast: { show: (m, u) => toasts.push(m) },
-    engine: { file: () => ({ path: '04 Inner World/My Life/Projects/A.md', extension: 'md', basename: 'A' }) },
+    toast: { show: (m, u) => { toasts.push(m); undos.push(u); } },
+    engine: { file: () => file },
     app: { fileManager: { processFrontMatter: async (f, fn) => { fn(fm); } } },
   });
   assert.strictEqual(await self.setProjectWhy('x', '   '), false, 'empty answer keeps the why');
@@ -85,5 +135,7 @@ assert.ok(!/innerHTML/.test(V.renderActivity.toString()), 'no innerHTML in the A
   assert.deepStrictEqual(fm, { type: 'project', status: 'active', why: 'new reason', goal: '[[G]]' }, 'only why changes');
   assert.strictEqual(await self.setProjectWhy('x', 'new reason'), false, 'same answer: no change, no toast');
   assert.deepStrictEqual(toasts, ['Saved why for "A"']);
+  assert.strictEqual(await undos[0](), true, 'Undo runs');
+  assert.deepStrictEqual(fm, { type: 'project', status: 'active', why: 'old', goal: '[[G]]' }, 'Undo puts the old why back');
   console.log('board self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

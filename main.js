@@ -2553,7 +2553,10 @@ class A4ProjectsPlugin extends Plugin {
   async onExternalSettingsChange() {
     this.settings = normalizeSettings(await this.loadData().catch(() => null));
     this.cards.refreshAll();
+    this.refreshActivity();
   }
+  // An Activity entry (Undo, sync) is not a note change, so the open Activity tab is redrawn here.
+  refreshActivity() { for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (l.view && l.view.tab === 'activity') l.view.scheduleRender(); }
 
   async save() { await this.saveData(this.settings); }
 
@@ -2785,6 +2788,7 @@ class A4ProjectsPlugin extends Plugin {
   // A failed save never fails the move itself: the note is already changed.
   async logActivity(text) {
     this.settings.activity = addActivity(this.settings.activity, text, Date.now());
+    this.refreshActivity();
     try { await this.save(); } catch (e) { console.error('[a4-projects] activity save failed', e); }
   }
   // Board actions only; the List, Today and hand edits are not logged (spec 17).
@@ -2893,6 +2897,7 @@ class A4ProjectsPlugin extends Plugin {
   addProject() {
     const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
     if (qc && typeof qc.openCreate === 'function' && qc.openCreate('project')) return true;
+    if (Platform.isMobile) { new Notice('Add new projects on the Mac: the New Project form only works there.'); return false; } // Quick Create is desktop-only
     new Notice('The New Project form needs the A4 Quick Create plugin turned on.');
     return false;
   }
@@ -3544,6 +3549,7 @@ class ProjectsView extends ItemView {
     const typing = active && this.contentEl.contains(active) && active.tagName === 'INPUT' && active.value;
     if (!force && (openPops.size || typing)) { this.pending = true; return; }
     this.pending = false;
+    this.dragPath = null; // a redraw replaces the dragged card, whose dragend may never arrive
     const root = this.contentEl;
     const old = root.querySelector('.a4pj-scroll');
     const scroll = old && !resetScroll ? old.scrollTop : 0;
@@ -3728,7 +3734,7 @@ class ProjectsView extends ItemView {
     const inp = el(find, 'input'); inp.type = 'search'; inp.placeholder = 'Search title, reason, next step'; inp.value = this.query; inp.dataset.focus = 'board-search';
     const board = el(page, 'div', 'a4pj-board');
     // Typing redraws the tiles and columns only, so the box keeps focus.
-    const fill = () => this.fillBoard(tiles, board);
+    const fill = () => this.fillBoard(tiles, board, fill);
     inp.addEventListener('input', () => { this.query = inp.value; fill(); });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Escape' && inp.value) { e.preventDefault(); inp.value = ''; this.query = ''; fill(); } });
     // render() waits while the search box has text in it; leaving the box catches up.
@@ -3736,12 +3742,12 @@ class ProjectsView extends ItemView {
     fill();
   }
 
-  fillBoard(tiles, board) {
+  fillBoard(tiles, board, refill) {
     tiles.empty(); board.empty();
     const cfg = this.cfg; const today = this.today;
     const shown = this.projects.filter((p) => onBoard(p))
       .map((p) => ({ p, st: projectStats(p, this.tasks, today, cfg) }))
-      .filter(({ p, st }) => onBoard(p, this.area, this.query, [this.descOf(p), st.next && st.next.title]))
+      .filter(({ p, st }) => onBoard(p, this.area, this.query, [this.descOf(p, null, refill), st.next && st.next.title]))
       .sort((a, b) => b.p.mtime - a.p.mtime || a.p.name.localeCompare(b.p.name));
     for (const k of BOARD_COLUMNS) {
       const items = shown.filter((x) => x.p.status === k);
@@ -3770,12 +3776,18 @@ class ProjectsView extends ItemView {
   }
 
   // The card's description: read once per note change, filled in when it arrives.
-  descOf(p, target) {
+  // Read for hidden cards too (search reads it); until then the old line stands in,
+  // and a search re-runs when the new one lands.
+  descOf(p, target, refill) {
     const hit = this.descs.get(p.path);
     if (hit && hit.mtime === p.mtime) { if (target) target.setText(hit.line); return hit.line; }
-    const f = target && this.plugin.engine.file(p.path);
-    if (f) this.app.vault.cachedRead(f).then((text) => { const line = firstBodyLine(text); this.descs.set(p.path, { mtime: p.mtime, line }); target.setText(line); }).catch(() => {});
-    return '';
+    const f = this.plugin.engine.file(p.path);
+    if (f) this.app.vault.cachedRead(f).then((text) => {
+      const line = firstBodyLine(text); this.descs.set(p.path, { mtime: p.mtime, line });
+      if (target) target.setText(line);
+      if (refill && this.query && line !== (hit ? hit.line : '')) refill();
+    }).catch(() => {});
+    return hit ? hit.line : '';
   }
 
   boardCard(host, p, st) {
@@ -3806,7 +3818,7 @@ class ProjectsView extends ItemView {
     const ed = el(acts, 'button', null, 'Edit'); ed.addEventListener('click', () => this.editWhy(p));
     const cs = el(el(c, 'div', 'a4pj-bacts2'), 'button', null, 'Move to Cold Storage');
     cs.addEventListener('click', () => this.plugin.coldStoreProject(p.path));
-    const open = () => this.plugin.openFile(p.path);
+    const open = () => this.go({ page: 'project', project: p.path }); // the project page, as in the List; it has Open note
     c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
   }
