@@ -1,0 +1,19 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  self-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check
+        run: node --check main.js
+      - name: Self-checks (no vault needed)
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in tests/test-*.js; do echo "== $f"; node "$f"; done

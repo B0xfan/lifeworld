@@ -1,0 +1,4276 @@
+/* A4 Projects: Projects overview, project pages, the Inbox and the task card,
+ * plus A4's own built-in task engine.
+ *
+ * Third-party code: the task engine's write plans and recurrence logic are
+ * ported from TaskNotes (https://github.com/callumalpass/tasknotes) and
+ * @tasknotes/model, Copyright 2025 Callum Alpass, MIT License. Full notice:
+ * THIRD_PARTY_NOTICES.md.
+ *
+ * Built 2026-10-04 from an approved mockup.
+ * Hand-written CommonJS, no build step, same as the other A4 plugins.
+ * Will later merge with A4 Today and A4 Planner into the one public
+ * "Lifeworld" plugin; the engine below is written to be lifted as is.
+ *
+ * Data (never a parallel model, GL-013 rule 1; fields: GL-002 ruling
+ * "Built-in task engine and Projects", 2026-10-04):
+ *  - Task notes in 02 Planner/TaskNotes/Tasks (and Archive for the Done
+ *    lists), read and written EXACTLY as TaskNotes 4.12.5 writes them: same
+ *    fields, values, key order and timestamp format. The write plans below
+ *    are ports of TaskNotes' own code (TaskService.updateProperty,
+ *    taskRecurringPlanning.buildRecurringTaskCompletePlan, TaskCreationService,
+ *    AutoArchiveService), checked byte for byte against TaskNotes in a test
+ *    Obsidian. Field names, statuses and folders come from TaskNotes'
+ *    settings (a copy is kept so the engine still works once TaskNotes goes).
+ *  - Task names (1.2.4 / Planner 1.0.3 / Projects 0.1.2, 2026-10-05): a task
+ *    shows its stored `title` when it has one, else its file name
+ *    (taskTitleOf, shared). Text only, never HTML.
+ *  - 0.1.3 (2026-10-05): "Start or due?" key removed from project pages; the
+ *    task card keeps the page's scroll when it redraws; the Blocked by /
+ *    Blocks picker lists every open task (this project, then Other
+ *    projects) in a list that scrolls.
+ *  - 0.1.4 (2026-10-05, task times: mockup v3 + review, approved):
+ *    Starts and Due take an optional clock time, written as TaskNotes writes
+ *    it ('YYYY-MM-DDTHH:MM', wall-clock time, no zone). A date-and-time
+ *    picker (hour and minutes wheels, AM/PM buttons, keyboard), typing boxes
+ *    that read plain words with a live preview, quick add puts a typed time
+ *    on Due. A due time sets planned_half (before 1 PM is Morning) and the
+ *    When row then reads it out. A repeating task's time is its start time
+ *    (DTSTART + scheduled). Moves keep the time within its half; into the
+ *    other half it comes off, with Undo. Reminders: 0.2.0 below.
+ *  - 0.1.5 (2026-10-05): public projectPathFor(ref) and
+ *    openProjectPage(ref, { newTab }) so A4 Today and A4 Planner open a
+ *    project's page from a project chip or task label (matched by name, as
+ *    the page collects its tasks). openProjects/openProject take { newTab }.
+ *  - 0.1.8 (2026-10-05): the quick add parser and its "Adds:" line are one
+ *    SHARED quick add block (quickAddChips, quickAddPlan), copied verbatim
+ *    into A4 Planner 1.0.6 and A4 Menu Bar Capture 1.0.6 so all three read
+ *    and save the same words the same way. No change in what Projects does.
+ *  - 0.2.0 (2026-10-05, reminder setup mockup approved): a Reminder
+ *    row in the date-and-time picker (None, At the time, 5/15/30 min, 1 hour,
+ *    1 day, Other), a bell button next to Due on the task card ("4:15 PM ·
+ *    15 min before", a dashed "No reminder", or "add a time to set a
+ *    reminder"), and "At the time" for a new task with a time. Stored in
+ *    TaskNotes' own `reminders` field and format (GL-002 "Task reminders").
+ *    Apple Reminders rings (Scripts/sync-task-reminders.py, launchd); no
+ *    plugin fires its own notification.
+ *  - 0.3.0 (2026-10-06, Someday mockup approved; GL-002 task status
+ *    `someday`): a "Someday" line in the Schedule box (a task with a due
+ *    date asks first: the due date comes off too). Someday tasks leave the
+ *    Inbox, Overdue and the project page's open list; a "Show someday tasks"
+ *    tick box brings them back on the page. Giving one a day (Schedule, the
+ *    When / Due / Starts boxes) makes it open again. A repeating task only
+ *    changes status, so its repeat is untouched.
+ *  - 0.6.0 (2026-10-08, "restore the circle"): links to a
+ *    task note show TaskNotes' old inline task look again (status circle that
+ *    ticks, priority dot, title, dates). See "Task links" below.
+ *  - Start date = TaskNotes' `scheduled` (one-off tasks) or the rule's
+ *    DTSTART (repeating tasks). Steps = top-level Markdown checkboxes in the
+ *    note body. No new fields.
+ *  - Project notes (type: project) in 04 Inner World/My Life/Projects:
+ *    sphere, status, goal, client, end_date.
+ *
+ * Writes go through app.fileManager.processFrontMatter; only step
+ * checkboxes (body lines) use vault.process, one checked line at a time.
+ * Moves use applyMove, the same function A4 Today and A4 Planner use (the
+ * SHARED block is a verbatim copy; Scripts/tests/test-a4-projects.js fails
+ * if it ever differs).
+ *
+ * Task source (Settings): Built-in (default), TaskNotes, or Obsidian
+ * checkboxes (not built yet). A4 Today, A4 Planner ask this plugin first
+ * (plugin.taskApi()) and fall back to TaskNotes' own API.
+ */
+'use strict';
+
+const obsidian = require('obsidian');
+const { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform } = obsidian;
+const SuggestModal = obsidian.SuggestModal || class {}; // the Find window (stand-in when tests load this file)
+
+/* ========================================================================== *
+ * Constants
+ * ========================================================================== */
+
+const VIEW_TYPE = 'a4-projects';
+const TASKS_FOLDER = '02 Planner/TaskNotes/Tasks';
+const ARCHIVE_FOLDER = '02 Planner/TaskNotes/Archive';
+const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
+const PROJECTS_FOLDER = '04 Inner World/My Life/Projects';
+const DEFAULT_COMPLETED_STATUSES = ['done', 'closed'];
+const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
+const TODAY_COMMAND = 'a4-today:open';
+const UNDO_MS = 5000;
+const NARROW_WIDTH = 760;
+const DONE_PREVIEW = 30;
+const CLOSED_STATUSES = ['done', 'failed', 'dropped'];
+const PROJECT_STATUSES = ['active', 'paused', 'backlog', 'done', 'failed', 'dropped'];
+const OPEN_ORDER = { active: 0, paused: 1, backlog: 2 };
+
+/* ========================================================================== *
+ * SHARED with a4-today and a4-planner (verbatim copies; do not edit here
+ * without editing both the same way; the tests compare them character for
+ * character)
+ * ========================================================================== */
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function dayOf(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+
+function isDayStr(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+
+function toDayStr(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : dayOf(v);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v).trim());
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+function utcOf(day) { const [y, m, d] = day.split('-').map(Number); return Date.UTC(y, m - 1, d); }
+
+function fromUtc(ms) { const d = new Date(ms); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; }
+
+function addDays(day, n) { return fromUtc(utcOf(day) + n * 86400000); }
+
+function daysBetween(a, b) { return Math.round((utcOf(b) - utcOf(a)) / 86400000); }
+
+function weekdayOf(day) { return new Date(utcOf(day)).getUTCDay(); } // 0 = Sunday
+
+function partsOf(day) { const [y, m, d] = day.split('-').map(Number); return { y, m, d }; }
+
+function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+
+const WD = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+function parseRRule(raw, fallbackStart) {
+  if (!raw || typeof raw !== 'string') return null;
+  const out = { interval: 1, byday: null, bymonthday: null, bymonth: null, bysetpos: null, count: null, until: null, wkst: 1, exdates: [] };
+  let text = raw.replace(/\r/g, '');
+  // DTSTART may carry parameters (DTSTART;TZID=...:20260904T090000); read it
+  // whole before splitting the rest on ';'. Only the calendar date matters.
+  const ds = /DTSTART(?:;[^:\n]*)?[:=](\d{4})(\d{2})(\d{2})[^;\n]*/i.exec(text);
+  if (ds) { out.dtstart = `${ds[1]}-${ds[2]}-${ds[3]}`; text = text.replace(ds[0], ''); }
+  const ex = /EXDATE(?:;[^:\n]*)?[:=]([0-9TZ,]+)/gi;
+  let em;
+  while ((em = ex.exec(text))) {
+    em[1].split(',').forEach((x) => { const m = /(\d{4})(\d{2})(\d{2})/.exec(x); if (m) out.exdates.push(`${m[1]}-${m[2]}-${m[3]}`); });
+  }
+  text = text.replace(ex, '');
+  const parts = text.split(/[;\n]/).map((p) => p.trim().replace(/^RRULE:/i, '')).filter(Boolean);
+  for (const p of parts) {
+    const i = p.indexOf('=');
+    if (i < 0) continue;
+    const k = p.slice(0, i).trim().toUpperCase();
+    const val = p.slice(i + 1).trim();
+    if (k === 'FREQ') out.freq = val.toUpperCase();
+    else if (k === 'INTERVAL') out.interval = Math.max(1, parseInt(val, 10) || 1);
+    else if (k === 'COUNT') out.count = Math.max(0, parseInt(val, 10) || 0);
+    else if (k === 'UNTIL') { const m = /(\d{4})(\d{2})(\d{2})/.exec(val); if (m) out.until = `${m[1]}-${m[2]}-${m[3]}`; }
+    else if (k === 'WKST') { if (WD[val.toUpperCase()] != null) out.wkst = WD[val.toUpperCase()]; }
+    else if (k === 'BYDAY') {
+      out.byday = val.split(',').map((t) => {
+        const m = /^([+-]?\d{1,2})?(SU|MO|TU|WE|TH|FR|SA)$/i.exec(t.trim());
+        return m ? { n: m[1] ? parseInt(m[1], 10) : 0, wd: WD[m[2].toUpperCase()] } : null;
+      }).filter(Boolean);
+      if (!out.byday.length) return null;
+    } else if (k === 'BYMONTHDAY') out.bymonthday = val.split(',').map((x) => parseInt(x, 10)).filter((x) => x && Math.abs(x) <= 31);
+    else if (k === 'BYMONTH') out.bymonth = val.split(',').map((x) => parseInt(x, 10)).filter((x) => x >= 1 && x <= 12);
+    else if (k === 'BYSETPOS') out.bysetpos = val.split(',').map((x) => parseInt(x, 10)).filter((x) => x);
+  }
+  if (!out.dtstart) out.dtstart = toDayStr(fallbackStart);
+  if (!out.dtstart || !['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(out.freq)) return null;
+  return out;
+}
+
+function monthDaysByDay(byday, y, m) {
+  const dim = daysInMonth(y, m);
+  const out = new Set();
+  for (const { n, wd } of byday) {
+    const hits = [];
+    for (let d = 1; d <= dim; d++) if (new Date(Date.UTC(y, m - 1, d)).getUTCDay() === wd) hits.push(d);
+    if (!n) hits.forEach((d) => out.add(d));
+    else { const d = n > 0 ? hits[n - 1] : hits[hits.length + n]; if (d) out.add(d); }
+  }
+  return out;
+}
+
+function monthDaysByMonthDay(list, y, m) {
+  const dim = daysInMonth(y, m);
+  const out = new Set();
+  for (const x of list) { const d = x > 0 ? x : dim + 1 + x; if (d >= 1 && d <= dim) out.add(d); }
+  return out;
+}
+
+function applySetPos(set, pos) {
+  if (!pos) return set;
+  const sorted = [...set].sort((a, b) => a - b);
+  const out = new Set();
+  for (const p of pos) { const v = p > 0 ? sorted[p - 1] : sorted[sorted.length + p]; if (v != null) out.add(v); }
+  return out;
+}
+
+function matchesPattern(r, day) {
+  const s = r.dtstart;
+  if (day < s) return false;
+  const { y, m, d } = partsOf(day);
+  const st = partsOf(s);
+  const wd = weekdayOf(day);
+  if (r.bymonth && !r.bymonth.includes(m)) return false;
+  if (r.freq === 'DAILY') {
+    if (daysBetween(s, day) % r.interval !== 0) return false;
+    if (r.bymonthday && !monthDaysByMonthDay(r.bymonthday, y, m).has(d)) return false;
+    if (r.byday && !r.byday.some((b) => b.wd === wd)) return false;
+    return true;
+  }
+  if (r.freq === 'WEEKLY') {
+    const startOfWeek = (x) => addDays(x, -((weekdayOf(x) - r.wkst + 7) % 7));
+    const weeks = daysBetween(startOfWeek(s), startOfWeek(day)) / 7;
+    if (weeks % r.interval !== 0) return false;
+    const days = r.byday ? r.byday.map((b) => b.wd) : [weekdayOf(s)];
+    return days.includes(wd);
+  }
+  if (r.freq === 'MONTHLY') {
+    const months = (y - st.y) * 12 + (m - st.m);
+    if (months % r.interval !== 0) return false;
+    let set;
+    if (r.bymonthday && r.byday) {
+      const a = monthDaysByMonthDay(r.bymonthday, y, m); const b = monthDaysByDay(r.byday, y, m);
+      set = new Set([...a].filter((x) => b.has(x)));
+    } else if (r.bymonthday) set = monthDaysByMonthDay(r.bymonthday, y, m);
+    else if (r.byday) set = monthDaysByDay(r.byday, y, m);
+    else set = new Set(st.d <= daysInMonth(y, m) ? [st.d] : []); // RFC: months without that day are skipped
+    return applySetPos(set, r.bysetpos).has(d);
+  }
+  if (r.freq === 'YEARLY') {
+    if ((y - st.y) % r.interval !== 0) return false;
+    const months = r.bymonth || [st.m];
+    if (!months.includes(m)) return false;
+    let set;
+    if (r.bymonthday) set = monthDaysByMonthDay(r.bymonthday, y, m);
+    else if (r.byday) set = monthDaysByDay(r.byday, y, m);
+    else set = new Set(st.d <= daysInMonth(y, m) ? [st.d] : []);
+    return applySetPos(set, r.bysetpos).has(d);
+  }
+  return false;
+}
+
+function occursOn(rule, day) {
+  if (!rule || !isDayStr(day) || day < rule.dtstart) return false;
+  if (rule.until && day > rule.until) return false;
+  if (!matchesPattern(rule, day)) return false;
+  if (rule.exdates.includes(day)) return false;
+  if (rule.count) {
+    // RFC 5545: COUNT counts pattern hits from DTSTART (EXDATE still uses a slot).
+    let n = 0;
+    for (let x = rule.dtstart; x <= day; x = addDays(x, 1)) {
+      if (matchesPattern(rule, x)) n++;
+      if (n > rule.count) return false;
+    }
+  }
+  return true;
+}
+
+function wikilinkTarget(link) {
+  if (link == null) return null;
+  let s = String(link).trim();
+  if (s.startsWith('[[') && s.endsWith(']]')) s = s.slice(2, -2);
+  return s.split('|', 1)[0].trim() || null;
+}
+
+function wikilinkLabel(link) {
+  if (link == null) return null;
+  let s = String(link).trim();
+  if (s.startsWith('[[') && s.endsWith(']]')) s = s.slice(2, -2);
+  const i = s.indexOf('|');
+  if (i >= 0 && s.slice(i + 1).trim()) return s.slice(i + 1).trim();
+  const t = wikilinkTarget(link);
+  return t ? t.split('#')[0].split('/').pop().replace(/\.md$/i, '').trim() || null : null;
+}
+
+function asList(v) { return Array.isArray(v) ? v : (v == null || v === '' ? [] : [v]); }
+
+// The name a task shows: its stored `title` when it has one, else the file
+// name. TaskNotes keeps a `title` when the file name had to differ (a URL, a
+// ":" or "**" taken out, or a "-2" added for a clash). Read the way
+// TaskNotes 4.12.5 reads it (mapFromFrontmatter): a list is joined with ", ",
+// a number or yes/no is written out, a blank or anything else falls back.
+// Runs of spaces and line breaks become one space. Shown as text only.
+function taskTitleOf(fm, basename, key) {
+  const v = fm && typeof fm === 'object' ? fm[key || 'title'] : undefined;
+  let s = '';
+  if (typeof v === 'string') s = v;
+  else if (Array.isArray(v)) s = v.filter((x) => x != null && typeof x !== 'object').map(String).join(', ');
+  else if (typeof v === 'number' || typeof v === 'boolean') s = String(v);
+  s = s.replace(/\s+/g, ' ').trim();
+  return s || String(basename == null ? '' : basename);
+}
+
+// Clock times (task times v3, approved 2026-10-05). A clock time lives only
+// on `due` and `scheduled` (Starts), written the way TaskNotes writes it:
+// 'YYYY-MM-DDTHH:MM', wall-clock time with no zone. A date with no time stays
+// a date. Before 1 PM is Morning, 1 PM or later Afternoon: the same split as
+// Today's lanes ("Before one") and the Planner's 13:00 line.
+function timeOf(v) {
+  if (v == null || v instanceof Date) return null;
+  const m = /^\s*\d{4}-\d{2}-\d{2}[T ](\d{2}):(\d{2})/.exec(String(v));
+  return m && Number(m[1]) <= 23 && Number(m[2]) <= 59 ? `${m[1]}:${m[2]}` : null;
+}
+
+// A repeating task's time when `scheduled` has none: its DTSTART's clock
+// (TaskNotes writes the local clock there, e.g. DTSTART:20261012T090000Z).
+// Midnight counts as none, as in TaskNotes' own "timed" check.
+function ruleTimeOf(raw) {
+  const m = /DTSTART(?:;[^:\n]*)?[:=]\d{8}T(\d{2})(\d{2})/i.exec(String(raw || ''));
+  if (!m || (m[1] === '00' && m[2] === '00') || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return `${m[1]}:${m[2]}`;
+}
+
+function halfOfTime(t) { return t ? (t < '13:00' ? 'am' : 'pm') : null; }
+
+// 'HH:MM' -> '4:30 PM' ('4 PM' with short and no minutes).
+function timeText(t, short) {
+  if (!t) return '';
+  const [h, mi] = t.split(':').map(Number);
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+// Reminders (reminder setup mockup, approved 2026-10-05; GL-002
+// "Task reminders"). TaskNotes' own `reminders` list, in its format:
+// { id: 'rem_<ms>', type: 'relative', relatedTo: 'due' | 'scheduled',
+// offset: 'PT0M' | '-PT15M' | '-PT1H' | '-P1D' ... }. A4 uses the first
+// relative entry on the field that rings: `due` for a one-off task,
+// `scheduled` (its start) for a repeating one. Amounts are minutes BEFORE the
+// time (0 = at the time). A task with no clock time never rings.
+const REMINDER_CHOICES = [0, 5, 15, 30, 60, 1440];
+
+function ringField(fm) { return fm && typeof fm.recurrence === 'string' && fm.recurrence.trim() ? 'scheduled' : 'due'; }
+
+// ISO 8601 duration -> minutes before (a negative offset is before; a positive one, after).
+function offsetMinutes(iso) {
+  const m = /^\s*([-+])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?\s*$/i.exec(String(iso == null ? '' : iso));
+  if (!m || !/\d/.test(m[0])) return null;
+  const mins = ((Number(m[2] || 0) * 7) + Number(m[3] || 0)) * 1440 + Number(m[4] || 0) * 60 + Number(m[5] || 0) + Math.floor(Number(m[6] || 0) / 60);
+  return m[1] === '-' ? mins : -mins;
+}
+
+// Minutes before -> the offset TaskNotes writes ('PT0M', '-PT15M', '-PT1H', '-P1D', '-PT1H30M').
+function offsetIso(before) {
+  const n = Math.abs(Math.round(Number(before) || 0));
+  if (!n) return 'PT0M';
+  const s = before > 0 ? '-' : '';
+  if (n % 1440 === 0) return `${s}P${n / 1440}D`;
+  const h = Math.floor(n / 60); const mi = n % 60;
+  return `${s}PT${h ? `${h}H` : ''}${mi ? `${mi}M` : ''}`;
+}
+
+// The task's reminder: minutes before its time, or null (no reminder).
+function reminderOf(fm) {
+  const field = ringField(fm);
+  for (const r of asList(fm && fm.reminders)) {
+    if (!r || typeof r !== 'object' || r.type !== 'relative' || r.relatedTo !== field) continue;
+    const n = offsetMinutes(r.offset);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+// The small mark after the bell: '' at the time, else '15m', '1h', '1d', '1h30m'.
+function reminderShort(before) {
+  if (!before) return '';
+  const n = Math.abs(before); const d = Math.floor(n / 1440); const h = Math.floor((n % 1440) / 60); const mi = n % 60;
+  return `${d ? `${d}d` : ''}${h ? `${h}h` : ''}${mi ? `${mi}m` : ''}${before < 0 ? ' after' : ''}`;
+}
+
+// 'At the time', '15 min before', '1 hour before', '2 hours 30 min before', '1 day before'.
+function reminderWords(before) {
+  if (!before) return 'At the time';
+  const n = Math.abs(before); const d = Math.floor(n / 1440); const h = Math.floor((n % 1440) / 60); const mi = n % 60;
+  const parts = [];
+  if (d) parts.push(`${d} day${d === 1 ? '' : 's'}`);
+  if (h) parts.push(`${h} hour${h === 1 ? '' : 's'}`);
+  if (mi) parts.push(`${mi} min`);
+  return `${parts.join(' ')} ${before < 0 ? 'after' : 'before'}`;
+}
+
+// A stored date put on `day`; whatever follows the day (a time) is kept as written.
+function onDay(v, day) {
+  const s = v == null || v instanceof Date ? '' : String(v);
+  const m = /^(\s*)\d{4}-\d{2}-\d{2}/.exec(s);
+  return m ? m[1] + day + s.slice(m[0].length) : day;
+}
+
+// The date a move writes: the time goes along while the task stays in its half
+// of the day; moved into the other half (or Any time), the time comes off.
+function movedDate(v, day, half) {
+  const t = timeOf(v);
+  return t && halfOfTime(t) === (half || null) ? onDay(v, day) : day;
+}
+
+// Timed tasks sort first, in clock order, so a drop position counts only the
+// untimed tasks of the lane: -> { list: the untimed others, idx: in that list }.
+function untimedSlot(others, idx) {
+  const i = Math.max(0, Math.min(idx == null ? others.length : idx, others.length));
+  return { list: others.filter((x) => !x.time), idx: i - others.slice(0, i).filter((x) => x.time).length };
+}
+
+function taskFromFrontmatter(fm, path, basename) {
+  if (!fm || typeof fm !== 'object') return null;
+  const tags = asList(fm.tags).map(String);
+  if (!tags.includes('task')) return null;
+  if (fm.archived === true || tags.includes('archived')) return null;
+  if (path.startsWith(ARCHIVE_FOLDER + '/')) return null;
+  const due = toDayStr(fm.due);
+  const recurrenceRaw = typeof fm.recurrence === 'string' && fm.recurrence.trim() ? fm.recurrence.trim() : null;
+  const projectLink = asList(fm.projects)[0];
+  const order = Number(fm.planned_order);
+  // The clock time shown and sorted by: the due time; a repeating task's start time.
+  const time = recurrenceRaw ? (timeOf(fm.scheduled) || ruleTimeOf(recurrenceRaw)) : timeOf(fm.due);
+  return {
+    path,
+    title: taskTitleOf(fm, basename),
+    status: fm.status == null || fm.status === '' ? 'open' : String(fm.status),
+    priority: fm.priority == null ? '' : String(fm.priority),
+    due,
+    // Same rule as the A4 Daily Planner: due always wins; planned_day only
+    // places an undated task. A repeating task is placed by its rule instead.
+    plannedDay: due || toDayStr(fm.planned_day),
+    // A clock time picks the half of the day (before 1 PM is Morning).
+    plannedHalf: time ? halfOfTime(time) : (fm.planned_half === 'pm' ? 'pm' : (fm.planned_half === 'am' ? 'am' : null)),
+    plannedOrder: Number.isFinite(order) ? order : 0,
+    time,
+    // Minutes before the time it rings (0 = at the time), or null; only a timed task rings.
+    reminder: time ? reminderOf(fm) : null,
+    project: projectLink ? wikilinkLabel(projectLink) : null,
+    recurrenceRaw,
+    recurrence: recurrenceRaw ? parseRRule(recurrenceRaw, fm.scheduled || fm.due || fm.dateCreated) : null,
+    completeInstances: asList(fm.complete_instances).map(toDayStr).filter(Boolean),
+    skippedInstances: asList(fm.skipped_instances).map(toDayStr).filter(Boolean),
+    blockedBy: blockerLinks(fm),
+  };
+}
+
+function isTaskDone(item, day, completedStatuses) {
+  if (item.recurrenceRaw) return item.completeInstances.includes(day);
+  return (completedStatuses || DEFAULT_COMPLETED_STATUSES).includes(item.status);
+}
+
+function taskOnDay(item, day) {
+  if (isSomeday(item)) return false; // kept for later: on no day, repeating or not
+  if (item.recurrenceRaw) return occursOn(item.recurrence, day) && !item.skippedInstances.includes(day);
+  return item.plannedDay === day;
+}
+
+// Someday (mockup approved 2026-10-06; GL-002 task status `someday`):
+// a task kept for later with no day. Not finished, but never on a day, never
+// due or overdue, never rung. Takes a task item or its frontmatter.
+function isSomeday(x) { return !!x && typeof x === 'object' && String(x.status) === 'someday'; }
+
+// Setting Someday. A one-off task's day comes off (due too: the caller asks
+// first). A repeating task only changes status: its rule, start, due and done
+// days stay exactly as they are, so its repeat picks up again when it comes
+// back. Mutates and returns `fm`.
+function applySomeday(fm) {
+  fm.status = 'someday';
+  if (typeof fm.recurrence === 'string' && fm.recurrence.trim()) return fm;
+  delete fm.due; delete fm.planned_day; delete fm.planned_half; delete fm.planned_order;
+  return fm;
+}
+
+function sortByOrder(list) {
+  return [...list].sort((a, b) => (!a.time - !b.time) || String(a.time || '').localeCompare(String(b.time || '')) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
+}
+
+function orderForInsert(orders, idx) {
+  if (!orders.length) return 10;
+  if (idx <= 0) return orders[0] - 10;
+  if (idx >= orders.length) return orders[orders.length - 1] + 10;
+  return (orders[idx - 1] + orders[idx]) / 2;
+}
+
+function applyMove(fm, day, half, order) {
+  if (isSomeday(fm)) fm.status = 'open'; // given a day: a normal task again
+  if (fm.due) fm.due = movedDate(fm.due, day, half);
+  else fm.planned_day = day;
+  fm.planned_half = half;
+  fm.planned_order = order;
+  return fm;
+}
+
+// Dependencies (ruling 2026-10-04, GL-002): TaskNotes' own `blockedBy` list,
+// each entry { uid: "[[Task]]", reltype: FINISHTOSTART } or a bare link.
+// Returns the link targets, in order, without repeats. "Blocks" is never
+// stored: it is the other tasks' blockedBy, read the other way round.
+function blockerLinks(fm) {
+  const out = [];
+  for (const e of asList(fm && fm.blockedBy)) {
+    const raw = typeof e === 'string' ? e : (e && typeof e === 'object' && typeof e.uid === 'string' ? e.uid : null);
+    const t = raw ? wikilinkTarget(raw) : null;
+    const link = t ? t.split('#')[0].trim() : '';
+    if (link && !out.includes(link)) out.push(link);
+  }
+  return out;
+}
+
+// A blocker holds while its note is a task that is not finished (TaskNotes'
+// rule: the status, also for a repeating task) and not archived.
+function blockerHolds(fm, path, completedStatuses) {
+  if (!fm || typeof fm !== 'object') return false;
+  const tags = asList(fm.tags).map(String);
+  if (fm.archived === true || tags.includes('archived') || String(path).startsWith(ARCHIVE_FOLDER + '/')) return false;
+  const st = fm.status == null || fm.status === '' ? 'open' : String(fm.status);
+  return !(completedStatuses || DEFAULT_COMPLETED_STATUSES).includes(st);
+}
+
+// The blockers of `item` that still hold: [{ path, title }]. A link that no
+// longer leads to a note (the blocker was deleted) blocks nothing.
+function openBlockersOf(app, item, completedStatuses) {
+  const out = [];
+  const mc = app && app.metadataCache;
+  if (!mc || !item) return out;
+  for (const link of item.blockedBy || []) {
+    const f = mc.getFirstLinkpathDest(link, item.path);
+    if (!f || f.path === item.path || out.some((x) => x.path === f.path)) continue;
+    const c = mc.getFileCache(f);
+    if (blockerHolds(c && c.frontmatter, f.path, completedStatuses)) out.push({ path: f.path, title: taskTitleOf(c && c.frontmatter, f.basename) });
+  }
+  return out;
+}
+
+/* ========================================================================== *
+ * TaskNotes-compatible engine: configuration
+ * Everything TaskNotes reads from its settings, with A4's values (checked
+ * in .obsidian/plugins/tasknotes/data.json on 2026-10-04) as the fallback.
+ * ========================================================================== */
+
+const DEFAULT_FIELDS = {
+  title: 'title', status: 'status', priority: 'priority', due: 'due', scheduled: 'scheduled', contexts: 'contexts', projects: 'projects',
+  timeEstimate: 'timeEstimate', completedDate: 'completedDate', dateCreated: 'dateCreated', dateModified: 'dateModified',
+  recurrence: 'recurrence', recurrenceAnchor: 'recurrence_anchor', archiveTag: 'archived', completeInstances: 'complete_instances',
+  skippedInstances: 'skipped_instances', googleCalendarExceptionOriginalScheduled: 'googleCalendarExceptionOriginalScheduled',
+  googleCalendarMovedOriginalDates: 'googleCalendarMovedOriginalDates',
+  blockedBy: 'blockedBy', // the shared readers (taskFromFrontmatter) read this name as is
+  reminders: 'reminders', // likewise (reminderOf)
+};
+const DEFAULT_STATUS_LIST = [
+  { value: 'none', label: 'None', isCompleted: false, autoArchive: false, autoArchiveDelay: 5 },
+  { value: 'open', label: 'Open', isCompleted: false, autoArchive: false, autoArchiveDelay: 5 },
+  { value: 'in-progress', label: 'In progress', isCompleted: false, autoArchive: false, autoArchiveDelay: 5 },
+  { value: 'blocked', label: 'Blocked', isCompleted: false, autoArchive: false, autoArchiveDelay: 5 },
+  { value: 'done', label: 'Done', isCompleted: true, autoArchive: true, autoArchiveDelay: 5 },
+  { value: 'closed', label: 'Closed', isCompleted: true, autoArchive: false, autoArchiveDelay: 5 },
+];
+const DEFAULT_PRIORITY_LIST = [
+  { value: 'none', label: 'None', weight: 0 }, { value: 'low', label: 'Low', weight: 1 },
+  { value: 'normal', label: 'Normal', weight: 2 }, { value: 'high', label: 'High', weight: 3 },
+];
+
+// TaskNotes settings (live object or saved copy) -> the engine's config.
+function engineConfig(tn) {
+  const s = tn && typeof tn === 'object' ? tn : {};
+  const fm = s.fieldMapping && typeof s.fieldMapping === 'object' ? s.fieldMapping : {};
+  const F = {};
+  for (const k of Object.keys(DEFAULT_FIELDS)) F[k] = typeof fm[k] === 'string' && fm[k].trim() ? fm[k] : DEFAULT_FIELDS[k];
+  const statuses = Array.isArray(s.customStatuses) && s.customStatuses.length
+    ? s.customStatuses.filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), isCompleted: !!x.isCompleted, autoArchive: !!x.autoArchive, autoArchiveDelay: Number(x.autoArchiveDelay) || 0, order: Number(x.order) || 0 }))
+    : DEFAULT_STATUS_LIST.map((x) => ({ ...x }));
+  const priorities = Array.isArray(s.customPriorities) && s.customPriorities.length
+    ? s.customPriorities.filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), weight: Number(x.weight) || 0 }))
+    : DEFAULT_PRIORITY_LIST.map((x) => ({ ...x }));
+  const defaults = s.taskCreationDefaults && typeof s.taskCreationDefaults === 'object' ? s.taskCreationDefaults : {};
+  return {
+    F, statuses, priorities,
+    tasksFolder: typeof s.tasksFolder === 'string' && s.tasksFolder.trim() ? s.tasksFolder.trim() : TASKS_FOLDER,
+    archiveFolder: typeof s.archiveFolder === 'string' && s.archiveFolder.trim() ? s.archiveFolder.trim() : ARCHIVE_FOLDER,
+    moveArchivedTasks: s.moveArchivedTasks !== false,
+    taskTag: typeof s.taskTag === 'string' && s.taskTag ? s.taskTag : 'task',
+    defaultStatus: typeof s.defaultTaskStatus === 'string' && s.defaultTaskStatus ? s.defaultTaskStatus : 'open',
+    defaultPriority: typeof s.defaultTaskPriority === 'string' && s.defaultTaskPriority ? s.defaultTaskPriority : 'normal',
+    storeTitleInFilename: s.storeTitleInFilename !== false,
+    maintainDueOffset: s.maintainDueDateOffsetInRecurring === true,
+    defaultTags: typeof defaults.defaultTags === 'string' ? defaults.defaultTags : '',
+    defaultProjects: typeof defaults.defaultProjects === 'string' ? defaults.defaultProjects : '',
+    defaultContexts: typeof defaults.defaultContexts === 'string' ? defaults.defaultContexts : '',
+  };
+}
+// The parts of TaskNotes' settings worth keeping a copy of (no secrets).
+function snapshotTaskNotes(s) {
+  if (!s || typeof s !== 'object') return null;
+  const out = {};
+  for (const k of ['fieldMapping', 'customStatuses', 'customPriorities', 'tasksFolder', 'archiveFolder', 'moveArchivedTasks', 'taskTag', 'defaultTaskStatus',
+    'defaultTaskPriority', 'storeTitleInFilename', 'maintainDueDateOffsetInRecurring', 'taskIdentificationMethod', 'taskFilenameFormat']) if (s[k] !== undefined) out[k] = JSON.parse(JSON.stringify(s[k]));
+  if (s.taskCreationDefaults) out.taskCreationDefaults = { defaultTags: s.taskCreationDefaults.defaultTags || '', defaultProjects: s.taskCreationDefaults.defaultProjects || '', defaultContexts: s.taskCreationDefaults.defaultContexts || '' };
+  return out;
+}
+function isCompletedIn(cfg, status) { const s = cfg.statuses.find((x) => x.value === String(status)); return !!(s && s.isCompleted); }
+function completedStatusesOf(cfg) { const l = cfg.statuses.filter((x) => x.isCompleted).map((x) => x.value); return l.length ? l : DEFAULT_COMPLETED_STATUSES; }
+function firstCompletedStatus(cfg) { return completedStatusesOf(cfg)[0] || 'done'; }
+function statusConfigOf(cfg, status) { return cfg.statuses.find((x) => x.value === String(status)) || null; }
+
+/* ========================================================================== *
+ * TaskNotes-compatible engine: dates (dateUtils.ts / @tasknotes/model date)
+ * ========================================================================== */
+
+// getCurrentTimestamp(): local wall time with milliseconds and the offset.
+function tnTimestamp(now) {
+  const off = -now.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const p = (n) => String(Math.abs(n)).padStart(2, '0');
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}${sign}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)}`;
+}
+// getDatePart(): the calendar-day part of a stored date or date-time.
+function tnDatePart(v) {
+  if (v == null || v === '') return '';
+  const t = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const i = t.indexOf('T');
+  if (i > -1) return t.slice(0, i);
+  const sp = t.indexOf(' ');
+  if (sp > -1 && /^\d{4}-\d{2}-\d{2}$/.test(t.slice(0, sp))) return t.slice(0, sp);
+  return toDayStr(t) || '';
+}
+function strList(v) { return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; }
+function nonEmpty(v) { return v == null || v === '' ? undefined : (typeof v === 'string' ? v : (v instanceof Date ? dayOf(v) : String(v))); }
+
+/* ========================================================================== *
+ * TaskNotes-compatible engine: recurrence (ports of @tasknotes/model
+ * recurrence.js and taskRecurringPlanning.ts; the rule itself is read by the
+ * shared parseRRule/occursOn, cross-checked against the rrule package)
+ * Days are 'YYYY-MM-DD' strings standing for TaskNotes' UTC-midnight dates.
+ * Ported from TaskNotes / @tasknotes/model, Copyright 2025 Callum Alpass,
+ * MIT License; see THIRD_PARTY_NOTICES.md.
+ * ========================================================================== */
+
+// The recurring-relevant part of a task note, as TaskNotes' TaskInfo holds it.
+function tnTaskOf(fm, F) {
+  const f = fm || {};
+  return {
+    recurrence: typeof f[F.recurrence] === 'string' && f[F.recurrence].trim() ? f[F.recurrence] : undefined,
+    recurrence_anchor: f[F.recurrenceAnchor] === 'completion' ? 'completion' : (f[F.recurrenceAnchor] ? String(f[F.recurrenceAnchor]) : undefined),
+    scheduled: nonEmpty(f[F.scheduled]),
+    due: nonEmpty(f[F.due]),
+    dateCreated: nonEmpty(f[F.dateCreated]),
+    complete_instances: strList(f[F.completeInstances]),
+    skipped_instances: strList(f[F.skippedInstances]),
+    googleCalendarExceptionOriginalScheduled: nonEmpty(f[F.googleCalendarExceptionOriginalScheduled]),
+  };
+}
+// createRRule(): DTSTART from the rule, else scheduled, else dateCreated.
+function ruleOfTask(task) {
+  if (!task.recurrence) return null;
+  const fallback = task.scheduled ? tnDatePart(task.scheduled) : (task.dateCreated ? tnDatePart(task.dateCreated) : null);
+  return parseRRule(task.recurrence, fallback);
+}
+function explicitDtstart(rec) { const m = /DTSTART:(\d{4})(\d{2})(\d{2})/.exec(String(rec || '')); return m ? `${m[1]}-${m[2]}-${m[3]}` : null; }
+function intervalOf(rec) { const m = /INTERVAL=(\d+)/.exec(rec); return m ? parseInt(m[1], 10) : 1; }
+function lookAheadDays(rec) {
+  const i = intervalOf(rec);
+  if (rec.includes('FREQ=DAILY')) return Math.max(30, i * 2);
+  if (rec.includes('FREQ=WEEKLY')) return Math.max(90, i * 7 * 2);
+  if (rec.includes('FREQ=MONTHLY')) return Math.max(400, i * 31 * 2);
+  if (rec.includes('FREQ=YEARLY')) return Math.max(800, i * 366 * 2);
+  return 365;
+}
+function searchDays(rec) {
+  const m = /(?:^|;)INTERVAL=(\d+)(?:;|$)/.exec(rec); const i = m ? parseInt(m[1], 10) : 1;
+  if (rec.includes('FREQ=DAILY')) return Math.max(30, i * 2);
+  if (rec.includes('FREQ=WEEKLY')) return Math.max(90, i * 7 * 2);
+  if (rec.includes('FREQ=MONTHLY')) return Math.max(400, i * 31 * 2);
+  if (rec.includes('FREQ=YEARLY')) return Math.max(800, i * 366 * 2);
+  return 365;
+}
+// generateRecurringInstances(): occurrence days in [start, end].
+function instancesBetween(task, start, end) {
+  const rule = ruleOfTask(task);
+  if (!rule || end < start) return [];
+  const out = [];
+  let d = start < rule.dtstart ? rule.dtstart : start;
+  for (; d <= end; d = addDays(d, 1)) if (occursOn(rule, d)) out.push(d);
+  return out;
+}
+function nextScheduledBased(task, today) {
+  const look = lookAheadDays(task.recurrence);
+  const dt = explicitDtstart(task.recurrence);
+  const start = dt && dt < today ? dt : today;
+  const done = new Set([...task.complete_instances, ...task.skipped_instances]);
+  for (const d of instancesBetween(task, start, addDays(today, look))) if (!done.has(d) && d >= today) return d;
+  return null;
+}
+function nextCompletionBased(task, today) {
+  const look = lookAheadDays(task.recurrence);
+  const dt = explicitDtstart(task.recurrence);
+  const start = dt || today;
+  const skipped = new Set(task.skipped_instances);
+  for (const d of instancesBetween(task, start, addDays(start, look))) if ((!dt || d > dt) && d >= today && !skipped.has(d)) return d;
+  return null;
+}
+function nextUncompleted(task, today) {
+  if (!task.recurrence) return null;
+  return (task.recurrence_anchor || 'scheduled') === 'completion' ? nextCompletionBased(task, today) : nextScheduledBased(task, today);
+}
+// updateToNextScheduledOccurrence()
+function nextDates(task, maintainOffset, today) {
+  const next = nextUncompleted(task, today);
+  let scheduled = null; let due = null; let nextDue = null;
+  if (next) {
+    const os = task.scheduled ? toDayStr(tnDatePart(task.scheduled)) : null;
+    const od = task.due ? toDayStr(tnDatePart(task.due)) : null;
+    if (os && od) {
+      // TaskNotes compares the due day's midnight with the occurrence's own
+      // time: with a clock time in DTSTART, a due on that same day counts as before it.
+      const timed = /DTSTART:\d{8}T(?!000000)\d{6}/.test(task.recurrence);
+      const dueBefore = !maintainOffset && (timed ? od <= next : od < next);
+      if (maintainOffset || dueBefore) nextDue = addDays(next, daysBetween(os, od));
+    }
+    scheduled = task.scheduled && task.scheduled.includes('T') ? `${next}T${task.scheduled.split('T')[1]}` : next;
+    if (nextDue && task.due && task.due.includes('T')) due = `${nextDue}T${task.due.split('T')[1]}`;
+    else if (nextDue) due = nextDue;
+  }
+  return { scheduled, due };
+}
+// formatDtstartValue(): date-only -> YYYYMMDD; a date-time -> local clock + 'Z' (TaskNotes' own format).
+function dtstartValue(s, parseLocal) {
+  const t = String(s).trim();
+  if (/T\d{2}:\d{2}/.test(t)) {
+    const d = parseLocal ? parseLocal(t) : new Date(t);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}Z`;
+  }
+  return tnDatePart(t).replace(/-/g, '');
+}
+function addDtstart(task) {
+  if (!task.recurrence) return null;
+  if (task.recurrence.includes('DTSTART:')) return task.recurrence;
+  const src = task.scheduled || task.dateCreated;
+  if (!src) return null;
+  return `DTSTART:${dtstartValue(src)};${task.recurrence}`;
+}
+function updateDtstart(rec, day) {
+  if (!rec) return null;
+  const v = dtstartValue(day);
+  if (rec.includes('DTSTART:')) return rec.replace(/DTSTART:[^;]+;?/, `DTSTART:${v};`);
+  return `DTSTART:${v};${rec}`;
+}
+function owningDay(task, target) {
+  if ((task.recurrence_anchor || 'scheduled') === 'completion' || task.googleCalendarExceptionOriginalScheduled) return null;
+  if (instancesBetween(task, target, target).includes(target)) return target;
+  const done = new Set([...task.complete_instances, ...task.skipped_instances]);
+  const past = instancesBetween(task, addDays(target, -searchDays(task.recurrence)), target);
+  for (let i = past.length - 1; i >= 0; i--) if (!done.has(past[i])) return past[i];
+  return nextUncompleted(task, target);
+}
+function moveScheduledTo(scheduled, day) {
+  if (!scheduled) return day;
+  const part = tnDatePart(scheduled);
+  return `${day}${scheduled.slice(part.length)}`;
+}
+// TaskNotes' getRecurringTaskActionDate() with no explicit day.
+function actionDay(task, today) {
+  if (task.recurrence_anchor !== 'completion' && task.scheduled) return tnDatePart(task.scheduled);
+  return today;
+}
+
+// buildRecurringTaskCompletePlan() + applyRecurringTaskCompleteFrontmatterChange().
+// Mutates fm; returns { day, done } (the instance and its new state).
+function applyRecurringToggle(fm, cfg, opts) {
+  const F = cfg.F;
+  const task = tnTaskOf(fm, F);
+  if (!task.recurrence) throw new Error('Task is not recurring');
+  const today = opts.today;
+  const target = opts.day || actionDay(task, today);
+  const owning = owningDay(task, target);
+  const dateStr = owning || target;
+  const ci = task.complete_instances;
+  const newComplete = !ci.includes(dateStr);
+  const updated = { ...task };
+  if (newComplete) { updated.complete_instances = ci.includes(dateStr) ? ci : [...ci, dateStr]; }
+  else updated.complete_instances = ci.filter((d) => d !== dateStr);
+  updated.skipped_instances = task.skipped_instances.filter((d) => d !== dateStr);
+  const anchor = task.recurrence_anchor || 'scheduled';
+  if (newComplete && typeof updated.recurrence === 'string') {
+    if (anchor === 'completion') { const r = updateDtstart(updated.recurrence, dateStr); if (r) updated.recurrence = r; }
+    else if (!updated.recurrence.includes('DTSTART:')) { const r = addDtstart(updated); if (r) updated.recurrence = r; }
+  }
+  const base = owning ? { ...updated, scheduled: moveScheduledTo(updated.scheduled, owning) } : updated;
+  const floor = dateStr > today ? dateStr : today;
+  const nd = nextDates(base, cfg.maintainDueOffset, floor);
+  if (nd.scheduled) updated.scheduled = nd.scheduled;
+  if (nd.due) updated.due = nd.due;
+  // frontmatter
+  if (!fm[F.completeInstances]) fm[F.completeInstances] = [];
+  if (!fm[F.skippedInstances]) fm[F.skippedInstances] = [];
+  const cur = strList(fm[F.completeInstances]);
+  if (newComplete) { if (!cur.includes(dateStr)) fm[F.completeInstances] = [...cur, dateStr]; }
+  else fm[F.completeInstances] = cur.filter((d) => d !== dateStr);
+  fm[F.skippedInstances] = updated.skipped_instances || [];
+  if (updated.recurrence !== task.recurrence) fm[F.recurrence] = updated.recurrence;
+  if (updated.scheduled) fm[F.scheduled] = updated.scheduled;
+  if (updated.due) fm[F.due] = updated.due;
+  writeOptional(fm, F.googleCalendarExceptionOriginalScheduled);
+  writeOptional(fm, F.googleCalendarMovedOriginalDates);
+  fm[F.dateModified] = opts.stamp;
+  return { day: dateStr, done: newComplete, next: updated.scheduled ? tnDatePart(updated.scheduled) : null };
+}
+// writeOptionalFrontmatterField() with the task's own current value.
+function writeOptional(fm, key) {
+  const v = fm[key];
+  if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) { delete fm[key]; return; }
+  fm[key] = v;
+}
+
+/* ========================================================================== *
+ * TaskNotes-compatible engine: property writes (TaskService.updateProperty)
+ * ========================================================================== */
+
+function coerceStatus(s) { const l = String(s).toLowerCase(); return l === 'true' || l === 'false' ? l === 'true' : String(s); }
+function statusString(v) { if (typeof v === 'boolean') return v ? 'true' : 'false'; if (typeof v === 'string') return v; if (typeof v === 'number') return String(v); return ''; }
+
+// One property, TaskNotes' order of writes. Mutates fm.
+function applyProperty(fm, cfg, prop, value, opts) {
+  const F = cfg.F;
+  const field = F[prop] || prop;
+  const recurring = !!tnTaskOf(fm, F).recurrence;
+  if (prop === 'status') {
+    const st = statusString(value);
+    fm[field] = coerceStatus(st);
+    if (!recurring) {
+      if (isCompletedIn(cfg, st)) fm[F.completedDate] = opts.day;
+      else if (fm[F.completedDate]) delete fm[F.completedDate];
+    }
+  } else if ((prop === 'due' || prop === 'scheduled') && !value) {
+    delete fm[field];
+  } else {
+    fm[field] = value;
+  }
+  fm[F.dateModified] = opts.stamp;
+  writeOptional(fm, F.googleCalendarExceptionOriginalScheduled);
+  writeOptional(fm, F.googleCalendarMovedOriginalDates);
+  return fm;
+}
+
+// toggleArchive(): archive tag and dateModified. Mutates fm.
+function applyArchive(fm, cfg, archive, stamp) {
+  const tag = cfg.F.archiveTag;
+  if (!archive) {
+    if (Array.isArray(fm.tags)) { const t = fm.tags.filter((x) => x !== tag); if (!t.length) delete fm.tags; else fm.tags = t; }
+  } else {
+    if (!fm.tags) fm.tags = []; else if (!Array.isArray(fm.tags)) fm.tags = [fm.tags];
+    if (!fm.tags.includes(tag)) fm.tags.push(tag);
+  }
+  fm[cfg.F.dateModified] = stamp;
+  return fm;
+}
+
+/* ---- reminders (TaskNotes' `reminders`; GL-002 "Task reminders") -------- */
+
+// The clock time a task rings at, from what is stored: a one-off task's due
+// time; a repeating task's start time (`scheduled`, else its DTSTART).
+function ringTimeOf(fm) {
+  if (!fm) return null;
+  return ringField(fm) === 'scheduled' ? (timeOf(fm.scheduled) || ruleTimeOf(fm.recurrence)) : timeOf(fm.due);
+}
+// One entry in TaskNotes' format, as its quick reminders make it (no description).
+function reminderEntry(field, before, idMs) { return { id: `rem_${idMs}`, type: 'relative', relatedTo: field, offset: offsetIso(before) }; }
+// The reminder on the ringing field: minutes before (0 = at the time) or null
+// (none). Other entries (absolute ones, the other field) stay as found. The
+// key goes when the list is empty, as TaskNotes does. -> true when changed.
+function applyReminder(fm, F, before, idMs) {
+  const key = F.reminders || 'reminders';
+  const field = ringField(fm);
+  const list = asList(fm[key]);
+  const ours = (r) => !!r && typeof r === 'object' && r.type === 'relative' && r.relatedTo === field && offsetMinutes(r.offset) != null;
+  const mine = list.filter(ours);
+  if (before == null ? !mine.length : (mine.length === 1 && offsetMinutes(mine[0].offset) === before)) return false;
+  const keep = list.filter((r) => !ours(r));
+  if (before != null) keep.push(reminderEntry(field, before, idMs));
+  if (keep.length) fm[key] = keep; else delete fm[key];
+  return true;
+}
+// A task that gets its first ringing time, with no choice made, rings "At the
+// time" (default approved 2026-10-05). One that already had a time
+// and no reminder keeps none.
+function applyReminderDefault(fm, F, hadRing, idMs) {
+  if (hadRing || !ringTimeOf(fm) || reminderOf(fm) != null) return false;
+  return applyReminder(fm, F, 0, idMs);
+}
+// Repeat switched on or off: the reminder follows the field that rings.
+function retargetReminders(fm, F, from, to) {
+  const key = F.reminders || 'reminders';
+  if (from === to || !Array.isArray(fm[key])) return;
+  fm[key] = fm[key].map((r) => (r && typeof r === 'object' && r.type === 'relative' && r.relatedTo === from ? { ...r, relatedTo: to } : r));
+}
+
+/* ========================================================================== *
+ * TaskNotes-compatible engine: new task notes (TaskCreationService)
+ * ========================================================================== */
+
+function stripControl(s) { return s.replace(/./g, (c) => { const n = c.charCodeAt(0); return n <= 31 || (n >= 127 && n <= 159) ? '' : c; }); }
+function titleForStorage(s) { if (!s || typeof s !== 'string') return 'untitled'; const t = stripControl(s.trim().replace(/\s+/g, ' ')).trim(); return t.length ? t : 'untitled'; }
+function titleForFilename(s) {
+  if (!s || typeof s !== 'string') return 'untitled';
+  const t = stripControl(s.trim().replace(/\s+/g, ' ')).replace(/[<>:"/\\|?*#[\]]/g, '').replace(/^\.+|\.+$/g, '').trim();
+  return t.length ? t : 'untitled';
+}
+function sanitizeForFilename(s) {
+  if (!s || typeof s !== 'string') return 'untitled';
+  const t = stripControl(s.trim().replace(/\s+/g, ' ').replace(/[<>:"/\\|?*#[\]]/g, '')).replace(/^\.+|\.+$/g, '').trim();
+  return t.length ? t : 'untitled';
+}
+function splitDefaults(v) { return String(v || '').split(',').map((x) => x.trim()).filter(Boolean); }
+function normTag(t) { return String(t == null ? '' : t).trim().replace(/^#+/, ''); }
+
+// -> { folder, base, frontmatter (ordered object), body }. The caller picks
+// the unique filename (name, name-2, name-3 ...) and stringifies the YAML.
+function planCreate(input, cfg, stamp, today) {
+  const F = cfg.F;
+  const raw = String(input.title || '').trim();
+  if (!raw) throw new Error('Title is required');
+  const title = titleForStorage(raw);
+  const fileTitle = cfg.storeTitleInFilename ? titleForFilename(raw) : title;
+  const priority = input.priority || cfg.defaultPriority;
+  const status = input.status || cfg.defaultStatus;
+  const recurrence = input.recurrence || undefined;
+  const completedDate = !recurrence ? (isCompletedIn(cfg, status) ? today : undefined) : undefined;
+  const contexts = input.contexts || (cfg.defaultContexts ? splitDefaults(cfg.defaultContexts) : []);
+  const projects = input.projects || (cfg.defaultProjects ? splitDefaults(cfg.defaultProjects) : []);
+  let tags = (input.tags || (cfg.defaultTags ? splitDefaults(cfg.defaultTags) : [])).map(normTag).filter(Boolean);
+  const taskTag = normTag(cfg.taskTag);
+  if (taskTag && !tags.includes(taskTag)) tags = [taskTag, ...tags];
+  const data = {
+    title, status, priority, due: input.due || undefined, scheduled: input.scheduled || undefined,
+    contexts: contexts.length ? contexts : undefined, projects: projects.length ? projects : undefined,
+    dateCreated: stamp, dateModified: stamp, recurrence, completedDate,
+  };
+  if (data.recurrence && !data.recurrence.includes('DTSTART:')) { const r = addDtstart(data); if (r) data.recurrence = r; }
+  const fm = {};
+  fm[F.title] = title; // removed below when the filename carries the title
+  fm[F.status] = coerceStatus(status);
+  fm[F.priority] = priority;
+  if (data.due !== undefined) fm[F.due] = data.due;
+  if (data.scheduled !== undefined) fm[F.scheduled] = data.scheduled;
+  if (data.contexts) fm[F.contexts] = data.contexts;
+  if (data.projects) fm[F.projects] = data.projects;
+  if (data.completedDate !== undefined) fm[F.completedDate] = data.completedDate;
+  if (data.recurrence !== undefined) fm[F.recurrence] = data.recurrence;
+  fm[F.dateCreated] = stamp;
+  fm[F.dateModified] = stamp;
+  if (Array.isArray(input.reminders) && input.reminders.length) fm[F.reminders || 'reminders'] = input.reminders; // TaskNotes writes them right before the tags
+  fm.tags = tags;
+  const custom = input.customFrontmatter && typeof input.customFrontmatter === 'object' ? input.customFrontmatter : {};
+  for (const k of Object.keys(custom)) fm[k] = custom[k];
+  const body = input.details ? String(input.details).trim().replace(/\r\n/g, '\n').trimEnd() : '';
+  return { folder: cfg.tasksFolder, base: sanitizeForFilename(fileTitle), fileTitle, title, frontmatter: fm, body };
+}
+// Final file text once the unique name is known.
+function createContent(plan, uniqueName, cfg, stringify) {
+  const fm = { ...plan.frontmatter };
+  const represented = cfg.storeTitleInFilename && uniqueName === plan.fileTitle && plan.title === plan.fileTitle;
+  if (represented) delete fm[cfg.F.title];
+  let content = `---\n${stringify(fm)}---\n\n`;
+  if (plan.body.length > 0) content += `${plan.body}\n`;
+  return content;
+}
+
+/* ========================================================================== *
+ * Reading tasks and projects for the views (pure)
+ * ========================================================================== */
+
+function projectKeyOf(link) {
+  const t = wikilinkTarget(link);
+  return t ? (t.split('#')[0].split('/').pop().replace(/\.md$/i, '').trim() || null) : null;
+}
+
+// A task for Projects: the shared reader's fields plus what Projects shows.
+// Archived notes are read too (they fill the Done lists).
+function readTask(fm, path, basename, cfg, inArchive) {
+  if (!fm || typeof fm !== 'object') return null;
+  const tags = asList(fm.tags).map(String);
+  if (!tags.includes(cfg.taskTag)) return null;
+  const archived = !!inArchive || fm.archived === true || tags.includes(cfg.F.archiveTag);
+  const view = archived ? { ...fm, archived: false, tags: tags.filter((t) => t !== cfg.F.archiveTag) } : fm;
+  const it = taskFromFrontmatter(view, archived ? `${TASKS_FOLDER}/${basename}.md` : path, basename);
+  if (!it) return null;
+  it.path = path;
+  it.archived = archived;
+  it.title = taskTitleOf(fm, basename, cfg.F.title); // TaskNotes' field name for the title
+  const links = asList(fm[cfg.F.projects]);
+  it.projectLink = links.length ? String(links[0]) : null;
+  it.projectKey = projectKeyOf(links[0]);
+  it.priority = fm[cfg.F.priority] == null ? '' : String(fm[cfg.F.priority]);
+  it.completedDate = toDayStr(fm[cfg.F.completedDate]);
+  it.dateCreated = toDayStr(fm[cfg.F.dateCreated]);
+  it.modified = toDayStr(fm[cfg.F.dateModified]);
+  // Start: `scheduled` for a one-off task; the rule's DTSTART for a repeating one.
+  it.start = it.recurrenceRaw ? (explicitDtstart(it.recurrenceRaw) || null) : toDayStr(fm[cfg.F.scheduled]);
+  it.scheduled = toDayStr(fm[cfg.F.scheduled]);
+  // Clock times (TaskNotes' 'YYYY-MM-DDTHH:MM'): Due's, and Starts' (a repeating task's start time is its time).
+  it.dueTime = it.recurrenceRaw ? timeOf(fm[cfg.F.due]) : it.time;
+  it.startTime = it.recurrenceRaw ? it.time : timeOf(fm[cfg.F.scheduled]);
+  // The reminder as stored, also while there is no time to ring at (it rings again once one comes back).
+  it.reminderSet = reminderOf(fm);
+  return it;
+}
+
+function isOpenTask(t, cfg) { return t.recurrenceRaw ? !isCompletedIn(cfg, t.status) : !isCompletedIn(cfg, t.status); }
+function isLaterTask(t, today) { return !t.recurrenceRaw && !!t.start && t.start > today && !isSomeday(t); }
+// Planner's rule: a one-off, unfinished task on a past day (due or planned).
+function isOverdueTask(t, today, cfg) { return !t.recurrenceRaw && !t.archived && !!t.plannedDay && t.plannedDay < today && !isSomeday(t) && isOpenTask(t, cfg); }
+function isInboxTask(t, cfg) { return !t.archived && !t.recurrenceRaw && !t.projectLink && !t.plannedDay && !isSomeday(t) && isOpenTask(t, cfg); }
+
+function priorityWeight(value, cfg) { const p = cfg.priorities.find((x) => x.value === String(value)); return p ? p.weight : (String(value) === '' ? 0 : -1); }
+
+// Mockup's order for open tasks: overdue first, then priority, then the day it
+// sits on (no day last), then A to Z.
+// Blocked tasks (a blocker still open) go below the ones that can be done now.
+function isBlockedTask(t) { return !!(t && t.openBlockers && t.openBlockers.length); }
+function sortOpenTasks(list, today, cfg) {
+  return [...list].sort((a, b) => (isBlockedTask(a) - isBlockedTask(b)) || (isOverdueTask(b, today, cfg) - isOverdueTask(a, today, cfg))
+    || priorityWeight(b.priority, cfg) - priorityWeight(a.priority, cfg)
+    || String(a.plannedDay || '9999').localeCompare(String(b.plannedDay || '9999'))
+    || (!a.time - !b.time) || String(a.time || '').localeCompare(String(b.time || ''))
+    || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || a.path.localeCompare(b.path));
+}
+
+function readProject(fm, path, basename) {
+  if (!fm || fm.type !== 'project') return null;
+  const sp = typeof fm.sphere === 'string' ? fm.sphere.trim().toLowerCase() : '';
+  return {
+    path, name: basename, key: basename,
+    sphere: sp === 'work' || sp === 'personal' ? sp : 'unsorted',
+    status: String(fm.status || '').trim().toLowerCase(),
+    goal: fm.goal ? String(asList(fm.goal)[0]) : null,
+    client: fm.client ? String(asList(fm.client)[0]) : null,
+    endDate: toDayStr(fm.end_date),
+  };
+}
+
+function projectStats(project, tasks, today, cfg) {
+  const all = tasks.filter((t) => t.projectKey === project.key);
+  const open = all.filter((t) => isOpenTask(t, cfg) && !t.archived);
+  return {
+    total: all.length,
+    done: all.filter((t) => !isOpenTask(t, cfg)).length,
+    open: open.filter((t) => !isLaterTask(t, today) && !isSomeday(t)).length,
+    later: open.filter((t) => isLaterTask(t, today)).length,
+    someday: open.filter((t) => isSomeday(t)).length,
+    overdue: open.filter((t) => isOverdueTask(t, today, cfg)).length,
+    next: sortOpenTasks(open.filter((t) => !isLaterTask(t, today) && !isSomeday(t) && !isBlockedTask(t)), today, cfg)[0] || null,
+  };
+}
+
+// Open = what the overview lists (active, paused, backlog, anything not closed).
+// The one rule: the overview, the Closed list and the sidebar's counts all use it.
+function isOpenProject(p) { return !!p && !CLOSED_STATUSES.includes(p.status); }
+
+// Overview lists: [{ sphere, label, projects }], active then paused then backlog, A to Z.
+// `sphere` ('work' / 'personal', from the sidebar's Work / Personal items) keeps that list only.
+function overviewGroups(projects, filter, query, sphere) {
+  const q = String(query || '').trim().toLowerCase();
+  const out = [];
+  for (const [sp, label] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
+    if (sphere && sp !== sphere) continue;
+    const list = projects.filter((p) => p.sphere === sp && isOpenProject(p) && (filter === 'all' || p.status === filter) && (!q || p.name.toLowerCase().includes(q)))
+      .sort((a, b) => ((OPEN_ORDER[a.status] ?? 3) - (OPEN_ORDER[b.status] ?? 3)) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    if (list.length) out.push({ sphere: sp, label, projects: list });
+  }
+  return out;
+}
+function closedProjects(projects, query, sphere) {
+  const q = String(query || '').trim().toLowerCase();
+  return projects.filter((p) => !isOpenProject(p) && (!sphere || p.sphere === sphere) && (!q || p.name.toLowerCase().includes(q)))
+    .sort((a, b) => String(b.endDate || '').localeCompare(String(a.endDate || '')) || a.name.localeCompare(b.name));
+}
+// Tasks that belong to a project of one sphere (no sphere: all of them).
+function sphereTasks(tasks, projects, sphere) {
+  if (!sphere) return tasks;
+  const keys = new Set(projects.filter((p) => p.sphere === sphere).map((p) => p.key));
+  return tasks.filter((t) => t.projectKey && keys.has(t.projectKey));
+}
+const SPHERE_LABEL = { work: 'Work', personal: 'Personal', unsorted: 'Unsorted' };
+// Task search (2+ characters): open tasks first, then done ones; at most `max`.
+function searchTasks(tasks, query, cfg, max) {
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const fileName = (t) => String(t.path || '').split('/').pop().replace(/\.md$/i, '');
+  const hit = tasks.filter((t) => t.title.toLowerCase().includes(q) || fileName(t).toLowerCase().includes(q) || String(t.project || '').toLowerCase().includes(q));
+  return hit.sort((a, b) => (isOpenTask(b, cfg) - isOpenTask(a, cfg)) || a.title.localeCompare(b.title)).slice(0, max || 30);
+}
+// Find a task (mockup approved 2026-10-06): the Projects page search
+// (searchTasks) over every task the page would list, Someday included.
+function findTasks(tasks, query, cfg, max) {
+  return searchTasks(tasks.filter((t) => !t.archived || !isOpenTask(t, cfg)), query, cfg, max || 50);
+}
+// The grey line under a result: its project, then its day (or done / someday).
+function findNote(t, today, cfg) {
+  const proj = t.project || t.projectKey || 'no project';
+  let when;
+  if (!isOpenTask(t, cfg)) when = 'done';
+  else if (isSomeday(t)) when = 'someday';
+  else if (t.recurrenceRaw) when = repeatWords(t.recurrenceRaw).toLowerCase();
+  else if (t.due) when = `due ${shortDay(t.due, today)}`;
+  else if (t.plannedDay) when = shortDay(t.plannedDay, today);
+  else if (t.start && t.start > today) when = `starts ${shortDay(t.start, today)}`;
+  else when = 'no day';
+  return `${proj} · ${when}`;
+}
+// Where the typed text sits in `text` (case ignored): [before, match, after], or null.
+function findMark(text, query) {
+  const s = String(text || ''); const q = String(query || '').trim();
+  if (q.length < 2) return null;
+  const i = s.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? null : [s.slice(0, i), s.slice(i, i + q.length), s.slice(i + q.length)];
+}
+function doneGroups(tasks, cfg) {
+  const done = tasks.filter((t) => !isOpenTask(t, cfg)); // a repeating task counts once its status is finished (series over)
+  const day = (t) => t.completedDate || t.modified || '';
+  done.sort((a, b) => day(b).localeCompare(day(a)) || a.title.localeCompare(b.title));
+  return done.map((t) => ({ day: day(t), task: t }));
+}
+
+// Project status change -> the frontmatter writes (GL-002 end_date rule).
+function applyProjectStatus(fm, status, today) {
+  fm.status = status;
+  if (CLOSED_STATUSES.includes(status)) { if (!fm.end_date) fm.end_date = today; }
+  else if (fm.end_date != null) delete fm.end_date;
+  return fm;
+}
+
+// A task's project link, written the way A4 Menu Bar Capture writes it.
+function projectLinkFor(path) { return `[[${String(path).replace(/\.md$/i, '')}]]`; }
+function applyProjectLink(fm, F, link) {
+  const list = asList(fm[F.projects]).slice();
+  if (link) { if (list.length) list[0] = link; else list.push(link); fm[F.projects] = list; }
+  else { list.shift(); if (list.length) fm[F.projects] = list; else delete fm[F.projects]; }
+  return fm;
+}
+
+/* ========================================================================== *
+ * Steps: top-level Markdown checkboxes in the note body
+ * ========================================================================== */
+
+const STEP_RE = /^([-*+]) \[( |x|X)\] (.*)$/;
+function frontmatterEnd(text) {
+  if (!text.startsWith('---\n')) return 0;
+  const i = text.indexOf('\n---', 4);
+  if (i < 0) return 0;
+  const nl = text.indexOf('\n', i + 4);
+  return nl < 0 ? text.length : nl + 1;
+}
+// -> [{ line, done, text }] for unindented checkbox lines outside code blocks.
+function readSteps(text) {
+  const s = String(text || '').replace(/\r\n/g, '\n');
+  const start = s.slice(0, frontmatterEnd(s)).split('\n').length - 1;
+  const lines = s.split('\n');
+  const out = [];
+  let fence = false;
+  for (let i = start; i < lines.length; i++) {
+    if (/^\s*(```|~~~)/.test(lines[i])) { fence = !fence; continue; }
+    if (fence) continue;
+    const m = STEP_RE.exec(lines[i]);
+    if (m) out.push({ line: i, done: m[2] !== ' ', text: m[3] });
+  }
+  return out;
+}
+function setStepDone(text, line, done) {
+  const lines = String(text).split('\n');
+  const m = STEP_RE.exec(lines[line] || '');
+  if (!m) return null;
+  lines[line] = `${m[1]} [${done ? 'x' : ' '}] ${m[3]}`;
+  return lines.join('\n');
+}
+// New step after the last step; with no steps yet, first in the body.
+function addStep(text, title) {
+  const s = String(text || '');
+  const clean = String(title).replace(/\s+/g, ' ').trim();
+  if (!clean) return s;
+  const steps = readSteps(s);
+  const line = `- [ ] ${clean}`;
+  if (steps.length) {
+    const lines = s.split('\n');
+    let at = steps[steps.length - 1].line + 1;
+    while (at < lines.length && /^\s{2,}\S/.test(lines[at])) at++; // keep its indented lines with it
+    lines.splice(at, 0, line);
+    return lines.join('\n');
+  }
+  const end = frontmatterEnd(s);
+  const head = s.slice(0, end);
+  const body = s.slice(end).replace(/^(?:[ \t]*\n)+/, '');
+  if (!body.trim()) return `${head}${head ? '\n' : ''}${line}\n`;
+  return `${head}${head ? '\n' : ''}${line}\n\n${body}`;
+}
+// The step line and its indented continuation lines.
+function stepBlock(lines, line) { let end = line + 1; while (end < lines.length && /^\s{2,}\S/.test(lines[end])) end++; return [line, end]; }
+function moveStep(text, line, dir) {
+  const lines = String(text).split('\n');
+  const steps = readSteps(text);
+  const i = steps.findIndex((x) => x.line === line);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= steps.length) return null;
+  const a = stepBlock(lines, steps[Math.min(i, j)].line); const b = stepBlock(lines, steps[Math.max(i, j)].line);
+  if (a[1] !== b[0]) return null; // only swap neighbours that touch
+  const first = lines.slice(a[0], a[1]); const second = lines.slice(b[0], b[1]);
+  lines.splice(a[0], b[1] - a[0], ...second, ...first);
+  return lines.join('\n');
+}
+function removeStep(text, line) {
+  const lines = String(text).split('\n');
+  if (!STEP_RE.test(lines[line] || '')) return null;
+  const [a, b] = stepBlock(lines, line);
+  lines.splice(a, b - a);
+  return lines.join('\n');
+}
+
+/* ========================================================================== *
+ * SHARED quick add with a4-planner and a4-menubar-capture (verbatim copies;
+ * do not edit here without editing both the same way; the tests compare them
+ * character for character). Plain words -> a new task: "call Ana friday 3pm
+ * !high". Uses the SHARED date helpers above.
+ * ========================================================================== */
+
+const DOW_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const DOW_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+const MON_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function dowIndex(w) { const x = String(w).toLowerCase(); if (x.length < 3) return -1; return DOW_NAMES.findIndex((d) => d.startsWith(x) || (x.startsWith(d.slice(0, 3)) && d.startsWith(x.replace(/s$/, '')))); }
+function nextDow(today, idx, skipToday) { let n = (idx - weekdayOf(today) + 7) % 7; if (n === 0 && skipToday) n = 7; return addDays(today, n); }
+function validDay(y, m, d) { const s = `${y}-${pad2(m)}-${pad2(d)}`; return isDayStr(s) && toDayStr(fromUtc(utcOf(s))) === s ? s : null; }
+
+// A typed day -> 'YYYY-MM-DD' or null.
+function parseDayWord(w, today) {
+  const x = String(w || '').trim().toLowerCase().replace(/^on /, '').replace(/[.,]+$/, '');
+  if (!x) return null;
+  if (x === 'today' || x === 'tonight') return today;
+  if (x === 'tomorrow' || x === 'tmrw') return addDays(today, 1);
+  if (x === 'yesterday') return addDays(today, -1);
+  if (x === 'next week') return addDays(today, ((8 - weekdayOf(today)) % 7) || 7);
+  let m = /^in (\d{1,3}) (day|days|week|weeks)$/.exec(x);
+  if (m) return addDays(today, Number(m[1]) * (m[2].startsWith('week') ? 7 : 1));
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(x);
+  if (m) return validDay(Number(m[1]), Number(m[2]), Number(m[3]));
+  // Same rule as Scripts/quick-capture-sync.py: a weekday name is its next
+  // one (a week ahead when it is today); "next <weekday>" adds a week.
+  m = /^(next |this )?([a-z]+)$/.exec(x);
+  if (m && dowIndex(m[2]) >= 0) { const base = nextDow(today, dowIndex(m[2]), true); return m[1] === 'next ' && base !== addDays(today, 7) ? addDays(base, 7) : base; }
+  const year = Number(today.slice(0, 4));
+  const ahead = (mo, d) => { const s = validDay(year, mo, d); if (!s) return null; return s < today ? validDay(year + 1, mo, d) : s; };
+  m = /^([a-z]{3})[a-z]* (\d{1,2})(?:st|nd|rd|th)?$/.exec(x) || /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]{3})[a-z]*$/.exec(x);
+  if (m) { const mon = MON_NAMES.indexOf(isNaN(m[1]) ? m[1] : m[2]); const d = Number(isNaN(m[1]) ? m[2] : m[1]); if (mon >= 0) return ahead(mon + 1, d); }
+  m = /^(\d{1,2})\/(\d{1,2})$/.exec(x);
+  if (m) return ahead(Number(m[1]), Number(m[2]));
+  return null;
+}
+
+const DAY_RE = '(today|tonight|tomorrow|tmrw|next week|in \\d{1,3} (?:days?|weeks?)|\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}/\\d{1,2}|(?:next |this )?(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}(?:st|nd|rd|th)? (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*)';
+
+// "every ..." words -> RRULE body (no DTSTART) or null.
+function repeatRule(words) {
+  const w = String(words || '').trim().toLowerCase().replace(/^every /, '');
+  if (!w) return null;
+  if (w === 'day' || w === 'daily') return 'FREQ=DAILY';
+  if (w === 'other day') return 'FREQ=DAILY;INTERVAL=2';
+  if (w === 'weekday' || w === 'weekdays') return 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+  if (w === 'week' || w === 'weekly') return 'FREQ=WEEKLY';
+  if (w === 'other week') return 'FREQ=WEEKLY;INTERVAL=2';
+  if (w === 'month' || w === 'monthly') return 'FREQ=MONTHLY';
+  if (w === 'other month') return 'FREQ=MONTHLY;INTERVAL=2';
+  if (w === 'year' || w === 'yearly') return 'FREQ=YEARLY';
+  let m = /^(\d{1,3}) (day|days|week|weeks|month|months|year|years)$/.exec(w);
+  if (m) { const f = { d: 'DAILY', w: 'WEEKLY', m: 'MONTHLY', y: 'YEARLY' }[m[2][0]]; return Number(m[1]) > 1 ? `FREQ=${f};INTERVAL=${Number(m[1])}` : `FREQ=${f}`; }
+  m = /^(other |2nd |second )?(.+)$/.exec(w);
+  const parts = m[2].split(/\s*(?:,|and|&)\s*/).filter(Boolean);
+  const idx = parts.map(dowIndex);
+  if (parts.length && idx.every((i) => i >= 0)) {
+    const days = [...new Set(idx)].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((i) => DOW_CODES[i]);
+    return `FREQ=WEEKLY;${m[1] ? 'INTERVAL=2;' : ''}BYDAY=${days.join(',')}`;
+  }
+  return null;
+}
+const REPEAT_RE = /\severy (other day|other week|other month|day|daily|weekdays?|week|weekly|month|monthly|year|yearly|\d{1,3} (?:days?|weeks?|months?|years?)|(?:other |2nd |second )?(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*(?:\s*(?:,|and|&)\s*(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*)*)\b/i;
+
+// -> { title, priority, due, start, plannedDay, plannedHalf, recurrence, repeatText, time, startTime }
+// (time: the due time, or a repeating task's start time; startTime: a one-off start's)
+function understand(text, today) {
+  let s = ` ${String(text || '')} `;
+  const r = { priority: null };
+  // Takes the first match the reader accepts (fn returns true) and cuts
+  // only that one out of the title; a match it can't read stays in the text.
+  const cut = (re, fn) => {
+    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    let m;
+    while ((m = g.exec(s))) { if (fn(m)) { s = s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length); return; } g.lastIndex = m.index + 1; }
+  };
+  cut(/\s!(high|low|none|normal)\b/i, (m) => { r.priority = m[1].toLowerCase(); return true; });
+  cut(/\s(p1|p2|p3|p4)\b/i, (m) => { r.priority = { p1: 'high', p2: 'normal', p3: 'low', p4: 'none' }[m[1].toLowerCase()]; return true; });
+  cut(REPEAT_RE, (m) => { const rule = repeatRule(m[1]); if (!rule) return false; r.recurrence = rule; r.repeatText = m[1].toLowerCase(); return true; });
+  cut(new RegExp(`\\s(?:starts?|start on|starting|from) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.start = d; return true; });
+  cut(new RegExp(`\\s(?:due|by) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.due = d; return true; });
+  // A clock time: "3pm", "at 9:30am", "4 p.m.", or "at 15:30" / "at noon" (a bare
+  // colon time needs "at" here, so "Read John 3:16" stays a title).
+  cut(/\s(?:at\s)?(\d{1,2}(?::\d{2})?\s?(?:am|pm|a\.m\.|p\.m\.))(?=\s)/i, (m) => { const tm = parseClock(m[1]); if (!tm) return false; r.time = tm; return true; });
+  if (!r.time) cut(/\sat\s(\d{1,2}:\d{2}|noon|midnight)(?=\s)/i, (m) => { const tm = parseClock(m[1]); if (!tm) return false; r.time = tm; return true; });
+  cut(/\s(?:in the |this )?(morning|afternoon|evening|tonight)\b/i, (m) => { r.plannedHalf = m[1].toLowerCase() === 'morning' ? 'am' : 'pm'; if (m[1].toLowerCase() === 'tonight') r.plannedDay = today; return true; });
+  cut(new RegExp(`\\s(?:on )?${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.plannedDay = d; return true; });
+  // "starts monday 9am" with no other day: the time goes with the start.
+  if (r.time && !r.recurrence && r.start && !r.due && !r.plannedDay && !r.plannedHalf) { r.startTime = r.time; delete r.time; }
+  if (r.time) r.plannedHalf = halfOfTime(r.time);    // a clock time picks the half (before 1 PM is Morning)
+  if (r.time && !r.due && !r.recurrence) { r.due = r.plannedDay || today; delete r.plannedDay; } // and lives on Due
+  if (r.plannedHalf && !r.plannedDay && !r.due && !r.recurrence) r.plannedDay = today;
+  if (r.due && r.plannedDay) delete r.plannedDay;     // due always wins
+  if (r.recurrence) { delete r.plannedDay; delete r.due; }
+  r.title = s.replace(/\s+/g, ' ').trim();
+  if (r.title) r.title = r.title[0].toUpperCase() + r.title.slice(1);
+  return r;
+}
+
+// A typed clock time -> 'HH:MM' or null. Needs am/pm or a colon ("4pm",
+// "4 p.m.", "9:30am", "15:30"), or is "noon" / "midnight". A bare "9" is not
+// a time: it could be either half of the day, so it is never guessed.
+function parseClock(s) {
+  const x = String(s || '').trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
+  if (x === 'noon') return '12:00';
+  if (x === 'midnight') return '00:00';
+  let m = /^(\d{1,2})(?::(\d{2}))?(am|pm)$/.exec(x);
+  if (m) {
+    let h = Number(m[1]); const mi = Number(m[2] || 0);
+    if (h < 1 || h > 12 || mi > 59) return null;
+    if (m[3] === 'pm' && h < 12) h += 12;
+    if (m[3] === 'am' && h === 12) h = 0;
+    return `${pad2(h)}:${pad2(mi)}`;
+  }
+  m = /^(\d{1,2}):(\d{2})$/.exec(x);
+  if (m) { const h = Number(m[1]); const mi = Number(m[2]); return h <= 23 && mi <= 59 ? `${pad2(h)}:${pad2(mi)}` : null; }
+  return null;
+}
+
+// The value written: 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM' (TaskNotes' format).
+function whenValue(day, time) { return day ? (time ? `${day}T${time}` : day) : null; }
+
+// First occurrence of a new rule on or after `from` (for DTSTART/scheduled).
+function firstOccurrence(rule, from) {
+  const r = parseRRule(`DTSTART:${from.replace(/-/g, '')};${rule}`);
+  if (!r) return from;
+  for (let d = from, i = 0; i < 800; d = addDays(d, 1), i++) if (occursOn(r, d)) return d;
+  return from;
+}
+
+// RRULE -> plain words ("Every Monday and Thursday").
+const DOW_LONG = { SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday' };
+function joinWords(list) { return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`; }
+function ordinal(n) { const v = n % 100; return `${n}${v >= 11 && v <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th')}`; }
+function repeatWords(raw) {
+  if (!raw) return "Doesn't repeat";
+  const r = parseRRule(raw, '2000-01-01');
+  if (!r) return 'Repeats (custom rule)';
+  const n = r.interval;
+  const days = r.byday ? r.byday.filter((b) => !b.n).map((b) => DOW_CODES[b.wd]) : null;
+  if (r.freq === 'DAILY') return n === 1 ? 'Every day' : `Every ${n} days`;
+  if (r.freq === 'WEEKLY') {
+    if (days && days.length === 5 && ['MO', 'TU', 'WE', 'TH', 'FR'].every((d) => days.includes(d)) && n === 1) return 'Every weekday (Mon to Fri)';
+    const on = days && days.length ? joinWords(days.map((d) => DOW_LONG[d])) : DOW_LONG[DOW_CODES[weekdayOf(r.dtstart)]];
+    return n === 1 ? `Every ${on}` : `Every ${n} weeks on ${on}`;
+  }
+  if (r.freq === 'MONTHLY') {
+    const day = r.bymonthday && r.bymonthday.length === 1 ? r.bymonthday[0] : (r.byday ? null : partsOf(r.dtstart).d);
+    const what = day ? `on the ${day < 0 ? 'last day' : ordinal(day)}` : 'on a set weekday';
+    return n === 1 ? `Every month ${what}` : `Every ${n} months ${what}`;
+  }
+  if (r.freq === 'YEARLY') return n === 1 ? 'Every year' : `Every ${n} years`;
+  return 'Repeats (custom rule)';
+}
+
+// Days and halves as the quick add line shows them.
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function shortDay(day, today) {
+  if (day === today) return 'today';
+  if (day === addDays(today, 1)) return 'tomorrow';
+  if (day === addDays(today, -1)) return 'yesterday';
+  const { m, d, y } = partsOf(day);
+  return `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}${y !== Number(today.slice(0, 4)) ? ` ${y}` : ''}`;
+}
+function halfWord(h) { return h === 'am' ? 'morning' : h === 'pm' ? 'afternoon' : ''; }
+
+// The orange "what will be saved" line under a quick add box, as chip texts:
+// the title, the project (when given), the day, Due, Starts, the repeat, and a
+// priority that isn't the default one.
+function quickAddChips(r, today, project, defaultPriority) {
+  const out = [r.title || '…'];
+  if (project) out.push(project);
+  if (r.plannedDay) out.push(`On ${shortDay(r.plannedDay, today)}${r.plannedHalf ? `, ${halfWord(r.plannedHalf)}` : ''}`);
+  else if (r.plannedHalf && !r.recurrence && !r.time) out.push(halfWord(r.plannedHalf));
+  if (r.due) out.push(`Due ${shortDay(r.due, today)}${r.time ? `, ${timeText(r.time)}` : ''}`);
+  if (r.start) out.push(`Starts ${shortDay(r.start, today)}${r.startTime ? `, ${timeText(r.startTime)}` : ''}`);
+  if (r.recurrence) out.push(`${repeatWords(`DTSTART:${firstOccurrence(r.recurrence, today).replace(/-/g, '')};${r.recurrence}`)}${r.time ? `, ${timeText(r.time)}` : (r.plannedHalf ? `, ${halfWord(r.plannedHalf)}` : '')}`);
+  if (r.priority && r.priority !== defaultPriority) out.push(r.priority[0].toUpperCase() + r.priority.slice(1));
+  return out;
+}
+
+// What a quick add saves: TaskNotes' own fields (a time written as TaskNotes
+// writes it, 'YYYY-MM-DDTHH:MM') plus A4's planned_* fields. `lane` is the
+// day and half the task joins ({ day, half }, or null): the caller adds
+// planned_order at the end of that lane. -> { input, lane }
+function quickAddPlan(r, today) {
+  const input = { title: r.title, customFrontmatter: {} };
+  const cf = input.customFrontmatter;
+  if (r.priority) input.priority = r.priority;
+  if (r.due) input.due = whenValue(r.due, r.time);
+  if (r.start) input.scheduled = whenValue(r.start, r.startTime);
+  let lane = null;
+  if (r.recurrence) { const first = firstOccurrence(r.recurrence, r.start || today); input.recurrence = r.recurrence; input.scheduled = whenValue(first, r.time); if (r.plannedHalf) cf.planned_half = r.plannedHalf; }
+  else if (r.plannedDay || r.due) {
+    lane = { day: r.due || r.plannedDay, half: r.plannedHalf || null };
+    if (!r.due) cf.planned_day = r.plannedDay;
+    if (lane.half) cf.planned_half = lane.half;
+  }
+  return { input, lane };
+}
+/* ---- end of SHARED quick add ---------------------------------------------- */
+
+/* ---- Dates with a clock time (task times v3, approved 2026-10-05) --------- */
+
+const CLOCK_RE = '(\\d{1,2}(?::\\d{2})?\\s?(?:am|pm|a\\.m\\.|p\\.m\\.)|\\d{1,2}:\\d{2}|noon|midnight)';
+
+// The typing box next to Starts and Due, and the one in the date-and-time
+// picker: "tomorrow at 4pm", "next wednesday afternoon", "oct 20 3:30pm",
+// "noon", "tuesday 9". -> null (empty) | { error } | { day, time, half, ask, kept }.
+//  - The clock time is cut first, then a half-day word, then the rest is the
+//    day (parseDayWord, so "next tuesday" on a Monday is the Tuesday after).
+//  - No day typed: the task's current day (cur.day), else today ("tonight": today).
+//  - Only a day typed: the task keeps its clock time (kept: true), the same as
+//    a move to another day.
+//  - "tuesday 9" (a bare hour): the day is kept and saved; ask: true says to
+//    add am or pm for a time.
+//  - A clock time sets the half (before 1 PM is Morning). Starts takes no
+//    half-day word: it means "not before then", with or without a time.
+function parseWhen(text, today, cur, kind) {
+  let s = ` ${String(text || '').toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  if (!s.trim()) return null;
+  const c = cur || {};
+  let time = null; let half = null; let tonight = false; let ask = false;
+  const cutAt = (m) => { s = `${s.slice(0, m.index)} ${s.slice(m.index + m[0].length)}`; };
+  let m = new RegExp(`\\s(?:at\\s)?${CLOCK_RE}(?=\\s)`).exec(s);
+  if (m) { time = parseClock(m[1]); if (!time) return { error: 'time' }; cutAt(m); }
+  m = /\s(?:in the |this )?(morning|afternoon|evening|tonight)(?=\s)/.exec(s);
+  if (m) { half = m[1] === 'morning' ? 'am' : 'pm'; tonight = m[1] === 'tonight'; cutAt(m); }
+  let rest = s.replace(/\s+/g, ' ').trim().replace(/^on /, '').replace(/(?:^| )at$/, '').trim();
+  let day = rest ? parseDayWord(rest, today) : null;
+  if (rest && !day) {
+    const b = /^(.*?)\s*(?:\bat )?(\d{1,2})$/.exec(rest);
+    const before = b ? b[1].replace(/(?:^| )at$/, '').trim() : '';
+    if (b && Number(b[2]) <= 24 && (!before || parseDayWord(before, today))) { day = before ? parseDayWord(before, today) : null; ask = true; rest = before; }
+    else return { error: 'day' };
+  }
+  if (!day) day = tonight ? today : (c.day || today);
+  let kept = false;
+  if (!time && !half && c.time) { time = c.time; kept = true; }
+  if (time) half = halfOfTime(time);
+  if (kind === 'start' && half && !time) return { error: 'start-half' };
+  return { day, time, half, ask, kept };
+}
+
+// "Thu, Oct 8" with "(today)" / "(tomorrow)", and the year when it isn't this one.
+function dayLong(day, today) {
+  const { m, d, y } = partsOf(day);
+  const base = `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}${y !== Number(today.slice(0, 4)) ? ` ${y}` : ''}`;
+  return base + (day === today ? ' (today)' : day === addDays(today, 1) ? ' (tomorrow)' : '');
+}
+function capHalf(h) { return h === 'am' ? 'Morning' : h === 'pm' ? 'Afternoon' : ''; }
+
+// When a reminder rings: { day, time } moved `before` minutes earlier.
+function ringAt(day, time, before) {
+  const [h, mi] = time.split(':').map(Number);
+  const total = h * 60 + mi - (Number(before) || 0);
+  const dd = Math.floor(total / 1440); const m = total - dd * 1440;
+  return { day: addDays(day, dd), time: `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}` };
+}
+// '4:15 PM', or 'Wed 4:30 PM' when it rings on another day than `day`.
+function ringText(day, time, before) {
+  const r = ringAt(day, time, before);
+  return `${r.day !== day ? `${WEEKDAYS_SHORT[weekdayOf(r.day)]} ` : ''}${timeText(r.time)}`;
+}
+// "reminder at 4:15 PM (15 min before)" / "reminder at 4:30 PM" / "no reminder".
+function reminderLine(day, time, before) {
+  if (before == null) return 'no reminder';
+  return `reminder at ${ringText(day, time, before)}${before ? ` (${reminderWords(before)})` : ''}`;
+}
+
+// The orange "what will be saved" line under a typing box and in the picker.
+// Only a due time rings (and a repeating task's start time, each time).
+// rem: the reminder that will be kept (minutes before, null = none); left out = at the time.
+function whenPreview(r, kind, today, repeating, rem) {
+  if (!r) return '';
+  if (r.error === 'day') return "Didn't catch the day. Try: tomorrow at 4pm, next tuesday 9am, oct 20";
+  if (r.error === 'time') return "Didn't catch the time. Try: 4pm, 9:30am, noon";
+  if (r.error === 'start-half') return 'Starts takes a clock time (9am), not morning or afternoon';
+  const due = kind === 'due';
+  const before = rem === undefined ? 0 : rem;
+  const parts = [`${due ? 'Due' : 'Starts'} ${dayLong(r.day, today)}${r.time ? `, ${timeText(r.time)}` : ''}`];
+  if (due && r.time && repeating) parts.push(capHalf(halfOfTime(r.time)), "a repeating task rings at its start time");
+  else if (due && r.time) parts.push(capHalf(halfOfTime(r.time)), reminderLine(r.day, r.time, before));
+  else if (due && r.half) parts.push(`${capHalf(r.half)}, no set time`, 'no reminder');
+  else if (due) parts.push('Any time', 'no reminder');
+  else if (!due && r.time) parts.push(repeating ? (before == null ? 'no reminder' : `rings at ${ringText(r.day, r.time, before).replace(/^\w{3} /, '')}${before ? ` (${reminderWords(before)})` : ''} each time`) : 'no reminder (reminders ring at the due time)');
+  if (r.ask) parts.push(r.time ? `keeps ${timeText(r.time)}; add am or pm to change it` : 'add am or pm for a time');
+  return parts.join(' · ');
+}
+const REPEAT_PRESETS = [
+  ['', "Doesn't repeat"], ['FREQ=DAILY', 'Every day'], ['FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', 'Every weekday (Mon to Fri)'],
+  ['FREQ=WEEKLY', 'Every week on this day'], ['FREQ=WEEKLY;INTERVAL=2', 'Every 2 weeks'], ['FREQ=MONTHLY', 'Every month on this date'], ['FREQ=YEARLY', 'Every year'],
+];
+function ruleBody(raw) { return String(raw || '').replace(/DTSTART(?:;[^:]*)?:[^;]+;?/i, '').replace(/^RRULE:/i, '').replace(/^;/, '').trim(); }
+
+/* ---- small display helpers ----------------------------------------------- */
+function longDay(day) { const { y, m, d } = partsOf(day); return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`; }
+function monthGrid(month) { const first = `${month}-01`; const mon = addDays(first, -((weekdayOf(first) + 6) % 7)); return Array.from({ length: 42 }, (_, i) => addDays(mon, i)); }
+function shiftMonth(month, n) { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`; }
+function monthTitle(month) { const [y, m] = month.split('-').map(Number); return `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1]} ${y}`; }
+function nextMonday(today) { return addDays(today, ((8 - weekdayOf(today)) % 7) || 7); }
+
+// Body of a project note for the page: frontmatter dropped, and the
+// project-tasks list embed (this page already lists the tasks) left out.
+function projectBodyForPage(text) {
+  const s = String(text || '').replace(/\r\n/g, '\n');
+  let body = s.slice(frontmatterEnd(s));
+  body = body.replace(/^[ \t]*!\[\[[^\]]*\.base(?:#[^\]]*)?\]\][ \t]*$/gm, '');
+  body = body.replace(/^## Tasks[ \t]*\n(?:[ \t]*\n)*(?=## |$)/m, '');
+  return body.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// The "Blocked by" / "Blocks" picker on a task card. Every candidate is listed
+// (no cap): the task's own project first (A to Z), then the other projects
+// (by project name, then A to Z; Inbox tasks last). A search narrows both
+// groups. Which rows are greyed out is decided by the caller, not here.
+function depPickGroups(cands, projectKey, query) {
+  const q = String(query || '').trim().toLowerCase();
+  const az = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+  const hit = cands.filter((c) => !q || String(c.title).toLowerCase().includes(q));
+  const mine = projectKey ? hit.filter((c) => c.projectKey === projectKey).sort((a, b) => az(a.title, b.title)) : [];
+  const others = hit.filter((c) => !projectKey || c.projectKey !== projectKey)
+    .sort((a, b) => (!a.projectKey) - (!b.projectKey) || az(a.project || a.projectKey, b.project || b.projectKey) || az(a.title, b.title));
+  return { mine, others };
+}
+
+const logic = {
+  depPickGroups,
+  engineConfig, snapshotTaskNotes, isCompletedIn, completedStatusesOf, tnTimestamp, tnDatePart, tnTaskOf, ruleOfTask, instancesBetween, nextUncompleted, nextDates,
+  addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
+  sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
+  searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
+  // shared (also exported by a4-today / a4-planner)
+  timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
+  REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
+  ringTimeOf, reminderEntry, applyReminder, applyReminderDefault, retargetReminders, ringAt, ringText, reminderLine, reminderAfter, parseReminderText,
+  colorMap, linkDateText, taskLinkView, wikilinksIn,
+  parseRRule, occursOn, applyMove, orderForInsert, taskFromFrontmatter, taskTitleOf, isTaskDone, taskOnDay, sortByOrder, addDays, dayOf, toDayStr,
+};
+
+/* ========================================================================== *
+ * The engine (Obsidian side): reads the vault, writes like TaskNotes
+ * ========================================================================== */
+
+class TaskEngine {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+    this.busy = new Set();
+    this.api = this.makeApi();
+  }
+
+  tn() { const p = this.app.plugins && this.app.plugins.plugins; return p ? p.tasknotes : null; }
+  // TaskNotes' live settings when it is loaded, else the copy we kept.
+  cfg() {
+    const tn = this.tn();
+    if (tn && tn.settings && tn.settings.fieldMapping) return engineConfig(tn.settings);
+    return engineConfig(this.plugin.settings.tnSnapshot);
+  }
+  now() { return new Date(); }
+  today() { return dayOf(this.now()); }
+  stamp(d) { return tnTimestamp(d || this.now()); }
+  file(path) { const f = this.app.vault.getAbstractFileByPath(path); return f instanceof TFile ? f : null; }
+  fm(file) { const c = this.app.metadataCache.getFileCache(file); return (c && c.frontmatter) || null; }
+
+  /* ---- reading ---------------------------------------------------------- */
+
+  collectTasks(withArchive) {
+    const cfg = this.cfg();
+    const out = [];
+    const walk = (folder, inArchive) => {
+      for (const c of folder.children || []) {
+        if (c instanceof TFolder) walk(c, inArchive);
+        else if (c instanceof TFile && c.extension === 'md') {
+          const cache = this.app.metadataCache.getFileCache(c);
+          const t = readTask(cache && cache.frontmatter, c.path, c.basename, cfg, inArchive);
+          if (!t) continue;
+          const items = (cache && cache.listItems) || [];
+          const steps = items.filter((li) => li.task !== undefined && li.parent < 0);
+          t.steps = { total: steps.length, done: steps.filter((li) => li.task !== ' ').length };
+          t.openBlockers = !t.archived && t.blockedBy.length && isOpenTask(t, cfg) ? this.openBlockers(t) : [];
+          out.push(t);
+        }
+      }
+    };
+    const root = this.app.vault.getAbstractFileByPath(cfg.tasksFolder);
+    if (root instanceof TFolder) walk(root, false);
+    if (withArchive) { const ar = this.app.vault.getAbstractFileByPath(cfg.archiveFolder); if (ar instanceof TFolder && ar.path !== root?.path) walk(ar, true); }
+    return out;
+  }
+
+  collectProjects() {
+    const out = [];
+    const root = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    if (!(root instanceof TFolder)) return out;
+    for (const c of root.children || []) {
+      if (!(c instanceof TFile) || c.extension !== 'md') continue;
+      const p = readProject(this.fm(c), c.path, c.basename);
+      if (p) out.push(p);
+    }
+    return out;
+  }
+
+  isTaskFile(file) {
+    if (!(file instanceof TFile) || file.extension !== 'md') return false;
+    const cfg = this.cfg();
+    const fm = this.fm(file);
+    if (!fm || !asList(fm.tags).map(String).includes(cfg.taskTag)) return false;
+    return file.path.startsWith(`${cfg.tasksFolder}/`) || file.path.startsWith(`${cfg.archiveFolder}/`);
+  }
+
+  /* ---- dependencies (TaskNotes' blockedBy; "Blocks" is computed) ------- */
+
+  completedStatuses() { return completedStatusesOf(this.cfg()); }
+  depField() { return this.cfg().F.blockedBy || 'blockedBy'; }
+  // The task note a blockedBy link leads to (null when it leads nowhere).
+  linkDest(link, sourcePath) { const f = this.app.metadataCache.getFirstLinkpathDest(link, sourcePath); return f instanceof TFile ? f : null; }
+  linksOf(path) { const f = this.file(path); const fm = f ? this.fm(f) : null; return fm ? blockerLinks({ blockedBy: fm[this.depField()] }) : []; }
+  // Blockers that still hold, for any item with .path and .blockedBy.
+  openBlockers(item) { return openBlockersOf(this.app, item, this.completedStatuses()); }
+  // For the card: every entry, finished or not; a link to a deleted note is listed as missing.
+  blockerEntries(path) {
+    const done = this.completedStatuses();
+    return this.linksOf(path).map((link) => {
+      const f = this.linkDest(link, path);
+      if (!f) return { link, path: null, title: wikilinkLabel(`[[${link}]]`) || link, missing: true, holds: false };
+      const fm = this.fm(f);
+      return { link, path: f.path, title: taskTitleOf(fm, f.basename, this.cfg().F.title), missing: false, holds: blockerHolds(fm, f.path, done) };
+    });
+  }
+  // Tasks whose blockedBy leads to `path` (the "Blocks" list), A to Z.
+  waitingOn(path) {
+    const done = this.completedStatuses();
+    const out = [];
+    for (const t of this.collectTasks(false)) {
+      if (t.path === path) continue;
+      if ((t.blockedBy || []).some((l) => { const f = this.linkDest(l, t.path); return f && f.path === path; })) {
+        const fm = this.fm(this.file(t.path));
+        out.push({ path: t.path, title: t.title, holds: blockerHolds(fm, t.path, done) });
+      }
+    }
+    return out.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  }
+  // Open tasks that wait on `path` and on nothing else still open: ticking `path` frees them.
+  freedBy(path) {
+    return this.collectTasks(false).filter((t) => isOpenTask(t, this.cfg()) && t.blockedBy && t.blockedBy.length)
+      .filter((t) => { const ob = this.openBlockers(t); return ob.length === 1 && ob[0].path === path; });
+  }
+  // Would "waiting blocked by blocker" close a circle? Walks the blocker's own
+  // blockers (all of them, finished or not); a loop already in the files ends the walk.
+  wouldLoop(waitingPath, blockerPath) {
+    if (waitingPath === blockerPath) return true;
+    const seen = new Set();
+    const walk = (p) => {
+      if (p === waitingPath) return true;
+      if (seen.has(p)) return false;
+      seen.add(p);
+      for (const l of this.linksOf(p)) { const f = this.linkDest(l, p); if (f && walk(f.path)) return true; }
+      return false;
+    };
+    return walk(blockerPath);
+  }
+  // TaskNotes' entry for a new blocker, as its formatDependencyLink + serializeDependencies write it.
+  depEntry(blockerFile, sourcePath) { return { uid: `[[${this.app.metadataCache.fileToLinktext(blockerFile, sourcePath, true)}]]`, reltype: 'FINISHTOSTART' }; }
+  async addBlocker(waitingPath, blockerPath) {
+    const bf = this.file(blockerPath);
+    if (!bf || !this.file(waitingPath)) throw new Error('That task note is gone.');
+    if (this.wouldLoop(waitingPath, blockerPath)) throw new Error("Can't: that would make a circle.");
+    const F = this.depField(); const now = this.now();
+    return this.write(waitingPath, (fm) => {
+      const list = asList(fm[F]).slice();
+      if (list.some((e) => { const l = blockerLinks({ blockedBy: [e] })[0]; const f = l ? this.linkDest(l, waitingPath) : null; return f && f.path === blockerPath; })) return false;
+      list.push(this.depEntry(bf, waitingPath));
+      fm[F] = list;
+      fm[this.cfg().F.dateModified] = tnTimestamp(now);
+      return true;
+    });
+  }
+  // Removes the entries that lead to blockerPath (or, for a deleted note, carry that link).
+  async removeBlocker(waitingPath, blockerPath, link) {
+    const F = this.depField(); const now = this.now();
+    return this.write(waitingPath, (fm) => {
+      const list = asList(fm[F]);
+      const keep = list.filter((e) => {
+        const l = blockerLinks({ blockedBy: [e] })[0];
+        if (!l) return true;
+        const f = this.linkDest(l, waitingPath);
+        return blockerPath ? !(f && f.path === blockerPath) : !(l === link && !f);
+      });
+      if (keep.length === list.length) return false;
+      if (keep.length) fm[F] = keep; else delete fm[F];
+      fm[this.cfg().F.dateModified] = tnTimestamp(now);
+      return true;
+    });
+  }
+
+  /* ---- writing (each returns an undo function) --------------------------- */
+
+  // Runs `fn` on the frontmatter and remembers what the touched keys held
+  // before, so Undo can put them back through the frontmatter API too.
+  // keepOrder: Undo also puts a removed key back in its old place (rename).
+  async write(path, fn, keepOrder) {
+    const file = this.file(path);
+    if (!file) throw new Error('That task note is gone.');
+    let before = null; let result; let order = null;
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+      const copy = JSON.parse(JSON.stringify(fm));
+      order = Object.keys(copy);
+      result = fn(fm);
+      const keys = new Set([...Object.keys(copy), ...Object.keys(fm)]);
+      before = {};
+      for (const k of keys) if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
+    });
+    const undo = async () => {
+      const f = this.file(path);
+      if (!f) return;
+      await this.app.fileManager.processFrontMatter(f, (fm) => {
+        for (const [k, b] of Object.entries(before || {})) { if (b) fm[k] = b.v; else delete fm[k]; }
+        if (!keepOrder || !order) return;
+        const now = { ...fm };
+        for (const k of Object.keys(fm)) delete fm[k];
+        for (const k of order) if (Object.prototype.hasOwnProperty.call(now, k)) fm[k] = now[k];
+        for (const k of Object.keys(now)) if (!Object.prototype.hasOwnProperty.call(fm, k)) fm[k] = now[k];
+      });
+    };
+    return { result, undo };
+  }
+
+  async complete(path) {
+    const cfg = this.cfg();
+    const fm0 = this.fm(this.file(path) || {});
+    if (fm0 && isCompletedIn(cfg, statusString(fm0[cfg.F.status]))) return { result: null, undo: async () => {} };
+    return this.setStatus(path, firstCompletedStatus(cfg));
+  }
+  async uncomplete(path) {
+    const cfg = this.cfg();
+    const fm0 = this.fm(this.file(path) || {});
+    if (fm0 && !isCompletedIn(cfg, statusString(fm0[cfg.F.status]))) return { result: null, undo: async () => {} };
+    return this.setStatus(path, cfg.defaultStatus);
+  }
+  async setStatus(path, status) {
+    const cfg = this.cfg();
+    const now = this.now();
+    const w = await this.write(path, (fm) => applyProperty(fm, cfg, 'status', status, { day: dayOf(now), stamp: tnTimestamp(now) }));
+    const queued = await this.plugin.archiveQueueOnStatus(path, status, cfg, now);
+    return { result: w.result, undo: async () => { await w.undo(); if (queued) await this.plugin.cancelArchive(path); } };
+  }
+  async setProperty(path, prop, value) {
+    const cfg = this.cfg();
+    const now = this.now();
+    if (prop === 'status') return this.setStatus(path, value);
+    return this.write(path, (fm) => applyProperty(fm, cfg, prop, value, { day: dayOf(now), stamp: tnTimestamp(now) }));
+  }
+  // Repeating task: tick one occurrence (no day = TaskNotes' current one).
+  async toggleInstance(path, day) {
+    const cfg = this.cfg();
+    const now = this.now();
+    const fm0 = this.fm(this.file(path) || {});
+    if (fm0 && !ruleOfTask(tnTaskOf(fm0, cfg.F))) throw new Error("This task's repeat rule can't be read here.");
+    return this.write(path, (fm) => applyRecurringToggle(fm, cfg, { day: day || null, today: dayOf(now), stamp: tnTimestamp(now) }));
+  }
+  // Same write as A4 Today / A4 Planner moves.
+  async move(path, day, half, order) {
+    return this.write(path, (fm) => applyMove(fm, day, half, order));
+  }
+  // Someday (mockup approved 2026-10-06; GL-002 status `someday`):
+  // shared applySomeday plus dateModified, as any status change. Undo puts
+  // the removed due date back in its old place.
+  async someday(path) {
+    const cfg = this.cfg();
+    const now = this.now();
+    return this.write(path, (fm) => { applySomeday(fm); fm[cfg.F.dateModified] = tnTimestamp(now); }, true);
+  }
+  async unschedule(path) {
+    return this.write(path, (fm) => { if (!fm.due) { delete fm.planned_day; delete fm.planned_half; delete fm.planned_order; } });
+  }
+  async setProject(path, projectPath) {
+    const cfg = this.cfg();
+    const now = this.now();
+    return this.write(path, (fm) => { applyProjectLink(fm, cfg.F, projectPath ? projectLinkFor(projectPath) : null); fm[cfg.F.dateModified] = tnTimestamp(now); });
+  }
+  // Due date, with or without a clock time ('YYYY-MM-DD' / 'YYYY-MM-DDTHH:MM').
+  // half: undefined leaves planned_half (a time sets it: before 1 PM is
+  // Morning); 'am' / 'pm' sets it; null removes it (Any time).
+  // reminder: minutes before (0 = at the time), null = none, undefined = the
+  // default (a first time rings "At the time"; anything else stays as it is).
+  async setDue(path, value, half, reminder) {
+    const cfg = this.cfg();
+    const now = this.now();
+    return this.write(path, (fm) => {
+      const had = ringTimeOf(fm);
+      if (value && isSomeday(fm)) fm[cfg.F.status] = 'open'; // given a day: a normal task again
+      applyProperty(fm, cfg, 'due', value || undefined, { day: dayOf(now), stamp: tnTimestamp(now) });
+      const t = timeOf(value);
+      if (t) fm.planned_half = halfOfTime(t);
+      else if (half === 'am' || half === 'pm') fm.planned_half = half;
+      else if (half === null && fm.planned_half != null) delete fm.planned_half;
+      if (reminder === undefined) applyReminderDefault(fm, cfg.F, had, now.getTime());
+      else if (ringTimeOf(fm)) applyReminder(fm, cfg.F, reminder, now.getTime());
+    });
+  }
+  // The bell next to Due (or a repeating task's Starts): minutes before, or null for none.
+  async setReminder(path, before) {
+    const cfg = this.cfg();
+    const now = this.now();
+    return this.write(path, (fm) => { if (applyReminder(fm, cfg.F, before, now.getTime())) fm[cfg.F.dateModified] = tnTimestamp(now); });
+  }
+  // Start date, with or without a clock time. A repeating task's start is its
+  // rule's DTSTART (TaskNotes writes a time there as the local clock + Z) and
+  // its current occurrence (`scheduled`) carries the same time.
+  async setStart(path, value, reminder) {
+    const cfg = this.cfg();
+    const fm0 = this.fm(this.file(path) || {}) || {};
+    const rec = typeof fm0[cfg.F.recurrence] === 'string' && fm0[cfg.F.recurrence].trim() ? fm0[cfg.F.recurrence] : null;
+    if (!rec && value && isSomeday(fm0)) { const now = this.now(); return this.write(path, (fm) => { fm[cfg.F.status] = 'open'; applyProperty(fm, cfg, 'scheduled', value, { day: dayOf(now), stamp: tnTimestamp(now) }); }); }
+    if (!rec) return this.setProperty(path, 'scheduled', value || undefined);
+    if (!value) throw new Error('A repeating task always has a first day.');
+    const now = this.now();
+    const t = timeOf(value);
+    return this.write(path, (fm) => {
+      const had = ringTimeOf(fm);
+      if (isSomeday(fm)) fm[cfg.F.status] = 'open'; // a new start day brings a repeating someday task back
+      fm[cfg.F.recurrence] = updateDtstart(fm[cfg.F.recurrence], value);
+      const old = toDayStr(fm[cfg.F.scheduled]);
+      const nd = nextDates(tnTaskOf({ ...fm, [cfg.F.scheduled]: old ? whenValue(old, t) : value }, cfg.F), cfg.maintainDueOffset, dayOf(now));
+      fm[cfg.F.scheduled] = nd.scheduled || value;
+      if (t) fm.planned_half = halfOfTime(t);
+      if (reminder === undefined) applyReminderDefault(fm, cfg.F, had, now.getTime());
+      else if (ringTimeOf(fm)) applyReminder(fm, cfg.F, reminder, now.getTime());
+      fm[cfg.F.dateModified] = tnTimestamp(now);
+    });
+  }
+  // rule = RRULE body (no DTSTART) or '' to stop repeating.
+  async setRepeat(path, rule) {
+    const cfg = this.cfg();
+    const now = this.now();
+    const today = dayOf(now);
+    return this.write(path, (fm) => {
+      const F = cfg.F;
+      const from = ringField(fm);
+      if (!rule) {
+        delete fm[F.recurrence];
+        if (fm[F.scheduled] != null) delete fm[F.scheduled]; // TaskNotes' "current occurrence" pointer, not a start
+      } else {
+        const cur = typeof fm[F.recurrence] === 'string' ? explicitDtstart(fm[F.recurrence]) : null;
+        const from = cur || today;
+        const first = firstOccurrence(rule, from);
+        fm[F.recurrence] = `DTSTART:${first.replace(/-/g, '')};${rule}`;
+        const nd = nextDates(tnTaskOf({ ...fm, [F.scheduled]: undefined }, F), cfg.maintainDueOffset, today);
+        fm[F.scheduled] = nd.scheduled || first;
+      }
+      retargetReminders(fm, F, from, ringField(fm));
+      fm[F.dateModified] = tnTimestamp(now);
+    });
+  }
+  // New name for a task. The file takes the name (made safe for a file name,
+  // as create does); the full text is kept in `title` only when the file name
+  // could not carry it (a URL, a ":"), and a stale `title` is removed, so the
+  // name shown is always the one typed. With "store title in file name" off,
+  // only `title` changes. Undo puts back both the file name and `title`.
+  async rename(path, title) {
+    const file = this.file(path);
+    if (!file) throw new Error('That task note is gone.');
+    const cfg = this.cfg(); const F = cfg.F;
+    const raw = typeof title === 'string' ? title.replace(/\s+/g, ' ').trim() : '';
+    if (!raw) return null;
+    const stored = titleForStorage(raw);
+    const name = cfg.storeTitleInFilename ? sanitizeForFilename(titleForFilename(raw)) : file.basename;
+    const fm0 = this.fm(file) || {};
+    if (stored === taskTitleOf(fm0, file.basename, F.title)) return null; // the name it already shows
+    const has = Object.prototype.hasOwnProperty.call(fm0, F.title);
+    const keep = !cfg.storeTitleInFilename || name !== stored;
+    const fmChange = keep ? !(has && fm0[F.title] === stored) : has;
+    if (name === file.basename && !fmChange) return null;
+    const old = file.path;
+    const target = `${file.parent ? file.parent.path + '/' : ''}${name}.md`;
+    if (name !== file.basename) {
+      if (this.app.vault.getAbstractFileByPath(target)) throw new Error('Another task already has that name.');
+      await this.app.fileManager.renameFile(file, target);
+    }
+    const w = fmChange ? await this.write(target, (fm) => { if (keep) fm[F.title] = stored; else delete fm[F.title]; fm[F.dateModified] = this.stamp(); }, true) : null;
+    return { result: target, undo: async () => {
+      if (w) await w.undo();
+      const f = this.file(target);
+      if (target !== old && f && !this.app.vault.getAbstractFileByPath(old)) await this.app.fileManager.renameFile(f, old);
+    } };
+  }
+
+  async create(input) {
+    const cfg = this.cfg();
+    const now = this.now();
+    // A new task with a time rings "At the time" unless a choice came with it (GL-002).
+    const r0 = { due: input && input.due, scheduled: input && input.scheduled, recurrence: input && input.recurrence };
+    if (input && input.reminders === undefined && ringTimeOf(r0)) input = { ...input, reminders: [reminderEntry(ringField(r0), 0, now.getTime())] };
+    const plan = planCreate(input, cfg, tnTimestamp(now), dayOf(now));
+    const folder = plan.folder;
+    if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+    const exists = async (p) => !!this.app.vault.getAbstractFileByPath(p) || await this.app.vault.adapter.exists(p, false);
+    let name = plan.base;
+    if (await exists(`${folder}/${name}.md`)) {
+      name = null;
+      for (let i = 2; i <= 999; i++) if (!(await exists(`${folder}/${plan.base}-${i}.md`))) { name = `${plan.base}-${i}`; break; }
+      if (!name) name = `${plan.base.substring(0, 50)}-${Date.now().toString(36)}`;
+    }
+    const path = `${folder}/${name}.md`;
+    const content = createContent(plan, name, cfg, obsidian.stringifyYaml);
+    const file = await this.app.vault.create(path, content);
+    return { result: { path: file.path, title: plan.title }, undo: async () => { const f = this.file(file.path); if (f) await this.app.fileManager.trashFile(f); } };
+  }
+
+  /* ---- steps (body checkboxes) ------------------------------------------ */
+
+  async editBody(path, fn) {
+    const file = this.file(path);
+    if (!file) throw new Error('That task note is gone.');
+    let before = null; let after = null;
+    await this.app.vault.process(file, (text) => { const out = fn(text); if (out == null || out === text) return text; before = text; after = out; return out; });
+    if (before == null) return { result: false, undo: async () => {} };
+    return { result: true, undo: async () => { const f = this.file(path); if (f) await this.app.vault.process(f, (t) => (t === after ? before : t)); } };
+  }
+  async steps(path) { const f = this.file(path); return f ? readSteps(await this.app.vault.cachedRead(f)) : []; }
+  toggleStep(path, line, done) { return this.editBody(path, (t) => setStepDone(t, line, done)); }
+  addStep(path, title) { return this.editBody(path, (t) => addStep(t, title)); }
+  moveStep(path, line, dir) { return this.editBody(path, (t) => moveStep(t, line, dir)); }
+  removeStep(path, line) { return this.editBody(path, (t) => removeStep(t, line)); }
+
+  /* ---- archive (AutoArchiveService.processItem + toggleArchive) --------- */
+
+  async archive(path) {
+    const cfg = this.cfg();
+    const file = this.file(path);
+    if (!file) return true;
+    await this.app.fileManager.processFrontMatter(file, (fm) => applyArchive(fm, cfg, true, tnTimestamp(this.now())));
+    if (!cfg.moveArchivedTasks || !cfg.archiveFolder) return true;
+    const target = `${cfg.archiveFolder}/${file.name}`;
+    if (!this.app.vault.getAbstractFileByPath(cfg.archiveFolder)) await this.app.vault.createFolder(cfg.archiveFolder);
+    if (this.app.vault.getAbstractFileByPath(target)) { new Notice(`"${file.basename}" is done, but the archive already has a note with that name, so it stays where it is.`); return true; }
+    await this.app.fileManager.renameFile(file, target);
+    return true;
+  }
+
+  /* ---- the TaskNotes-shaped surface A4 Today and A4 Planner call -------- */
+
+  makeApi() {
+    const eng = this;
+    const info = (path) => { const f = eng.file(path); const fm = f ? eng.fm(f) : null; const cfg = eng.cfg(); return { path, status: fm ? statusString(fm[cfg.F.status]) : '', complete_instances: fm ? strList(fm[cfg.F.completeInstances]) : [] }; };
+    // Frontmatter can read stale right after a write; return what we wrote.
+    const after = async (path, run) => { await run(); return info(path); };
+    return {
+      apiVersion: 1,
+      source: 'a4-projects',
+      hasCapability: (c) => ['tasks.read', 'tasks.write', 'recurring.write'].includes(c),
+      lifecycle: { isReady: () => true },
+      tasks: {
+        complete: (path) => after(path, () => eng.complete(path)),
+        uncomplete: (path) => after(path, () => eng.uncomplete(path)),
+        create: async (data) => { const r = await eng.create(data || {}); return { ...info(r.result.path), path: r.result.path, title: r.result.title }; },
+      },
+      recurring: {
+        toggleCompleteInstance: async (path, day) => {
+          const r = await eng.toggleInstance(path, day ? toDayStr(day) : null);
+          const i = info(path);
+          // The cache may lag the write by a moment: report the written list.
+          const list = i.complete_instances.slice();
+          if (r.result) { const has = list.includes(r.result.day); if (r.result.done && !has) list.push(r.result.day); if (!r.result.done && has) list.splice(list.indexOf(r.result.day), 1); }
+          return { ...i, complete_instances: list };
+        },
+      },
+    };
+  }
+}
+
+/* ========================================================================== *
+ * Plugin
+ * ========================================================================== */
+
+const SOURCES = [
+  { id: 'builtin', name: 'Built-in (A4)', desc: 'This plugin reads and writes your task notes itself, exactly the way TaskNotes does.' },
+  { id: 'tasknotes', name: 'TaskNotes', desc: 'Ticks, new tasks and repeats go through the TaskNotes plugin (it must be turned on).' },
+  { id: 'checkbox', name: 'Obsidian checkboxes (not built yet)', desc: 'Plain - [ ] lines in your notes. Planned for the public version.' },
+];
+const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {} } };
+
+function normalizeSettings(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return {
+    source: SOURCES.some((x) => x.id === s.source && x.id !== 'checkbox') ? s.source : 'builtin',
+    hideProps: s.hideProps !== false,
+    tnSnapshot: s.tnSnapshot && typeof s.tnSnapshot === 'object' ? s.tnSnapshot : null,
+    archiveQueue: Array.isArray(s.archiveQueue) ? s.archiveQueue.filter((x) => x && typeof x.taskPath === 'string' && Number.isFinite(x.archiveAfterTimestamp)) : [],
+    ui: {
+      closedOpen: !!(s.ui && s.ui.closedOpen),
+      doneOpen: s.ui && s.ui.doneOpen && typeof s.ui.doneOpen === 'object' ? s.ui.doneOpen : {},
+      later: s.ui && s.ui.later && typeof s.ui.later === 'object' ? s.ui.later : {},
+      someday: s.ui && s.ui.someday && typeof s.ui.someday === 'object' ? s.ui.someday : {},
+    },
+  };
+}
+
+/* ========================================================================== *
+ * Task links (0.6.0, 2026-10-08, owner request): every link to a task note
+ * shows the task the way TaskNotes' inline task link did before TaskNotes was
+ * switched off on 2026-10-05: a status circle (clickable: done / back to
+ * open), the priority dot, the task's title and its dates. Look measured from
+ * TaskNotes 4.12.5 in a test Obsidian (ring 0.85em, 1.5px border in the
+ * status colour; priority dot 0.7em; done = filled ring, struck title, row at
+ * 60%). Reading view: a markdown post-processor puts the widget in front of
+ * the link and hides the link. Live Preview: a CodeMirror view plugin
+ * replaces [[link]] with the widget unless the cursor is in it (as TaskNotes
+ * did). A tick goes through completeTask, the same write as every A4 tick.
+ * Not on task notes themselves: there the A4 card is the only task UI and
+ * links stay plain (2026-10-04).
+ * ========================================================================== */
+
+const LINK_STATUS_COLORS = { none: '#cccccc', open: '#ff5a2d', 'in-progress': '#0066cc', blocked: '#aa00aa', done: '#00aa00', closed: '#00aa00' };
+const LINK_PRIORITY_COLORS = { none: '#cccccc', low: '#00aa00', normal: '#ffaa00', high: '#ff0000' };
+
+// value -> colour from TaskNotes' status or priority list (its live settings or our copy).
+function colorMap(list, fallback) {
+  const out = { ...fallback };
+  for (const x of Array.isArray(list) ? list : []) if (x && x.value != null && typeof x.color === 'string' && x.color) out[String(x.value)] = x.color;
+  return out;
+}
+
+// "Due: Today", "Due: Oct 12", "Due: Oct 5 (overdue)", "Scheduled: Oct 12" (TaskNotes' wording).
+function linkDateText(label, day, today, overdueOk) {
+  if (!isDayStr(day)) return '';
+  const { y, m, d } = partsOf(day);
+  const words = day === today ? 'Today' : `${MONTHS_SHORT[m - 1]} ${d}${y !== Number(today.slice(0, 4)) ? `, ${y}` : ''}`;
+  return `${label}: ${words}${overdueOk && day < today ? ' (overdue)' : ''}`;
+}
+
+// Everything the widget draws, from a readTask() item. Pure, for tests.
+function taskLinkView(t, cfg, today, statusColors, priorityColors) {
+  const done = t.recurrenceRaw ? t.completeInstances.includes(today) : isCompletedIn(cfg, t.status);
+  const status = done && t.recurrenceRaw ? firstCompletedStatus(cfg) : t.status;
+  const dates = [];
+  if (t.due) dates.push(linkDateText('Due', t.due, today, !done));
+  if (t.scheduled && !t.recurrenceRaw) dates.push(linkDateText('Scheduled', t.scheduled, today, false));
+  return {
+    done,
+    statusColor: statusColors[status] || statusColors[cfg.defaultStatus] || 'var(--text-faint)',
+    priorityColor: t.priority && priorityColors[t.priority] ? priorityColors[t.priority] : null,
+    priorityLabel: t.priority ? ((cfg.priorities.find((p) => p.value === t.priority) || {}).label || t.priority) : '',
+    dates: dates.filter(Boolean),
+    recurring: !!t.recurrenceRaw,
+  };
+}
+
+// The [[...]] links in a piece of text (not embeds): where, the link path, the alias.
+function wikilinksIn(text, offset) {
+  const out = [];
+  const re = /\[\[([^\[\]\n]+?)\]\]/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m.index > 0 && text[m.index - 1] === '!') continue;
+    const inner = m[1];
+    const bar = inner.indexOf('|');
+    const target = (bar === -1 ? inner : inner.slice(0, bar)).trim();
+    const linkpath = target.split('#')[0].trim();
+    if (!linkpath) continue;
+    const alias = bar === -1 ? null : inner.slice(bar + 1).trim() || null;
+    out.push({ from: (offset || 0) + m.index, to: (offset || 0) + m.index + m[0].length, linkpath, alias });
+  }
+  return out;
+}
+
+class TaskLinks {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+    this.busy = new Set();
+    this.timer = null;
+    this.views = new Set(); // live-preview editors that drew widgets
+    this.refreshEffect = null;
+  }
+  engine() { return this.plugin.engine; }
+  colors() {
+    const tn = this.engine().tn();
+    const s = (tn && tn.settings && tn.settings.customStatuses) ? tn.settings : (this.plugin.settings.tnSnapshot || {});
+    return { status: colorMap(s.customStatuses, LINK_STATUS_COLORS), priority: colorMap(s.customPriorities, LINK_PRIORITY_COLORS) };
+  }
+  // No widgets on a task note itself (the A4 card is the task UI there).
+  skipSource(sourcePath) {
+    const f = sourcePath ? this.app.vault.getAbstractFileByPath(sourcePath) : null;
+    return f instanceof TFile && this.engine().isTaskFile(f);
+  }
+  // The task a link leads to, or null.
+  taskFor(linkpath, sourcePath) {
+    const f = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath || '');
+    const eng = this.engine();
+    if (!(f instanceof TFile) || !eng.isTaskFile(f)) return null;
+    const cfg = eng.cfg();
+    return readTask(eng.fm(f), f.path, f.basename, cfg, f.path.startsWith(`${cfg.archiveFolder}/`));
+  }
+  viewOf(t) { const c = this.colors(); return taskLinkView(t, this.engine().cfg(), this.engine().today(), c.status, c.priority); }
+  key(t, label) { const v = this.viewOf(t); return JSON.stringify([t.path, label, t.title, t.status, t.priority, t.due, t.scheduled, t.recurrenceRaw, t.completeInstances, v.done, v.statusColor, this.engine().today()]); }
+
+  // The widget (both modes). linktext/sourcePath: how the original link opens.
+  build(t, label, linktext, sourcePath) {
+    const el = createSpan({ cls: 'a4pj-tl' });
+    el.dataset.taskPath = t.path;
+    el.dataset.linktext = linktext;
+    el.dataset.source = sourcePath || '';
+    el.dataset.label = label || '';
+    this.draw(el, t);
+    const stop = (e) => { e.stopPropagation(); };
+    el.addEventListener('pointerdown', stop);
+    el.addEventListener('mousedown', (e) => { e.stopPropagation(); if (e.button === 0) e.preventDefault(); });
+    el.addEventListener('mouseup', stop);
+    el.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const now = this.taskFor(el.dataset.linktext, el.dataset.source);
+      if (e.target.closest('.a4pj-tl-dot')) { if (now) this.toggle(now, el); return; }
+      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, obsidian.Keymap.isModEvent(e));
+    });
+    el.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault(); e.stopPropagation();
+      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, 'tab');
+    });
+    el.addEventListener('keydown', (e) => {
+      if (!e.target.closest('.a4pj-tl-dot') || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault(); e.stopPropagation();
+      const now = this.taskFor(el.dataset.linktext, el.dataset.source);
+      if (now) this.toggle(now, el);
+    });
+    const holder = { hoverPopover: null };
+    el.addEventListener('mouseover', (e) => {
+      const title = e.target.closest('.a4pj-tl-title');
+      if (!title) return;
+      this.app.workspace.trigger('hover-link', { event: e, source: 'preview', hoverParent: holder, targetEl: title, linktext: el.dataset.linktext, sourcePath: el.dataset.source });
+    });
+    return el;
+  }
+  draw(el, t) {
+    const v = this.viewOf(t);
+    el.empty();
+    el.toggleClass('is-done', v.done);
+    el.dataset.taskPath = t.path;
+    const dot = el.createSpan({ cls: 'a4pj-tl-dot', attr: { role: 'button', tabindex: '0', 'aria-label': v.done ? 'Done. Click to mark not done' : 'Click to mark done' } });
+    dot.style.borderColor = v.statusColor;
+    if (v.done) dot.style.backgroundColor = v.statusColor;
+    if (v.priorityColor) {
+      const p = el.createSpan({ cls: 'a4pj-tl-pri', attr: { 'aria-label': `Priority: ${v.priorityLabel}` } });
+      p.style.backgroundColor = v.priorityColor;
+    }
+    el.createSpan({ cls: 'a4pj-tl-title', text: el.dataset.label || t.title });
+    if (v.recurring) setIcon(el.createSpan({ cls: 'a4pj-tl-rep', attr: { 'aria-label': 'Repeats' } }), 'refresh-ccw');
+    for (const d of v.dates) el.createSpan({ cls: 'a4pj-tl-date', text: d });
+  }
+
+  async toggle(t, el) {
+    if (this.busy.has(t.path)) return;
+    this.busy.add(t.path);
+    const eng = this.engine();
+    const cfg = eng.cfg();
+    const today = eng.today();
+    const wasDone = t.recurrenceRaw ? t.completeInstances.includes(today) : isCompletedIn(cfg, t.status);
+    // Show it at once; the real state redraws when the note changes.
+    if (el) { el.toggleClass('is-done', !wasDone); const dot = el.querySelector('.a4pj-tl-dot'); if (dot) dot.style.backgroundColor = wasDone ? '' : this.colors().status[firstCompletedStatus(cfg)] || ''; }
+    const freed = !wasDone && !t.recurrenceRaw ? eng.freedBy(t.path) : [];
+    try {
+      const w = await this.plugin.completeTask(t, !wasDone);
+      const undo = w && w.undo ? async () => { await w.undo(); this.refreshSoon(); } : null;
+      if (t.recurrenceRaw) {
+        const res = w && w.result;
+        this.plugin.toast.show(res ? (res.done ? `Done for ${shortDay(res.day, today)}${res.next ? `; next one ${shortDay(res.next, today)}` : ''}` : `Back to open for ${shortDay(res.day, today)}`) : 'Done', undo);
+      } else if (!wasDone) this.plugin.toast.show(`Done: ${t.title}${unblocksText(freed)}`, undo);
+      else this.plugin.toast.show('Back to open', undo);
+    } catch (err) {
+      console.error('[a4-projects] task link tick failed', err);
+      new Notice(`Could not update "${t.title}". ${err && err.message ? err.message : ''}`.trim());
+    } finally {
+      this.busy.delete(t.path);
+      this.refreshSoon();
+    }
+  }
+
+  /* ---- reading view ---------------------------------------------------- */
+  postProcess(el, ctx) {
+    const src = ctx && ctx.sourcePath;
+    if (this.skipSource(src)) return;
+    for (const a of Array.from(el.querySelectorAll('a.internal-link'))) {
+      if (a.closest('.a4pj-tl, .a4pj-card, .tasknotes-inline-widget, .markdown-embed-title')) continue;
+      if (a.previousElementSibling && a.previousElementSibling.hasClass && a.previousElementSibling.hasClass('a4pj-tl')) continue;
+      const linktext = a.getAttribute('data-href') || a.getAttribute('href') || '';
+      const linkpath = linktext.split('#')[0].trim();
+      if (!linkpath || /^[a-z]+:\/\//i.test(linkpath)) continue;
+      const t = this.taskFor(linkpath, src);
+      if (!t) continue;
+      const text = (a.textContent || '').trim();
+      const base = linkpath.split('/').pop();
+      const label = text && text !== linktext && text !== linkpath && text !== base ? text : '';
+      const w = this.build(t, label, linktext, src);
+      a.before(w);
+      a.addClass('a4pj-tl-hidden');
+    }
+  }
+  refreshReading() {
+    for (const w of Array.from(document.querySelectorAll('.markdown-rendered .a4pj-tl, .markdown-preview-view .a4pj-tl'))) {
+      if (w.dataset.cm) continue;
+      const t = this.taskFor(w.dataset.linktext.split('#')[0], w.dataset.source);
+      if (!t) { const a = w.nextElementSibling; if (a && a.hasClass('a4pj-tl-hidden')) a.removeClass('a4pj-tl-hidden'); w.remove(); continue; }
+      if (this.busy.has(t.path)) continue;
+      this.draw(w, t);
+    }
+  }
+
+  /* ---- live preview ---------------------------------------------------- */
+  editorExtension() {
+    const { RangeSetBuilder, StateEffect, Prec } = require('@codemirror/state');
+    const { ViewPlugin, Decoration, WidgetType } = require('@codemirror/view');
+    let syntaxTree = null;
+    try { syntaxTree = require('@codemirror/language').syntaxTree; } catch (e) { syntaxTree = null; }
+    const { editorInfoField, editorLivePreviewField } = obsidian;
+    const links = this;
+    const refresh = StateEffect.define();
+    this.refreshEffect = refresh;
+    class LinkWidget extends WidgetType {
+      constructor(t, label, linktext, src, key) { super(); this.t = t; this.label = label; this.linktext = linktext; this.src = src; this.k = key; }
+      eq(o) { return o instanceof LinkWidget && o.k === this.k; }
+      toDOM() { const el = links.build(this.t, this.label, this.linktext, this.src); el.dataset.cm = '1'; return el; }
+      ignoreEvent() { return true; }
+    }
+    const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch (e) { return false; } };
+    const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch (e) { return null; } };
+    // A [[link]] the editor itself treats as a link (not in code, not in the properties block).
+    const isLinkToken = (state, pos) => {
+      if (!syntaxTree) return true;
+      try {
+        const n = syntaxTree(state).resolveInner(pos, 1);
+        return /hmd-internal-link/.test(n.name) && !/code|frontmatter|comment/.test(n.name);
+      } catch (e) { return true; }
+    };
+    const build = (view) => {
+      try { return buildRaw(view); } catch (e) { console.error('[a4-projects] task links: drawing failed', e); return Decoration.none; }
+    };
+    const buildRaw = (view) => {
+      const state = view.state;
+      if (!isLive(state)) return Decoration.none;
+      const src = pathOf(state);
+      if (!src || links.skipSource(src)) return Decoration.none;
+      const b = new RangeSetBuilder();
+      const sel = state.selection.ranges;
+      // One pass over the viewport, widened to whole lines (visibleRanges can
+      // split a line around hidden text and would add the same link twice).
+      {
+        const from = state.doc.lineAt(view.viewport.from).from; const to = state.doc.lineAt(view.viewport.to).to;
+        for (const m of wikilinksIn(state.doc.sliceString(from, to), from)) {
+          if (sel.some((s) => s.from < m.to && s.to >= m.from)) continue; // cursor in it: show the text
+          if (!isLinkToken(state, m.from + 2)) continue;
+          const t = links.taskFor(m.linkpath, src);
+          if (!t) continue;
+          const linktext = state.doc.sliceString(m.from + 2, m.to - 2).split('|')[0].trim();
+          const label = m.alias || '';
+          b.add(m.from, m.to, Decoration.replace({ widget: new LinkWidget(t, label, linktext, src, links.key(t, label)), inclusive: false }));
+        }
+      }
+      return b.finish();
+    };
+    // Highest precedence: Obsidian hides the [[ ]] marks with its own replace
+    // decorations, and on a redraw those could otherwise win over the widget.
+    return Prec.highest(ViewPlugin.fromClass(class {
+      constructor(view) { this.view = view; links.views.add(view); this.decorations = build(view); }
+      update(u) {
+        const changedMode = isLive(u.startState) !== isLive(u.state) || pathOf(u.startState) !== pathOf(u.state);
+        const poked = u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh)));
+        if (u.docChanged || u.viewportChanged || u.selectionSet || changedMode || poked) this.decorations = build(u.view);
+      }
+      destroy() { links.views.delete(this.view); }
+    }, { decorations: (v) => v.decorations }));
+  }
+  refreshEditors() {
+    if (!this.refreshEffect) return;
+    for (const v of Array.from(this.views)) { try { v.dispatch({ effects: this.refreshEffect.of(null) }); } catch (e) { this.views.delete(v); } }
+  }
+
+  // Any task note changed (a tick here, in Today, the Planner, the card, sync): redraw.
+  refreshSoon() {
+    if (this.timer) window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => { this.timer = null; this.refreshReading(); this.refreshEditors(); }, 120);
+  }
+  start() {
+    const p = this.plugin;
+    p.registerMarkdownPostProcessor((el, ctx) => this.postProcess(el, ctx));
+    try { p.registerEditorExtension(this.editorExtension()); } catch (e) { console.warn('[a4-projects] task links in Live Preview unavailable', e); }
+    const isTask = (f) => f instanceof TFile && f.path.endsWith('.md') && (this.engine().isTaskFile(f) || /TaskNotes/.test(f.path));
+    p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (isTask(f)) this.refreshSoon(); }));
+    p.registerEvent(this.app.vault.on('rename', (f) => { if (isTask(f)) this.refreshSoon(); }));
+    p.registerEvent(this.app.vault.on('delete', (f) => { if (f instanceof TFile && /TaskNotes/.test(f.path)) this.refreshSoon(); }));
+    p.register(() => { if (this.timer) window.clearTimeout(this.timer); });
+  }
+  // Plugin off: put the plain links back in open reading views.
+  stop() {
+    for (const w of Array.from(document.querySelectorAll('.a4pj-tl'))) { const a = w.nextElementSibling; if (a && a.hasClass && a.hasClass('a4pj-tl-hidden')) a.removeClass('a4pj-tl-hidden'); if (!w.dataset.cm) w.remove(); }
+  }
+}
+
+// The Find window: Obsidian's own prompt (the quick switcher look), so arrows,
+// Enter, Escape and the full-screen phone layout come with it.
+class FindTaskModal extends SuggestModal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.cfg = plugin.engine.cfg();
+    this.today = plugin.engine.today();
+    this.tasks = plugin.engine.collectTasks(true);
+    this.shown = [];
+    this.limit = 50;
+    this.setPlaceholder('Find a task or project…');
+    this.setInstructions([{ command: '↑↓', purpose: 'to move' }, { command: '↵', purpose: 'to open the task' }, { command: 'esc', purpose: 'to close' }]);
+    this.modalEl.addClass('a4pj-find');
+  }
+  getSuggestions(query) {
+    this.query = query;
+    this.shown = findTasks(this.tasks, query, this.cfg, this.limit);
+    this.emptyStateText = String(query || '').trim().length < 2 ? 'Type a few letters of a task or project' : 'No task matches';
+    return this.shown;
+  }
+  renderSuggestion(t, row) {
+    if (t === this.shown[0] && row.parentElement) {
+      const head = createDiv({ cls: 'a4pj-find-head', text: `Tasks · ${this.shown.length}` });
+      row.parentElement.insertBefore(head, row);
+    }
+    row.addClass('mod-complex');
+    const body = row.createDiv({ cls: 'suggestion-content' });
+    const mark = (host, text) => {
+      const m = findMark(text, this.query);
+      if (!m) { host.appendText(text); return; }
+      host.appendText(m[0]); host.createSpan({ cls: 'suggestion-highlight', text: m[1] }); host.appendText(m[2]);
+    };
+    mark(body.createDiv({ cls: 'suggestion-title' }), t.title);
+    const note = body.createDiv({ cls: 'suggestion-note' });
+    if (findMark(t.title, this.query)) note.appendText(findNote(t, this.today, this.cfg)); else mark(note, findNote(t, this.today, this.cfg));
+    if (!isOpenTask(t, this.cfg)) row.addClass('a4pj-find-done');
+  }
+  onChooseSuggestion(t) { this.plugin.openFile(t.path); }
+}
+
+class A4ProjectsPlugin extends Plugin {
+  async onload() {
+    this.settings = normalizeSettings(await this.loadData().catch(() => null));
+    this.engine = new TaskEngine(this);
+    this.toast = new Toast();
+    this.register(() => this.toast.destroy());
+    this.registerView(VIEW_TYPE, (leaf) => new ProjectsView(leaf, this));
+    this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview' }));
+    this.addCommand({ id: 'open', name: 'Open Projects', callback: () => this.openProjects({ page: 'overview' }) });
+    this.addCommand({ id: 'open-work', name: 'Open work projects', callback: () => this.openProjects({ page: 'overview', focus: 'work' }) });
+    this.addCommand({ id: 'open-personal', name: 'Open personal projects', callback: () => this.openProjects({ page: 'overview', focus: 'personal' }) });
+    this.addCommand({ id: 'open-inbox', name: 'Open the task Inbox', callback: () => this.openProjects({ page: 'inbox' }) });
+    this.addCommand({ id: 'move-overdue-to-today', name: 'Move all overdue tasks to today', callback: () => this.moveOverdueToToday(null) });
+    this.addCommand({ id: 'add-task', name: 'Add a task to the Inbox', callback: () => this.openProjects({ page: 'inbox', focusAdd: true }) });
+    // Cmd/Ctrl+Shift+O: free in a default Obsidian and its plugins (checked 2026-10-06); changeable in Settings › Hotkeys.
+    this.addCommand({ id: 'find-task', name: 'Find a task', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'O' }], callback: () => this.openFind() });
+    this.addSettingTab(new ProjectsSettingTab(this.app, this));
+    this.cards = new TaskCardManager(this);
+    this.taskLinks = new TaskLinks(this);
+    this.taskLinks.start();
+    this.app.workspace.onLayoutReady(() => {
+      this.snapshotTaskNotes();
+      this.cards.start();
+      this.processArchiveQueue();
+    });
+    this.registerInterval(window.setInterval(() => this.processArchiveQueue(), 60000));
+    this.registerEvent(this.app.workspace.on('css-change', () => this.cards.refreshAll()));
+    this.hideTaskNotesOnTaskNotes();
+  }
+
+  /* TaskNotes stays installed as the fallback, but on a task note the A4 card is
+   * the only task UI (2026-10-04). TaskNotes' own in-note task card is
+   * off in its settings (showTaskCardInNote). What has no per-note setting is
+   * hidden here, only on notes the engine recognises as tasks, without touching
+   * TaskNotes' code: its Subtasks/relationships widget, the convert-to-task
+   * button on step lines (styles.css, scoped to .a4pj-task-note), the inline
+   * card it draws over links to other tasks (reduced to a plain link; clicks
+   * open the linked note instead of TaskNotes' edit box), and its two
+   * right-click menu entries. Obsidian's Linked/Unlinked mentions are untouched. */
+  hideTaskNotesOnTaskNotes() {
+    const inTaskNote = (t) => t && t.closest && t.closest('.a4pj-task-note .tasknotes-inline-widget');
+    const swallow = (e) => {
+      const w = inTaskNote(e.target); if (!w) return;
+      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+      if (e.type !== 'click' && e.type !== 'auxclick') return;
+      if (e.type === 'auxclick' && e.button !== 1) return;
+      const card = w.querySelector('[data-task-path]');
+      const file = card && this.app.vault.getAbstractFileByPath(card.dataset.taskPath);
+      if (file instanceof TFile) this.app.workspace.getLeaf(e.type === 'auxclick' || obsidian.Keymap.isModEvent(e)).openFile(file);
+    };
+    for (const type of ['click', 'auxclick', 'dblclick', 'contextmenu']) this.registerDomEvent(document, type, swallow, true);
+    // Menu items are added by TaskNotes' own file-menu handler, which may run
+    // before or after this one: drop what is there, and catch what comes later.
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+      if (!this.engine.isTaskFile(file) || !menu || !Array.isArray(menu.items)) return;
+      const isTn = (it) => it && it.section === 'tasknotes';
+      // TaskNotes adds a separator right before its entries; it goes with them.
+      const isSep = (it) => it && !it.titleEl && !('section' in it);
+      const drop = () => { const a = menu.items; menu.items = a.filter((it, i) => !isTn(it) && !(isSep(it) && isTn(a[i + 1]))); };
+      drop();
+      if (!menu.a4pjNoTn) {
+        menu.a4pjNoTn = true;
+        const add = menu.addItem;
+        menu.addItem = function (cb) { const r = add.call(this, cb); drop(); return r; };
+      }
+    }));
+  }
+
+  onunload() { closeAllPops(); if (this.cards) this.cards.stop(); if (this.taskLinks) this.taskLinks.stop(); }
+
+  async onExternalSettingsChange() {
+    this.settings = normalizeSettings(await this.loadData().catch(() => null));
+    this.cards.refreshAll();
+  }
+
+  async save() { await this.saveData(this.settings); }
+
+  // Keeps a copy of TaskNotes' field names, statuses and folders, so the
+  // engine still writes the same way after TaskNotes is turned off.
+  async snapshotTaskNotes() {
+    const tn = this.engine.tn();
+    const snap = tn && tn.settings ? snapshotTaskNotes(tn.settings) : null;
+    if (!snap) return;
+    if (JSON.stringify(snap) === JSON.stringify(this.settings.tnSnapshot)) return;
+    this.settings.tnSnapshot = snap;
+    await this.save();
+  }
+
+  // For A4 Today / A4 Planner: the engine when the task source is Built-in.
+  taskApi() { return this.settings.source === 'builtin' ? this.engine.api : null; }
+  usesBuiltIn() { return this.settings.source === 'builtin'; }
+
+  // Ticks/creates follow the task source: Built-in engine, or TaskNotes' API.
+  tnApi() {
+    const tn = this.engine.tn(); const api = tn && tn.api;
+    if (!api || api.apiVersion !== 1 || typeof api.hasCapability !== 'function' || !api.hasCapability('tasks.write')) return null;
+    return api;
+  }
+  async completeTask(t, wantDone) {
+    if (!this.usesBuiltIn()) {
+      const api = this.tnApi();
+      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › A4 Projects.');
+      if (t.recurrenceRaw) { await api.recurring.toggleCompleteInstance(t.path); return { undo: null }; }
+      if (wantDone) await api.tasks.complete(t.path); else await api.tasks.uncomplete(t.path);
+      return { undo: null };
+    }
+    if (t.recurrenceRaw) return this.engine.toggleInstance(t.path, null);
+    return wantDone ? this.engine.complete(t.path) : this.engine.uncomplete(t.path);
+  }
+  async createTask(input) {
+    if (!this.usesBuiltIn()) {
+      const api = this.tnApi();
+      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › A4 Projects.');
+      const t = await api.tasks.create(input);
+      return { result: { path: t && (t.path || t.id), title: input.title }, undo: null };
+    }
+    return this.engine.create(input);
+  }
+
+  /* ---- auto-archive queue (same rule as TaskNotes' AutoArchiveService) -- */
+
+  async archiveQueueOnStatus(path, status, cfg, now) {
+    const sc = statusConfigOf(cfg, status);
+    if (!sc) return false;
+    const fm = this.engine.fm(this.engine.file(path) || {}) || {};
+    const recurring = typeof fm[cfg.F.recurrence] === 'string' && fm[cfg.F.recurrence].trim();
+    this.settings.archiveQueue = this.settings.archiveQueue.filter((x) => x.taskPath !== path);
+    let queued = false;
+    if (sc.autoArchive && !recurring) {
+      this.settings.archiveQueue.push({ taskPath: path, statusChangeTimestamp: now.getTime(), archiveAfterTimestamp: now.getTime() + sc.autoArchiveDelay * 60000, statusValue: sc.value });
+      queued = true;
+    }
+    await this.save();
+    return queued;
+  }
+  async cancelArchive(path) {
+    const before = this.settings.archiveQueue.length;
+    this.settings.archiveQueue = this.settings.archiveQueue.filter((x) => x.taskPath !== path);
+    if (this.settings.archiveQueue.length !== before) await this.save();
+  }
+  async processArchiveQueue(nowMs) {
+    if (this.archiving) return;
+    const q = this.settings.archiveQueue;
+    if (!q.length) return;
+    const now = nowMs || Date.now();
+    const due = q.filter((x) => now >= x.archiveAfterTimestamp);
+    if (!due.length) return;
+    this.archiving = true;
+    try {
+      const keep = q.filter((x) => now < x.archiveAfterTimestamp);
+      const cfg = this.engine.cfg();
+      for (const item of due) {
+        try {
+          const f = this.engine.file(item.taskPath);
+          if (!f) continue;                                   // gone or moved: done with it
+          const fm = this.engine.fm(f) || {};
+          if (statusString(fm[cfg.F.status]) !== String(item.statusValue)) continue; // reopened since
+          if (asList(fm.tags).map(String).includes(cfg.F.archiveTag) || fm.archived === true) continue;
+          await this.engine.archive(item.taskPath);
+        } catch (e) { console.error('[a4-projects] archive failed', item.taskPath, e); keep.push(item); }
+      }
+      this.settings.archiveQueue = keep;
+      await this.save();
+    } finally { this.archiving = false; }
+  }
+
+  /* ---- opening things --------------------------------------------------- */
+
+  // opts.newTab (Cmd/Ctrl-click): a new Projects tab; otherwise the open one is reused.
+  async openProjects(state, opts) {
+    const ws = this.app.workspace;
+    let leaf = opts && opts.newTab ? null : ws.getLeavesOfType(VIEW_TYPE)[0];
+    if (!leaf) leaf = ws.getLeaf('tab');
+    await leaf.setViewState({ type: VIEW_TYPE, active: true, state });
+    ws.revealLeaf(leaf);
+    ws.setActiveLeaf(leaf, { focus: true });
+    return leaf;
+  }
+  openProject(path, opts) { return this.openProjects({ page: 'project', project: path }, opts); }
+  // Public (A4 Today, A4 Planner): the project note whose page this plugin shows
+  // for `ref`, a project note's path or a task's project link or name. Matched
+  // by name, the same way the project page collects its tasks. Null: no page.
+  projectPathFor(ref) {
+    if (ref == null || ref === '') return null;
+    const list = this.engine.collectProjects();
+    const s = String(ref);
+    const byPath = list.find((p) => p.path === s);
+    if (byPath) return byPath.path;
+    const key = projectKeyOf(s);
+    const hit = key ? list.find((p) => p.key === key) : null;
+    return hit ? hit.path : null;
+  }
+  // Public (A4 Sidebar's Work / Personal counts): does the overview list this
+  // project note (its frontmatter) as open? Same reading and rule as the page.
+  isOpenProjectNote(fm) { return isOpenProject(readProject(fm, '', '')); }
+  // Public: open that project's page. Resolves false when there is none, so the
+  // caller can open the note instead.
+  async openProjectPage(ref, opts) {
+    const path = this.projectPathFor(ref);
+    if (!path) return false;
+    await this.openProject(path, opts);
+    return true;
+  }
+  run(id) { const c = this.app.commands; if (c && c.commands && c.commands[id]) { c.executeCommandById(id); return true; } return false; }
+  openPlanner(projectKey) {
+    if (!this.run(PLANNER_COMMAND)) { new Notice('The A4 Planner is not turned on.'); return; }
+    if (!projectKey) return;
+    window.setTimeout(() => {
+      const leaf = this.app.workspace.getLeavesOfType('a4-planner')[0];
+      const v = leaf && leaf.view;
+      if (v && typeof v.render === 'function' && 'project' in v) { v.project = projectKey; v.render(); }
+    }, 150);
+  }
+  // Public (A4 Today, A4 Planner, the "Find a task" command): the Find window.
+  openFind() { const m = new FindTaskModal(this); m.open(); return m; }
+  openToday() { if (!this.run(TODAY_COMMAND)) new Notice('A4 Today is not turned on.'); }
+  openFile(path, newTab) { const f = this.engine.file(path); if (f) this.app.workspace.getLeaf(newTab === false ? false : 'tab').openFile(f); }
+
+  /* ---- shared actions ---------------------------------------------------- */
+
+  // Orders of the untimed tasks in a lane (timed ones sort first by the clock).
+  laneOrders(items, day, half) {
+    return sortByOrder(items.filter((it) => !it.time && taskOnDay(it, day) && (it.plannedHalf || null) === (half || null))).map((x) => x.plannedOrder);
+  }
+  // A move (applyMove): the due time goes along while the task stays in its
+  // half of the day; into the other half (or Any time) it comes off.
+  // The result says so (dropsTime) for the toast; Undo puts it back.
+  async placeTask(t, day, half, items) {
+    if (t.recurrenceRaw) { new Notice('Repeating tasks follow their schedule.'); return null; }
+    const orders = this.laneOrders(items.filter((x) => x.path !== t.path), day, half);
+    const w = await this.engine.move(t.path, day, half, orderForInsert(orders, orders.length));
+    if (w) w.dropsTime = t.time && t.due && halfOfTime(t.time) !== (half || null) ? t.time : null;
+    return w;
+  }
+  // "Move all overdue to today": one write per task (applyMove), one Undo.
+  async moveOverdueToToday(projectKey) {
+    const today = this.engine.today();
+    const cfg = this.engine.cfg();
+    const items = this.engine.collectTasks(false);
+    const list = items.filter((t) => isOverdueTask(t, today, cfg) && (!projectKey || t.projectKey === projectKey));
+    if (!list.length) { new Notice('Nothing is overdue.'); return 0; }
+    const undos = [];
+    const lanes = {};
+    for (const t of list.sort((a, b) => a.plannedDay.localeCompare(b.plannedDay) || a.plannedOrder - b.plannedOrder)) {
+      const half = t.plannedHalf || null;
+      const key = half || '';
+      if (!lanes[key]) lanes[key] = this.laneOrders(items.filter((x) => !list.includes(x)), today, half);
+      const order = orderForInsert(lanes[key], lanes[key].length);
+      lanes[key].push(order);
+      try { const w = await this.engine.move(t.path, today, half, order); undos.push(w.undo); }
+      catch (e) { console.error('[a4-projects] move failed', t.path, e); }
+    }
+    this.toast.show(`${undos.length} overdue task${undos.length === 1 ? '' : 's'} moved to today`, async () => { for (const u of undos.reverse()) await u(); });
+    return undos.length;
+  }
+}
+
+/* ========================================================================== *
+ * Toast with Undo (one at a time, on document.body)
+ * ========================================================================== */
+
+class Toast {
+  constructor() { this.el = null; this.timer = null; this.undo = null; }
+  ensure() {
+    if (this.el && this.el.isConnected) return;
+    this.el = document.body.createDiv({ cls: 'a4pj-toast' });
+    this.msg = this.el.createSpan({ cls: 'a4pj-toast-msg' });
+    this.btn = this.el.createEl('button', { cls: 'a4pj-toast-undo', text: 'Undo' });
+    this.btn.addEventListener('click', async () => {
+      const u = this.undo; this.hide();
+      if (u) { try { await u(); } catch (e) { console.error('[a4-projects] undo failed', e); new Notice('Could not undo that.'); } }
+    });
+  }
+  show(message, undo) {
+    this.ensure();
+    this.msg.setText(message);
+    this.undo = undo || null;
+    this.btn.toggleClass('is-hidden', !undo);
+    // Phone: sit above Obsidian's floating toolbar, measured, not guessed.
+    const nav = document.querySelector('.mobile-navbar');
+    if (nav && nav.offsetParent) { const top = nav.getBoundingClientRect().top; this.el.style.bottom = `${Math.max(12, Math.round(window.innerHeight - top + 12))}px`; }
+    else this.el.style.removeProperty('bottom');
+    this.el.addClass('is-on');
+    if (this.timer) window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => this.hide(), undo ? UNDO_MS : 1800);
+  }
+  hide() { if (this.timer) window.clearTimeout(this.timer); this.timer = null; this.undo = null; if (this.el) this.el.removeClass('is-on'); }
+  destroy() { this.hide(); if (this.el) this.el.remove(); this.el = null; }
+}
+
+/* ========================================================================== *
+ * Popovers (on document.body; the outside-click listener always goes with
+ * the popover: dev notes 2026-10-03)
+ * ========================================================================== */
+
+const openPops = new Set();
+function closeAllPops() { for (const p of [...openPops]) p.close(); }
+const el = (parent, tag, cls, text) => { const e = parent ? parent.createEl(tag) : document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+class Pop {
+  constructor(anchor, title, build, opts) {
+    const same = [...openPops].some((p) => p.anchor === anchor);
+    closeAllPops();
+    if (same) { this.dead = true; return; }
+    this.anchor = anchor; this.opts = opts || {};
+    this.el = document.body.createDiv({ cls: 'a4pj-pop' + (this.opts.narrow ? ' is-narrow' : '') + (this.opts.cls ? ' ' + this.opts.cls : '') });
+    this.el.setAttr('role', 'dialog');
+    if (title) el(this.el, 'div', 'a4pj-pop-title', title);
+    anchor.addClass('is-open');
+    openPops.add(this);
+    this.away = (e) => { if (!this.el.contains(e.target) && !anchor.contains(e.target)) this.close(); };
+    document.addEventListener('pointerdown', this.away, true);
+    this.el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); anchor.focus && anchor.focus(); } });
+    build(this.el, this);
+    this.place();
+    const first = this.el.querySelector(this.opts.focus || 'button, input');
+    if (first) first.focus({ preventScroll: true });
+  }
+  place() {
+    const b = this.anchor.getBoundingClientRect();
+    const w = this.el.offsetWidth; const h = this.el.offsetHeight;
+    const host = this.opts.host ? this.opts.host.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight, width: window.innerWidth };
+    let left; let top;
+    if (this.opts.narrow) { left = host.left + Math.max(8, (host.width - w) / 2); top = Math.max(8, Math.min(host.bottom - (this.opts.lift || 0), window.innerHeight) - h - 12); }
+    else {
+      left = Math.max(host.left + 8, Math.min(b.right - w, host.right - w - 8));
+      top = b.bottom + 6;
+      if (this.opts.fit) {
+        // A long list: take the roomier side of the button and scroll inside.
+        const below = window.innerHeight - 8 - top; const above = b.top - 6 - 8;
+        if (h > below && above > below) { this.el.style.maxHeight = `${Math.floor(above)}px`; top = Math.max(8, b.top - 6 - this.el.offsetHeight); }
+        else if (h > below) this.el.style.maxHeight = `${Math.floor(Math.max(below, 160))}px`;
+      } else if (top + h > window.innerHeight - 8) top = Math.max(8, b.top - h - 6);
+    }
+    this.el.style.left = `${Math.round(left)}px`; this.el.style.top = `${Math.round(top)}px`;
+  }
+  close() {
+    if (this.dead) return;
+    this.dead = true;
+    document.removeEventListener('pointerdown', this.away, true);
+    openPops.delete(this);
+    this.el.remove();
+    this.anchor.removeClass('is-open');
+    if (this.opts.onClose) this.opts.onClose();
+  }
+}
+
+// Month date picker: quick picks, a month grid (keyboard too), a typed date.
+function openDatePicker(anchor, o) {
+  const today = o.today;
+  let month = (o.value || today).slice(0, 7);
+  return new Pop(anchor, o.title, (box, pop) => {
+    box.addClass('a4pj-dp');
+    const pick = (d) => { pop.close(); o.onPick(d); };
+    const q = el(box, 'div', 'a4pj-dp-quick');
+    const quick = [['Today', today], ['Tomorrow', addDays(today, 1)], ['Next week', nextMonday(today)]];
+    if (o.allowClear !== false) quick.push(['No date', null]);
+    for (const [label, d] of quick) {
+      const b = el(q, 'button', null); el(b, 'span', null, label); el(b, 'span', 'a4pj-k', d ? `${WEEKDAYS_SHORT[weekdayOf(d)]} ${partsOf(d).d}` : '–');
+      b.addEventListener('click', () => pick(d));
+    }
+    const cal = el(box, 'div');
+    const draw = (focusDay) => {
+      cal.empty();
+      const head = el(cal, 'div', 'a4pj-mc-head');
+      const pv = el(head, 'button', 'a4pj-mc-nav'); setIcon(pv, 'chevron-left'); pv.setAttr('aria-label', 'Previous month');
+      el(head, 'span', null, monthTitle(month));
+      const nx = el(head, 'button', 'a4pj-mc-nav'); setIcon(nx, 'chevron-right'); nx.setAttr('aria-label', 'Next month');
+      pv.addEventListener('click', () => { month = shiftMonth(month, -1); draw(); });
+      nx.addEventListener('click', () => { month = shiftMonth(month, 1); draw(); });
+      const g = el(cal, 'div', 'a4pj-mc'); g.setAttr('role', 'grid');
+      for (const d of ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) el(g, 'span', 'a4pj-mc-dw', d);
+      for (const d of monthGrid(month)) {
+        const b = el(g, 'button', (d.slice(0, 7) !== month ? 'is-out ' : '') + (d === today ? 'is-today ' : '') + (d === o.value ? 'is-sel' : ''), String(partsOf(d).d));
+        b.dataset.day = d;
+        b.tabIndex = d === (focusDay || o.value || today) ? 0 : -1;
+        b.setAttr('aria-label', `${shortDay(d, today)}${d === today ? ' (today)' : ''}${d === o.value ? ' (current)' : ''}`);
+        b.addEventListener('click', () => pick(d));
+        b.addEventListener('keydown', (e) => {
+          const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+          if (!mv) return;
+          e.preventDefault();
+          const n = addDays(d, mv);
+          if (n.slice(0, 7) !== month) { month = n.slice(0, 7); draw(n); }
+          const t = cal.querySelector(`[data-day="${n}"]`); if (t) t.focus();
+        });
+      }
+    };
+    draw();
+    const foot = el(box, 'div', 'a4pj-dp-foot');
+    const ty = el(foot, 'input', 'a4pj-input'); ty.type = 'text'; ty.placeholder = 'or type: friday, oct 20'; ty.setAttr('aria-label', 'Type a date');
+    ty.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const d = parseDayWord(ty.value, today);
+      if (d) pick(d); else { ty.value = ''; ty.placeholder = "Didn't catch that, try: oct 20"; }
+    });
+    if (o.value && o.allowClear !== false) { const c = el(foot, 'button', 'a4pj-dp-clear', 'Clear'); c.addEventListener('click', () => pick(null)); }
+    if (o.note) el(box, 'div', 'a4pj-pop-note', o.note);
+  }, { narrow: o.narrow, host: o.host, lift: o.lift, focus: '.a4pj-mc button[tabindex="0"]' });
+}
+
+/* ---- Starts / Due: date and time picker (task times v3 + review) ---------- *
+ * A day from the quick picks, the month (arrow keys too) or the typing box;
+ * then, optionally, a time: Any time / Morning / Afternoon / a clock time
+ * (Due), or No time / a clock time (Starts). The clock is an hour wheel and a
+ * minutes wheel (steps of 5, plus the task's own odd minute) with AM and PM
+ * as two buttons. Keyboard: up/down change the focused part, left/right move
+ * between hour, minutes and AM/PM, Enter saves, Escape closes. Nothing is
+ * written until Save (or Enter); Cancel or Escape closes without saving; the
+ * orange line says what will be. The wheels show three rows. On a
+ * phone, a picked day folds the month to one line and the line and Save stay
+ * pinned at the bottom. */
+
+// The options for a task's Starts or Due picker.
+function whenPickerOpts(t, key, today) {
+  const due = key === 'due';
+  return {
+    kind: key, title: `${due ? 'Due' : 'Starts'} · ${t.title}`, today, repeating: !!t.recurrenceRaw,
+    day: due ? t.due : t.start, time: due ? t.dueTime : t.startTime, half: due && !t.recurrenceRaw ? t.plannedHalf : null,
+    allowClear: !(key === 'start' && t.recurrenceRaw),
+    // The Reminder row: on Due for a one-off task, on Starts for a repeating one.
+    rings: due ? !t.recurrenceRaw : !!t.recurrenceRaw, reminder: t.reminderSet,
+  };
+}
+// r: null (clear) | { day, time, half }. half: 'am' / 'pm', null (Any time),
+// undefined (leave as it is). A time sets the half itself.
+// r.reminder: minutes before / null (none), from the picker's Reminder row;
+// left out (the typing box) = the default rule (GL-002 "Task reminders").
+function saveWhen(engine, t, key, r) {
+  const v = r ? whenValue(r.day, r.time) : null;
+  const rem = r ? r.reminder : undefined;
+  if (key === 'due') return engine.setDue(t.path, v, r && !r.time ? r.half : undefined, rem);
+  return engine.setStart(t.path, v, rem);
+}
+// The reminder a save will leave: the task's own when it already rings (or
+// had one set), "At the time" when it gets its first time, else none.
+function reminderAfter(t, key, r) {
+  const rings = key === 'due' ? !t.recurrenceRaw : !!t.recurrenceRaw;
+  if (!rings || !r || !r.time) return null;
+  if (t.reminderSet != null) return t.reminderSet;
+  return (key === 'due' ? t.dueTime : t.startTime) ? null : 0;
+}
+const REMINDER_LABEL = { 0: 'At the time', 5: '5 min', 15: '15 min', 30: '30 min', 60: '1 hour', 1440: '1 day' };
+// "Other" in the Reminder row: "45 min", "2 hours", "1h30m", "3 days", "90"
+// (minutes). -> minutes before, or null when it can't be read. Up to 30 days.
+function parseReminderText(s) {
+  const t = String(s || '').toLowerCase().replace(/\bbefore\b/g, ' ').replace(/\band\b/g, ' ').replace(/,/g, '.').trim();
+  if (!t) return null;
+  const re = /\s*(\d+(?:\.\d+)?)\s*(weeks?|wks?|w|days?|d|hours?|hrs?|h|minutes?|mins?|m)?\s*/y;
+  const unit = { w: 10080, d: 1440, h: 60, m: 1 };
+  let i = 0; let total = 0;
+  while (i < t.length) {
+    re.lastIndex = i;
+    const m = re.exec(t);
+    if (!m || !m[0]) return null;
+    total += Number(m[1]) * unit[(m[2] || 'm')[0]];
+    i = re.lastIndex;
+  }
+  total = Math.round(total);
+  return total >= 0 && total <= 43200 ? total : null;
+}
+function whenToast(t, key, r, today) {
+  const lab = key === 'due' ? 'Due' : 'Starts';
+  if (!r) return `${key === 'due' ? 'Due' : 'Start'} date${(key === 'due' ? t.dueTime : t.startTime) ? ' and time' : ''} removed`;
+  return `${lab} ${shortDay(r.day, today)}${r.time ? `, ${timeText(r.time)}` : (key === 'due' && r.half ? `, ${halfWord(r.half)}` : '')}`;
+}
+
+function openWhenPicker(anchor, o) {
+  const today = o.today;
+  const due = o.kind === 'due';
+  let day = o.day || null;
+  let time = o.time || null;
+  // Due: 'any' | 'am' | 'pm' | 'time'. Starts: 'any' (No time) | 'time'.
+  let choice = time ? 'time' : (due && (o.half === 'am' || o.half === 'pm') ? o.half : 'any');
+  let month = (day || today).slice(0, 7);
+  let folded = !!(o.narrow && day); // phone: the month folds to one line once a day is picked
+  let typedError = null;
+  // Reminder row (reminder setup mockup): the stored choice; a task getting
+  // its first time starts on "At the time". other: the Other box is open.
+  let rem = time ? (o.reminder === undefined ? null : o.reminder) : (o.reminder == null ? 0 : o.reminder);
+  let other = rem != null && !Object.prototype.hasOwnProperty.call(REMINDER_LABEL, rem);
+  let otherText = other ? reminderWords(rem).replace(/ before$/, '') : '';
+  return new Pop(anchor, o.title, (box, pop) => {
+    box.addClass('a4pj-dp');
+    const top = el(box, 'div', 'a4pj-wp-top');
+    const tsec = el(box, 'div', 'a4pj-wp-time');
+    const foot = el(box, 'div', 'a4pj-dp-foot');
+    const ty = el(foot, 'input', 'a4pj-input'); ty.type = 'text'; ty.placeholder = due ? 'or type: tomorrow at 4pm' : 'or type: monday 9am'; ty.setAttr('aria-label', 'Type a date and time');
+    const rsec = o.rings ? el(box, 'div', 'a4pj-wp-rem') : null;
+    el(box, 'div', 'a4pj-pop-note', due
+      ? 'Scroll or tap the hour and minutes, or use the arrow keys. A time picks Morning or Afternoon for you (before 1 PM is Morning). Start times don\'t ring.'
+      : (o.repeating ? 'Starts: the first day this repeat runs. A start time on a repeating task rings each time it comes round.'
+        : 'Starts: the first day it shows up. A start time doesn\'t ring; reminders ring at the due time.'));
+    // The line, Cancel and Save stay pinned at the bottom (they matter most on a phone).
+    const dock = el(box, 'div', 'a4pj-wp-dock');
+    const pv = el(dock, 'div', 'a4pj-wp-pv'); pv.setAttr('aria-live', 'polite');
+    const btns = el(dock, 'div', 'a4pj-wp-btns');
+    const cn = el(btns, 'button', 'a4pj-wp-cancel', 'Cancel');
+    const sv = el(btns, 'button', 'a4pj-wp-save', 'Save');
+    // Cancel: close without saving, the same as Escape (2026-10-05).
+    cn.addEventListener('click', () => { pop.close(); if (anchor.focus) anchor.focus(); });
+
+    const half = () => (choice === 'time' ? halfOfTime(time) : (choice === 'am' || choice === 'pm' ? choice : null));
+    // The reminder Save writes: minutes / null; undefined when the row is off (no time).
+    const remNow = () => (!rsec || choice !== 'time' ? undefined : (other ? parseReminderText(otherText) : rem));
+    const remBad = () => !!rsec && choice === 'time' && other && parseReminderText(otherText) == null;
+    const state = () => (day ? { day, time: choice === 'time' ? time : null, half: choice === 'time' ? halfOfTime(time) : (due ? half() : null), reminder: remNow() } : null);
+    let otherOut = null;
+    const updPv = () => {
+      pv.toggleClass('is-err', !!typedError);
+      if (typedError) { pv.setText(whenPreview(typedError, o.kind, today, o.repeating)); return; }
+      const r = state();
+      pv.setText(r ? whenPreview(r, o.kind, today, o.repeating, o.rings ? (r.reminder === undefined ? null : r.reminder) : undefined) : 'Pick a day');
+      sv.disabled = !r || remBad();
+      if (otherOut) {
+        const n = parseReminderText(otherText);
+        otherOut.toggleClass('is-err', n == null && !!otherText.trim());
+        otherOut.setText(n == null ? (otherText.trim() ? "Didn't catch that" : '') : (r && r.time ? `before = ${ringText(r.day, r.time, n)}` : ''));
+      }
+      const tb = tsec.querySelector('[data-choice="time"]'); if (tb) tb.setText(choice === 'time' ? timeText(time) : 'Set a time');
+    };
+    const save = () => { const r = state(); if (!r || remBad()) return; pop.close(); o.onSave(r); };
+
+    // The Reminder row: None, At the time, 5/15/30 min, 1 hour, 1 day, Other.
+    // Greyed out while there is no time (nothing to ring at).
+    const drawRem = () => {
+      if (!rsec) return;
+      rsec.empty(); otherOut = null;
+      const on = choice === 'time';
+      rsec.toggleClass('is-off', !on);
+      const lab = el(rsec, 'div', 'a4pj-wp-lab a4pj-wp-remlab');
+      setIcon(el(lab, 'span', 'a4pj-ic'), on ? 'bell' : 'bell-off'); lab.appendText('Reminder');
+      const chips = el(rsec, 'div', 'a4pj-wp-chips'); chips.setAttr('role', 'radiogroup'); chips.setAttr('aria-label', 'Reminder');
+      const opts = [[null, 'None'], ...REMINDER_CHOICES.map((n) => [n, REMINDER_LABEL[n]])];
+      for (const [n, label] of opts) {
+        const sel = on && !other && rem === n;
+        const b = el(chips, 'button', 'a4pj-wp-chip' + (sel ? ' is-on' : ''), label);
+        b.setAttr('role', 'radio'); b.setAttr('aria-checked', String(sel)); b.disabled = !on;
+        b.addEventListener('click', () => { rem = n; other = false; drawRem(); updPv(); });
+      }
+      if (on) {
+        const ob = el(chips, 'button', 'a4pj-wp-chip is-other' + (other ? ' is-on' : ''), 'Other…');
+        ob.setAttr('role', 'radio'); ob.setAttr('aria-checked', String(other));
+        ob.addEventListener('click', () => { other = true; drawRem(); updPv(); const i = rsec.querySelector('.a4pj-wp-otherin'); if (i) i.focus(); });
+      }
+      if (on && other) {
+        const ow = el(rsec, 'div', 'a4pj-wp-other');
+        const oi = el(ow, 'input', 'a4pj-input a4pj-wp-otherin'); oi.type = 'text'; oi.value = otherText; oi.placeholder = '2 hours'; oi.setAttr('aria-label', 'How long before');
+        otherOut = el(ow, 'span', 'a4pj-wp-otherout'); otherOut.setAttr('aria-live', 'polite');
+        oi.addEventListener('input', () => { otherText = oi.value; updPv(); });
+        oi.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); save(); } });
+        el(rsec, 'div', 'a4pj-wp-remhelp', 'Type minutes, hours or days, e.g. "45 min", "2 hours", "3 days".');
+      } else {
+        el(rsec, 'div', 'a4pj-wp-remhelp', on ? `${o.repeating ? 'before it starts, each time' : "before it's due"}. Rings on your iPhone, Watch and Mac.` : 'Pick a time first. A task without a time has nothing to ring at.');
+      }
+      replace();
+    };
+    sv.addEventListener('click', save);
+
+    const drawTop = (focusDay) => {
+      top.empty();
+      if (folded && day) {
+        const line = el(top, 'div', 'a4pj-wp-fold');
+        el(line, 'span', null, dayLong(day, today));
+        const ch = el(line, 'button', 'a4pj-wp-change', 'change'); ch.setAttr('aria-label', 'Change the day');
+        ch.addEventListener('click', () => { folded = false; drawTop(day); });
+        return;
+      }
+      const q = el(top, 'div', 'a4pj-dp-quick');
+      const quick = [['Today', today], ['Tomorrow', addDays(today, 1)], ['Next week', nextMonday(today)]];
+      if (o.allowClear !== false) quick.push(['No date', null]);
+      for (const [label, d] of quick) {
+        const b = el(q, 'button', d && d === day ? 'is-sel' : null); el(b, 'span', null, label); el(b, 'span', 'a4pj-k', d ? `${WEEKDAYS_SHORT[weekdayOf(d)]} ${partsOf(d).d}` : '–');
+        b.addEventListener('click', () => { if (!d) { pop.close(); o.onSave(null); return; } setDay(d); });
+      }
+      const head = el(top, 'div', 'a4pj-mc-head');
+      const pvb = el(head, 'button', 'a4pj-mc-nav'); setIcon(pvb, 'chevron-left'); pvb.setAttr('aria-label', 'Previous month');
+      el(head, 'span', null, monthTitle(month));
+      const nx = el(head, 'button', 'a4pj-mc-nav'); setIcon(nx, 'chevron-right'); nx.setAttr('aria-label', 'Next month');
+      pvb.addEventListener('click', () => { month = shiftMonth(month, -1); drawTop(); });
+      nx.addEventListener('click', () => { month = shiftMonth(month, 1); drawTop(); });
+      const g = el(top, 'div', 'a4pj-mc'); g.setAttr('role', 'grid');
+      for (const d of ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) el(g, 'span', 'a4pj-mc-dw', d);
+      for (const d of monthGrid(month)) {
+        const b = el(g, 'button', (d.slice(0, 7) !== month ? 'is-out ' : '') + (d === today ? 'is-today ' : '') + (d === day ? 'is-sel' : ''), String(partsOf(d).d));
+        b.dataset.day = d;
+        b.tabIndex = d === (focusDay || day || today) ? 0 : -1;
+        b.setAttr('aria-label', `${shortDay(d, today)}${d === today ? ' (today)' : ''}${d === day ? ' (picked)' : ''}`);
+        b.addEventListener('click', () => setDay(d, true));
+        b.addEventListener('keydown', (e) => {
+          const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+          if (!mv) return;
+          e.preventDefault();
+          const n = addDays(d, mv);
+          if (n.slice(0, 7) !== month) { month = n.slice(0, 7); drawTop(n); }
+          const t = top.querySelector(`[data-day="${n}"]`); if (t) t.focus();
+        });
+      }
+      if (focusDay) { const t = top.querySelector(`[data-day="${focusDay}"]`); if (t) t.focus({ preventScroll: true }); }
+      replace();
+    };
+    // The panel changes height (month folded or open, clock shown or not): keep it on screen.
+    const replace = () => { if (pop.el && pop.el.isConnected && !pop.dead) pop.place(); };
+    const setDay = (d, keepFocus) => {
+      day = d; month = d.slice(0, 7); typedError = null;
+      if (o.narrow) { folded = true; keepFocus = false; }
+      drawTop(keepFocus ? d : null);
+      updPv();
+    };
+
+    // The clock: hour and minutes wheels, AM/PM buttons.
+    let wheel = null;
+    const drawTime = () => {
+      tsec.empty(); wheel = null;
+      el(tsec, 'div', 'a4pj-wp-lab', 'Time (optional)');
+      const seg = el(tsec, 'div', 'a4pj-seg a4pj-wp-seg');
+      const opts = due ? [['any', 'Any time'], ['am', 'Morning'], ['pm', 'Afternoon'], ['time', 'Set a time']] : [['any', 'No time'], ['time', 'Set a time']];
+      for (const [k, lab] of opts) {
+        const b = el(seg, 'button', choice === k ? 'is-on' : '', k === 'time' && choice === 'time' ? timeText(time) : lab);
+        b.dataset.choice = k;
+        b.setAttr('aria-pressed', String(choice === k));
+        b.addEventListener('click', () => {
+          typedError = null;
+          if (k === 'time') {
+            if (choice !== 'time') { if (!time) time = choice === 'pm' ? '15:00' : '09:00'; if (!day) { day = today; month = today.slice(0, 7); drawTop(); } }
+            choice = 'time';
+          } else choice = k; // Morning / Afternoon / Any time: the clock time comes off, the half stays
+          drawTime(); updPv();
+          if (k === 'time' && wheel) wheel.focusCol(0);
+        });
+      }
+      if (choice === 'time') wheel = clockWheel(tsec, time, (t) => { time = t; updPv(); }, save);
+      drawRem();
+      replace();
+    };
+    ty.addEventListener('input', () => {
+      const r = parseWhen(ty.value, today, { day, time: choice === 'time' ? time : null }, o.kind);
+      if (!r) { typedError = null; updPv(); return; }
+      if (r.error) { typedError = r; updPv(); return; }
+      typedError = null;
+      day = r.day; month = day.slice(0, 7);
+      if (r.time) { time = r.time; choice = 'time'; } else if (r.half && due) choice = r.half; else if (!r.kept) choice = due && choice !== 'time' ? choice : 'any';
+      drawTop(); drawTime(); updPv();
+      if (r.ask) pv.setText(whenPreview({ ...state(), ask: true }, o.kind, today, o.repeating));
+    });
+    ty.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (!typedError) save(); } });
+    drawTop(); drawTime(); updPv();
+  }, { narrow: o.narrow, host: o.host, lift: o.lift, cls: 'a4pj-wp' + (o.narrow ? ' is-phone' : ''), focus: '.a4pj-mc button[tabindex="0"], .a4pj-wp-change' });
+}
+
+// Hour wheel 1-12, minutes wheel (steps of 5, plus `t`'s own minute so an
+// existing time is never rounded), AM / PM as two buttons. onChange('HH:MM').
+function clockWheel(parent, t, onChange, onEnter) {
+  const [H, M] = t.split(':').map(Number);
+  const st = { h: H % 12 === 0 ? 12 : H % 12, m: M, pm: H >= 12 };
+  const emit = () => onChange(`${pad2((st.h % 12) + (st.pm ? 12 : 0))}:${pad2(st.m)}`);
+  const box = el(parent, 'div', 'a4pj-wp-wheel');
+  el(box, 'div', 'a4pj-wp-band');
+  const parts = [];
+  const center = (c, it, smooth) => c.scrollTo({ top: it.offsetTop - c.clientHeight / 2 + it.offsetHeight / 2, behavior: smooth ? 'smooth' : 'auto' });
+  const column = (values, cur, label, key, fmt) => {
+    const c = el(box, 'div', 'a4pj-wp-col'); c.setAttr('role', 'listbox'); c.setAttr('aria-label', label); c.tabIndex = 0;
+    el(c, 'div', 'a4pj-wp-pad');
+    const items = values.map((v) => { const it = el(c, 'div', 'a4pj-wp-it' + (v === cur ? ' is-sel' : ''), fmt(v)); it.dataset.v = String(v); it.setAttr('role', 'option'); it.setAttr('aria-selected', String(v === cur)); return it; });
+    el(c, 'div', 'a4pj-wp-pad');
+    const pick = (it, smooth) => {
+      items.forEach((x) => { x.toggleClass('is-sel', x === it); x.setAttr('aria-selected', String(x === it)); });
+      st[key] = Number(it.dataset.v); emit();
+      if (smooth != null) center(c, it, smooth);
+    };
+    items.forEach((it) => it.addEventListener('click', () => { c.focus({ preventScroll: true }); pick(it, true); }));
+    let tmr = 0; let quiet = false;
+    c.addEventListener('scroll', () => {
+      if (quiet) return;
+      window.clearTimeout(tmr);
+      tmr = window.setTimeout(() => {
+        const mid = c.scrollTop + c.clientHeight / 2; let best = null; let bd = 1e9;
+        for (const it of items) { const d = Math.abs(it.offsetTop + it.offsetHeight / 2 - mid); if (d < bd) { bd = d; best = it; } }
+        if (best && !best.hasClass('is-sel')) pick(best);
+      }, 120);
+    });
+    const step = (n) => {
+      const i = items.findIndex((x) => x.hasClass('is-sel'));
+      const j = (i + n + items.length) % items.length;
+      quiet = true; window.clearTimeout(tmr);
+      pick(items[j], false);
+      window.setTimeout(() => { quiet = false; }, 60);
+    };
+    parts.push({ el: c, step, focus: () => c.focus({ preventScroll: true }), init: () => { const s = items.find((x) => x.hasClass('is-sel')); if (s) center(c, s, false); } });
+    return c;
+  };
+  const mins = Array.from({ length: 12 }, (_, i) => i * 5);
+  if (!mins.includes(M)) { mins.push(M); mins.sort((a, b) => a - b); }
+  column(Array.from({ length: 12 }, (_, i) => i + 1), st.h, 'Hour', 'h', String);
+  el(box, 'div', 'a4pj-wp-colon', ':');
+  column(mins, st.m, 'Minutes', 'm', pad2);
+  const ap = el(box, 'div', 'a4pj-wp-ampm'); ap.setAttr('role', 'radiogroup'); ap.setAttr('aria-label', 'AM or PM');
+  const abtn = [['AM', false], ['PM', true]].map(([lab, pm]) => {
+    const b = el(ap, 'button', st.pm === pm ? 'is-on' : '', lab);
+    b.setAttr('role', 'radio'); b.setAttr('aria-checked', String(st.pm === pm)); b.tabIndex = st.pm === pm ? 0 : -1;
+    b.addEventListener('click', () => setPm(pm, true));
+    return b;
+  });
+  const setPm = (pm, focus) => {
+    st.pm = pm;
+    abtn.forEach((b, i) => { const on = (i === 1) === pm; b.toggleClass('is-on', on); b.setAttr('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
+    emit();
+  };
+  parts.push({ el: ap, step: () => setPm(!st.pm, true), focus: () => abtn[st.pm ? 1 : 0].focus() });
+  box.addEventListener('keydown', (e) => {
+    const i = parts.findIndex((p) => p.el === e.target || p.el.contains(e.target));
+    if (i < 0) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); parts[i].step(e.key === 'ArrowUp' ? -1 : 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); const j = i + (e.key === 'ArrowLeft' ? -1 : 1); if (parts[j]) parts[j].focus(); }
+    else if (e.key === 'Enter') { e.preventDefault(); onEnter(); }
+  });
+  window.requestAnimationFrame(() => parts.forEach((p) => p.init && p.init()));
+  return { focusCol: (i) => { if (parts[i]) parts[i].focus(); } };
+}
+
+/* ========================================================================== *
+ * Shared row pieces (project page, Inbox, search, task card)
+ * ========================================================================== */
+
+/* Task card colour (mockup-task-page-color, sample A "Soft", approved
+ * 2026-10-07). On the INKLINE theme the card uses the theme's own marker
+ * (the theme's orange) and these inline shades are ignored by the CSS. On any other
+ * theme it follows the accent chosen in A4 Today (same shades as Today), and
+ * Ink blue when A4 Today is not installed; "Follow Obsidian accent" leaves both
+ * unset so the CSS falls back to Obsidian's accent. */
+const CARD_ACCENTS = {
+  orange: ['#d43f16', '#ff5a2d'],
+  blue: ['#1d4ed8', '#86aefc'],
+  green: ['#1f6b3a', '#72cf94'],
+  plum: ['#7a2e8a', '#d6a1e3'],
+  amber: ['#8a5a00', '#efb54a'],
+};
+function cardAccentId(app) {
+  const td = app && app.plugins && app.plugins.plugins ? app.plugins.plugins['a4-today'] : null;
+  const id = td && td.look && td.look.accent;
+  return typeof id === 'string' && (id === 'accent' || CARD_ACCENTS[id]) ? id : 'blue';
+}
+function setCardAccent(card, app) {
+  const pair = CARD_ACCENTS[cardAccentId(app)];
+  if (pair) { card.style.setProperty('--pj-acc-l', pair[0]); card.style.setProperty('--pj-acc-d', pair[1]); }
+  else { card.style.removeProperty('--pj-acc-l'); card.style.removeProperty('--pj-acc-d'); }
+}
+
+function priorityChip(parent, value, cfg) {
+  const table = [...cfg.priorities].sort((a, b) => a.weight - b.weight);
+  const i = table.findIndex((p) => p.value === String(value));
+  const p = i >= 0 ? table[i] : { value: String(value || ''), label: value ? String(value) : 'None', weight: -1 };
+  const bars = i >= 0 && table.length > 1 ? Math.round((3 * i) / (table.length - 1)) : 0;
+  const top = i === table.length - 1;
+  const c = el(parent, 'span', 'a4pj-chip a4pj-pri' + (top ? ' is-top' : '') + (bars <= 1 ? ' is-low' : ''));
+  c.setAttr('aria-label', `Priority: ${p.label}`);
+  const b = el(c, 'span', 'a4pj-bars');
+  for (let k = 1; k <= 3; k++) el(b, 'i', k <= bars ? 'is-on' : '');
+  c.appendText(p.label);
+  return c;
+}
+function iconChip(parent, cls, text, icon, onClick, label) {
+  const c = el(parent, 'span', `a4pj-chip ${cls || ''}`.trim());
+  if (icon) setIcon(el(c, 'span', 'a4pj-ic'), icon);
+  c.appendText(text);
+  if (onClick) {
+    c.addClass('is-click'); c.setAttr('role', 'button'); c.tabIndex = 0;
+    if (label) c.setAttr('aria-label', label);
+    c.addEventListener('click', (e) => { e.stopPropagation(); onClick(c); });
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(c); } });
+  }
+  return c;
+}
+// The "Blocked" marker: a lock chip; hover names the blockers, a click or tap lists them.
+function unblocksText(freed) { return freed && freed.length ? ` · unblocks ${freed.length === 1 ? freed[0].title : `${freed.length} tasks`}` : ''; }
+function lockChip(parent, blockers, open, popOpts) {
+  const names = blockers.map((b) => b.title).join(', ');
+  return iconChip(parent, 'a4pj-lock', blockers.length > 1 ? `Blocked · ${blockers.length}` : 'Blocked', 'lock', (c) => {
+    new Pop(c, 'Blocked by', (box, pop) => {
+      for (const b of blockers) { const q = el(box, 'button', 'a4pj-pop-q'); el(q, 'span', null, b.title); el(q, 'span', 'a4pj-k', 'open'); q.addEventListener('click', () => { pop.close(); open(b.path); }); }
+      el(box, 'div', 'a4pj-pop-note', 'This task can start once these are done. Ticking one clears the marker.');
+    }, popOpts || {});
+  }, `Blocked by: ${names}`);
+}
+function ring(parent, done, total, big) {
+  const w = el(parent, 'div', 'a4pj-ring' + (big ? ' is-big' : ''));
+  const r = 18; const c = 2 * Math.PI * r; const f = total ? done / total : 0;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 46 46'); svg.setAttribute('aria-hidden', 'true');
+  for (const [cls, dash] of [['a4pj-ring-bg', null], ['a4pj-ring-fg', `${(c * f).toFixed(1)} ${c.toFixed(1)}`]]) {
+    const ci = document.createElementNS(NS, 'circle');
+    for (const [k, v] of [['class', cls], ['cx', '23'], ['cy', '23'], ['r', String(r)], ['fill', 'none'], ['stroke-width', '5']]) ci.setAttribute(k, v);
+    if (dash) { ci.setAttribute('stroke-linecap', 'round'); ci.setAttribute('stroke-dasharray', dash); }
+    svg.appendChild(ci);
+  }
+  w.appendChild(svg);
+  el(w, 'span', 'a4pj-ring-pct', total ? `${done}/${total}` : '–');
+  if (total && `${done}/${total}`.length > 4) w.addClass('is-long');
+  w.setAttr('aria-label', `${done} of ${total} done`);
+  return w;
+}
+
+/* ========================================================================== *
+ * The Projects view: overview, project page, Inbox
+ * ========================================================================== */
+
+class ProjectsView extends ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.state = { page: 'overview', project: null, focus: null };
+    this.filter = 'all';
+    this.query = '';
+    this.expanded = new Set();
+    this.justDone = new Map(); // path -> timer: a ticked row stays in place, struck through, for the Undo time
+    this.pending = false;
+    this.narrow = false;
+    this.bodyComp = null;
+  }
+
+  getViewType() { return VIEW_TYPE; }
+  getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? s.project.split('/').pop().replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : s.focus ? `${SPHERE_LABEL[s.focus]} projects` : 'Projects'; }
+  getIcon() { return 'folder-kanban'; }
+  getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus }; }
+  async setState(state, result) {
+    const s = state && typeof state === 'object' ? state : {};
+    const page = ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
+    const focus = s.focus === 'work' || s.focus === 'personal' ? s.focus : null;
+    const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
+    this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
+    this.focusAdd = !!s.focusAdd;
+    if (changed) { this.query = ''; this.expanded.clear(); }
+    this.render(true, changed);
+    await super.setState(state, result);
+    if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader(); // tab title follows the list
+    if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText()); // and the header strip
+  }
+
+  async onOpen() {
+    this.contentEl.empty();
+    this.contentEl.addClass('a4pj-root');
+    const relevant = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || p.startsWith(PROJECTS_FOLDER + '/'));
+    this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
+    this.registerEvent(this.app.vault.on('delete', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
+    this.registerEvent(this.app.vault.on('rename', (f, old) => { if ((f && relevant(f.path)) || relevant(old)) { if (this.state.project === old) this.state.project = f.path; this.scheduleRender(); } }));
+    this.registerEvent(this.app.vault.on('create', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
+    this.registerInterval(window.setInterval(() => { if (this.plugin.engine.today() !== this.renderedToday) this.render(); }, 30000));
+    if (typeof ResizeObserver !== 'undefined') {
+      this.ro = new ResizeObserver(() => { const w = this.contentEl.clientWidth; const n = w > 0 && w <= NARROW_WIDTH; if (n !== this.narrow) this.render(); });
+      this.ro.observe(this.contentEl);
+    }
+    this.render(true);
+  }
+
+  async onClose() {
+    if (this.ro) this.ro.disconnect();
+    if (this.timer) window.clearTimeout(this.timer);
+    for (const t of this.justDone.values()) window.clearTimeout(t);
+    closeAllPops();
+    if (this.bodyComp) { this.bodyComp.unload(); this.bodyComp = null; }
+  }
+
+  scheduleRender() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.render(); }, 250); }
+
+  go(state) { this.plugin.openProjects(state); }
+
+  // Phone toolbar overlap (same check as the Planner).
+  navbarOverlap() {
+    const nav = document.querySelector('.mobile-navbar');
+    if (!nav || !nav.offsetParent) return 0;
+    const nb = nav.getBoundingClientRect(); const rb = this.contentEl.getBoundingClientRect();
+    const over = Math.round(rb.bottom - nb.top);
+    return nb.height > 0 && over > 0 && over < 240 ? over : 0;
+  }
+  popOpts() { return { narrow: this.narrow, host: this.contentEl, lift: this.navbarOverlap() }; }
+
+  render(force, resetScroll) {
+    const active = document.activeElement;
+    const typing = active && this.contentEl.contains(active) && active.tagName === 'INPUT' && active.value;
+    if (!force && (openPops.size || typing)) { this.pending = true; return; }
+    this.pending = false;
+    const root = this.contentEl;
+    const old = root.querySelector('.a4pj-scroll');
+    const scroll = old && !resetScroll ? old.scrollTop : 0;
+    const focusKey = active && root.contains(active) ? active.getAttribute('data-focus') : null;
+    this.narrow = root.clientWidth > 0 && root.clientWidth <= NARROW_WIDTH;
+    root.toggleClass('is-narrow', this.narrow);
+    const eng = this.plugin.engine;
+    this.cfg = eng.cfg();
+    this.today = eng.today();
+    this.renderedToday = this.today;
+    this.tasks = eng.collectTasks(true);
+    this.projects = eng.collectProjects();
+    if (this.bodyComp) { this.bodyComp.unload(); this.bodyComp = null; }
+    root.empty();
+    const sc = el(root, 'div', 'a4pj-scroll');
+    const page = el(sc, 'div', 'a4pj-page');
+    const lift = this.navbarOverlap();
+    if (lift) page.style.paddingBottom = `${40 + lift}px`;
+    try {
+      if (this.state.page === 'project') this.renderProject(page);
+      else if (this.state.page === 'inbox') this.renderInbox(page);
+      else this.renderOverview(page);
+    } catch (e) {
+      console.error('[a4-projects] render failed', e);
+      el(page, 'div', 'a4pj-empty', 'this page could not be drawn');
+    }
+    sc.scrollTop = scroll;
+    if (focusKey) { const f = root.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`); if (f) { f.focus({ preventScroll: true }); if (f.tagName === 'INPUT') { const v = f.value; f.value = ''; f.value = v; } } }
+    if (this.focusAdd) { this.focusAdd = false; const i = root.querySelector('.a4pj-qa input'); if (i) i.focus(); }
+  }
+
+  head(page, crumbs, title, actions) {
+    const head = el(page, 'div', 'a4pj-head');
+    const l = el(head, 'div', 'a4pj-head-l');
+    const cr = el(l, 'div', 'a4pj-crumb');
+    crumbs.forEach(([label, go], i) => {
+      if (i) cr.appendText(' / ');
+      if (go) { const b = el(cr, 'button', null, label); b.addEventListener('click', go); } else cr.appendText(label);
+    });
+    el(l, 'h1', 'a4pj-title', title);
+    const act = el(head, 'div', 'a4pj-actions');
+    for (const a of actions || []) if (a) { const b = el(act, 'button', 'a4pj-btn' + (a.cls ? ' ' + a.cls : ''), a.label); if (a.icon) { const i = createSpan({ cls: 'a4pj-ic' }); setIcon(i, a.icon); b.prepend(i); } b.addEventListener('click', a.run); }
+    return head;
+  }
+
+  /* ---- overview ---------------------------------------------------------- */
+
+  renderOverview(page) {
+    const cfg = this.cfg; const today = this.today;
+    const inbox = this.tasks.filter((t) => isInboxTask(t, cfg));
+    const overdueAll = this.tasks.filter((t) => isOverdueTask(t, today, cfg));
+    // Opened from the sidebar's Work / Personal item: that list only (the crumb goes back to all).
+    const sp = this.state.focus;
+    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', [
+      overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
+      { label: `Inbox · ${inbox.length}`, icon: 'inbox', run: () => this.go({ page: 'inbox' }) },
+    ]);
+    const tools = el(page, 'div', 'a4pj-tools');
+    const seg = el(tools, 'div', 'a4pj-seg');
+    for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['backlog', 'Backlog']]) {
+      const b = el(seg, 'button', this.filter === k ? 'is-on' : '', l);
+      b.addEventListener('click', () => { this.filter = k; this.render(true); });
+    }
+    const s = el(tools, 'label', 'a4pj-search');
+    setIcon(el(s, 'span', 'a4pj-ic'), 'search');
+    const inp = el(s, 'input'); inp.type = 'text'; inp.placeholder = 'Find a project or task'; inp.value = this.query;
+    inp.setAttr('aria-label', 'Find a project or task'); inp.dataset.focus = 'search';
+    const lists = el(page, 'div', 'a4pj-lists');
+    inp.addEventListener('input', () => { this.query = inp.value; this.renderLists(lists); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Escape' && inp.value) { e.preventDefault(); inp.value = ''; this.query = ''; this.renderLists(lists); } });
+    this.renderLists(lists);
+  }
+
+  renderLists(host) {
+    host.empty();
+    const cfg = this.cfg; const today = this.today;
+    const sp = this.state.focus;
+    const groups = overviewGroups(this.projects, this.filter, this.query, sp);
+    for (const g of groups) {
+      const sec = el(host, 'div', 'a4pj-sphere'); sec.dataset.sphere = g.sphere;
+      const sh = el(sec, 'div', 'a4pj-sphere-head'); el(sh, 'h3', null, g.label); el(sh, 'span', 'a4pj-count', String(g.projects.length));
+      const grid = el(sec, 'div', 'a4pj-plist');
+      for (const p of g.projects) this.projectCard(grid, p, projectStats(p, this.tasks, today, cfg));
+    }
+    const found = searchTasks(sphereTasks(this.tasks, this.projects, sp).filter((t) => !t.archived || !isOpenTask(t, cfg)), this.query, cfg, 30);
+    if (found.length) {
+      const sec = el(host, 'div', 'a4pj-found');
+      const sh = el(sec, 'div', 'a4pj-lbar'); el(sh, 'span', 'a4pj-kicker', 'Tasks'); el(sh, 'span', 'a4pj-count', String(found.length));
+      for (const t of found) this.taskRow(sec, t, { showProject: true });
+    }
+    if (!groups.length && !found.length) el(host, 'div', 'a4pj-empty', this.query ? 'nothing matches' : 'no projects here');
+    const closed = closedProjects(this.projects, this.query, sp);
+    if (!closed.length || this.filter !== 'all') return;
+    const ui = this.plugin.settings.ui;
+    const sec = el(host, 'div', 'a4pj-closed');
+    const h = el(sec, 'button', 'a4pj-sec-head' + (ui.closedOpen ? '' : ' is-folded'));
+    h.setAttr('aria-expanded', String(!!ui.closedOpen));
+    setIcon(el(h, 'span', 'a4pj-chev a4pj-ic'), 'chevron-down'); el(h, 'span', 'a4pj-kicker', 'Closed'); el(h, 'span', 'a4pj-count', String(closed.length));
+    h.addEventListener('click', async () => { ui.closedOpen = !ui.closedOpen; this.renderLists(host); await this.plugin.save(); });
+    if (!ui.closedOpen) return;
+    for (const p of closed) {
+      const st = projectStats(p, this.tasks, today, cfg);
+      const r = el(sec, 'div', 'a4pj-closed-row' + (p.status === 'done' ? '' : ' is-failed'));
+      r.tabIndex = 0; r.setAttr('role', 'button');
+      el(r, 'span', 'a4pj-nm', p.name);
+      el(r, 'span', `a4pj-chip a4pj-st-${p.status}`, p.status === 'done' ? '✓ done' : `✕ ${p.status}`);
+      el(r, 'span', 'a4pj-chip', p.sphere === 'work' ? 'Work' : p.sphere === 'personal' ? 'Personal' : 'Unsorted');
+      if (st.total) el(r, 'span', 'a4pj-count', `${st.done}/${st.total} tasks`);
+      el(r, 'span', 'a4pj-when', p.endDate ? `closed ${longDay(p.endDate)}` : '');
+      const go = () => this.go({ page: 'project', project: p.path });
+      r.addEventListener('click', go); r.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    }
+  }
+
+  projectCard(grid, p, st) {
+    const c = el(grid, 'div', 'a4pj-pcard' + (p.status === 'active' ? '' : ' is-dim'));
+    c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `card:${p.path}`;
+    ring(c, st.done, st.total);
+    const m = el(c, 'div', 'a4pj-pmain');
+    const top = el(m, 'div', 'a4pj-ptop');
+    el(top, 'span', 'a4pj-pname', p.name);
+    el(top, 'span', `a4pj-chip a4pj-st-${p.status || 'none'}`, p.status || 'no status');
+    const meta = el(m, 'div', 'a4pj-pmeta');
+    el(meta, 'span', null, `${st.open} open`);
+    if (st.overdue) el(meta, 'span', 'is-warn', `${st.overdue} overdue`);
+    if (st.later) el(meta, 'span', null, `${st.later} later`);
+    if (p.client) el(meta, 'span', null, wikilinkLabel(p.client));
+    const nx = el(m, 'div', 'a4pj-pnext' + (st.next ? '' : ' is-none'));
+    el(nx, 'b', null, 'Next');
+    el(nx, 'span', null, st.next ? st.next.title : (p.status === 'active' ? 'nothing to do yet: add a next step' : 'nothing open'));
+    const go = () => this.go({ page: 'project', project: p.path });
+    c.addEventListener('click', go);
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  }
+
+  /* ---- project page ------------------------------------------------------- */
+
+  renderProject(page) {
+    const cfg = this.cfg; const today = this.today;
+    const p = this.projects.find((x) => x.path === this.state.project);
+    if (!p) { this.head(page, [['/ Projects', () => this.go({ page: 'overview' })]], 'Project not found'); el(page, 'div', 'a4pj-empty', 'that project note is gone'); return; }
+    const st = projectStats(p, this.tasks, today, cfg);
+    this.head(page, [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[p.sphere] || 'Unsorted', p.sphere === 'work' || p.sphere === 'personal' ? () => this.go({ page: 'overview', focus: p.sphere }) : null]], p.name, [
+      { label: 'Open Today', run: () => this.plugin.openToday() },
+      { label: 'Open in Planner', run: () => this.plugin.openPlanner(p.key) },
+    ]);
+    const ph = el(page, 'div', 'a4pj-phead');
+    ring(ph, st.done, st.total);
+    const facts = el(ph, 'div', 'a4pj-facts');
+    const fact = (label) => { const f = el(facts, 'span', 'a4pj-fact'); el(f, 'b', null, label); return f; };
+    fact('Sphere').appendText(p.sphere === 'work' ? 'Work' : p.sphere === 'personal' ? 'Personal' : 'not set');
+    const sel = el(fact('Status'), 'select', 'a4pj-select dropdown');
+    for (const v of PROJECT_STATUSES) { const o = el(sel, 'option', null, v); o.value = v; }
+    if (!PROJECT_STATUSES.includes(p.status)) { const o = el(sel, 'option', null, p.status || '(none)'); o.value = p.status; }
+    sel.value = p.status;
+    sel.addEventListener('change', async () => {
+      const f = this.plugin.engine.file(p.path); if (!f) return;
+      const before = p.status; const v = sel.value;
+      try {
+        let endBefore;
+        await this.app.fileManager.processFrontMatter(f, (fm) => { endBefore = fm.end_date; applyProjectStatus(fm, v, today); });
+        this.plugin.toast.show(`Status: ${v}`, async () => { await this.app.fileManager.processFrontMatter(f, (fm) => { fm.status = before; if (endBefore == null) delete fm.end_date; else fm.end_date = endBefore; }); });
+      } catch (e) { console.error(e); new Notice('Could not change the status.'); }
+    });
+    if (p.goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(p.goal)); a.addEventListener('click', () => this.openLink(p.goal, p.path)); }
+    if (p.client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(p.client)); a.addEventListener('click', () => this.openLink(p.client, p.path)); }
+    fact('Open').appendText(`${st.open}${st.overdue ? ` · ${st.overdue} overdue` : ''}`);
+    const nb = el(ph, 'button', 'a4pj-btn', 'Open note'); nb.addEventListener('click', () => this.plugin.openFile(p.path));
+
+    const cols = el(page, 'div', 'a4pj-cols');
+    const main = el(cols, 'div', 'a4pj-main');
+    this.quickAdd(main, { project: p, placeholder: 'Add a task: "fix the hose tomorrow afternoon", "water plants every Monday", "!high due Friday"' });
+    const mine = this.tasks.filter((t) => t.projectKey === p.key);
+    const open = mine.filter((t) => !t.archived && (isOpenTask(t, cfg) || this.justDone.has(t.path)));
+    const later = open.filter((t) => isLaterTask(t, today));
+    const someday = open.filter((t) => isSomeday(t));
+    const showLater = !!this.plugin.settings.ui.later[p.path];
+    const showSomeday = !!this.plugin.settings.ui.someday[p.path];
+    const lb = el(main, 'div', 'a4pj-lbar');
+    el(lb, 'span', 'a4pj-kicker', 'Open'); el(lb, 'span', 'a4pj-count', String(open.length - later.length - someday.length));
+    if (st.overdue) { const b = el(lb, 'button', 'a4pj-btn a4pj-small is-warn', `Move ${st.overdue} overdue to today`); b.addEventListener('click', () => this.plugin.moveOverdueToToday(p.key)); }
+    if (later.length) {
+      const tg = el(lb, 'label', 'a4pj-toggle');
+      const cb = el(tg, 'input'); cb.type = 'checkbox'; cb.checked = showLater;
+      tg.appendText(`Show later tasks (${later.length})`);
+      cb.addEventListener('change', async () => { if (cb.checked) this.plugin.settings.ui.later[p.path] = true; else delete this.plugin.settings.ui.later[p.path]; this.render(true); await this.plugin.save(); });
+    }
+    // Someday (mockup approved 2026-10-06): hidden until ticked, like later tasks.
+    if (someday.length) {
+      const tg = el(lb, 'label', 'a4pj-toggle a4pj-toggle-someday');
+      const cb = el(tg, 'input'); cb.type = 'checkbox'; cb.checked = showSomeday;
+      tg.appendText(`Show someday tasks (${someday.length})`);
+      cb.addEventListener('change', async () => { if (cb.checked) this.plugin.settings.ui.someday[p.path] = true; else delete this.plugin.settings.ui.someday[p.path]; this.render(true); await this.plugin.save(); });
+    }
+    const list = el(main, 'div', 'a4pj-list');
+    const shown = open.filter((t) => (isSomeday(t) ? showSomeday : (showLater || !isLaterTask(t, today))));
+    const sorted = [...sortOpenTasks(shown.filter((t) => !isSomeday(t) && !isLaterTask(t, today)), today, cfg), ...sortOpenTasks(shown.filter((t) => isLaterTask(t, today)), today, cfg), ...sortOpenTasks(shown.filter((t) => isSomeday(t)), today, cfg)];
+    if (!sorted.length) el(list, 'div', 'a4pj-empty', 'nothing open here');
+    for (const t of sorted) this.taskRow(list, t, { inProject: true });
+    // Done
+    const done = doneGroups(mine, cfg).filter((d) => !this.justDone.has(d.task.path));
+    const ui = this.plugin.settings.ui;
+    const ds = el(main, 'div', 'a4pj-done');
+    const dOpen = !!ui.doneOpen[p.path];
+    const dh = el(ds, 'button', 'a4pj-sec-head' + (dOpen ? '' : ' is-folded'));
+    dh.setAttr('aria-expanded', String(dOpen));
+    setIcon(el(dh, 'span', 'a4pj-chev a4pj-ic'), 'chevron-down'); el(dh, 'span', 'a4pj-kicker', 'Done'); el(dh, 'span', 'a4pj-count', String(done.length));
+    dh.addEventListener('click', async () => { if (dOpen) delete ui.doneOpen[p.path]; else ui.doneOpen[p.path] = true; this.render(true); await this.plugin.save(); });
+    if (dOpen) {
+      const all = this.showAllDone === p.path;
+      let last = null;
+      for (const d of all ? done : done.slice(0, DONE_PREVIEW)) {
+        if (d.day !== last) { last = d.day; el(ds, 'div', 'a4pj-done-day', d.day ? (d.day === today ? 'Today' : shortDay(d.day, today)) : 'Earlier'); }
+        this.taskRow(ds, d.task, { inProject: true, inDone: true });
+      }
+      if (!all && done.length > DONE_PREVIEW) { const m = el(ds, 'button', 'a4pj-more', `Show all ${done.length}`); m.addEventListener('click', () => { this.showAllDone = p.path; this.render(true); }); }
+    }
+    // The project's own note
+    const body = el(main, 'div', 'a4pj-body-note');
+    el(body, 'div', 'a4pj-kicker', 'Project note');
+    const md = el(body, 'div', 'a4pj-md markdown-rendered');
+    const file = this.plugin.engine.file(p.path);
+    if (file) {
+      this.bodyComp = new obsidian.Component(); this.bodyComp.load();
+      const comp = this.bodyComp;
+      this.app.vault.cachedRead(file).then((text) => {
+        if (comp !== this.bodyComp) return;
+        const src = projectBodyForPage(text);
+        if (!src) { el(md, 'div', 'a4pj-muted', 'The note is empty.'); return; }
+        return obsidian.MarkdownRenderer.render(this.app, src, md, p.path, comp);
+      }).catch((e) => console.warn('[a4-projects] note render failed', e));
+    }
+    // Side column
+    const side = el(cols, 'div', 'a4pj-side');
+    const c1 = el(side, 'div', 'a4pj-side-card');
+    el(c1, 'div', 'a4pj-kicker', 'Progress');
+    const br = el(c1, 'div', 'a4pj-bigring'); ring(br, st.done, st.total, true);
+    el(br, 'div', null, `${st.done} of ${st.total} done${st.later ? `, ${st.later} waiting to start` : ''}.`);
+  }
+
+  openLink(link, from) {
+    const t = wikilinkTarget(link);
+    if (t) this.app.workspace.openLinkText(t, from || '', 'tab');
+  }
+
+  /* ---- quick add (plain words) -------------------------------------------- */
+
+  quickAdd(parent, o) {
+    const qa = el(parent, 'div', 'a4pj-qa');
+    const inp = el(qa, 'input'); inp.type = 'text'; inp.placeholder = this.narrow && o.project ? 'Add a task: "call Ana friday !high"' : o.placeholder; inp.setAttr('aria-label', 'Add a task'); inp.dataset.focus = `qa:${o.project ? o.project.path : 'inbox'}`;
+    const parse = el(qa, 'div', 'a4pj-parse');
+    const show = () => {
+      parse.empty();
+      if (!inp.value.trim()) { el(parse, 'span', 'a4pj-hint', 'Dates, times (friday 3pm), mornings and afternoons, repeats and priority are picked up as you type.'); return; }
+      const r = understand(inp.value, this.today);
+      el(parse, 'span', 'a4pj-hint', 'Adds:');
+      for (const c of quickAddChips(r, this.today, o.project ? o.project.name : null, this.cfg.defaultPriority)) el(parse, 'span', 'a4pj-chip is-got', c);
+      el(parse, 'span', 'a4pj-hint', '· Enter');
+    };
+    inp.addEventListener('input', show);
+    inp.addEventListener('blur', () => { if (this.pending && !inp.value) this.scheduleRender(); });
+    inp.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !inp.value.trim()) return;
+      e.preventDefault();
+      const r = understand(inp.value, this.today);
+      if (!r.title) return;
+      const { input, lane } = quickAddPlan(r, this.today);
+      if (o.project) input.projects = [projectLinkFor(o.project.path)];
+      if (lane) { const orders = this.plugin.laneOrders(this.tasks.filter((t) => !t.archived), lane.day, lane.half); input.customFrontmatter.planned_order = orderForInsert(orders, orders.length); }
+      if (!Object.keys(input.customFrontmatter).length) delete input.customFrontmatter;
+      inp.value = ''; show();
+      try {
+        const w = await this.plugin.createTask(input);
+        this.plugin.toast.show(o.project ? `Added to ${o.project.name}` : (r.due || r.plannedDay || r.recurrence ? 'Added (it has a day, so it skips the Inbox)' : 'Captured'), w.undo);
+      } catch (err) { console.error('[a4-projects] add failed', err); new Notice(`Could not add that task. ${err && err.message ? err.message : ''}`); inp.value = r.title; }
+      this.scheduleRender();
+      window.setTimeout(() => { const i = this.contentEl.querySelector(`[data-focus="${CSS.escape(inp.dataset.focus)}"]`); if (i) i.focus(); }, 300);
+    });
+    show();
+    return inp;
+  }
+
+  /* ---- a task row ----------------------------------------------------------- */
+
+  taskRow(parent, t, o) {
+    const cfg = this.cfg; const today = this.today;
+    const pendingDone = this.justDone.has(t.path);
+    const done = pendingDone || (!t.recurrenceRaw && !isOpenTask(t, cfg));
+    const blocked = !done && !o.inDone && isBlockedTask(t);
+    const r = el(parent, 'div', 'a4pj-task' + (done ? ' is-done' : '') + ((isLaterTask(t, today) || isSomeday(t)) && !done ? ' is-later' : '') + (blocked ? ' is-blocked' : ''));
+    r.dataset.path = t.path;
+    if (o.inProject && !o.inDone) {
+      const has = t.steps && t.steps.total;
+      const ex = el(r, 'button', 'a4pj-expand' + (has ? (this.expanded.has(t.path) ? ' is-open' : '') : ' is-blank'));
+      setIcon(ex, 'chevron-right');
+      if (has) { ex.setAttr('aria-label', this.expanded.has(t.path) ? 'Hide steps' : 'Show steps'); ex.addEventListener('click', () => { if (this.expanded.has(t.path)) this.expanded.delete(t.path); else this.expanded.add(t.path); this.render(true); }); }
+      else ex.tabIndex = -1;
+    }
+    const tick = el(r, 'button', 'a4pj-tick' + (done ? ' is-on' : ''));
+    if (done) setIcon(tick, 'check');
+    tick.setAttr('aria-label', done ? 'Mark not done' : 'Mark done');
+    tick.dataset.focus = `tick:${t.path}`;
+    tick.addEventListener('click', (e) => { e.stopPropagation(); this.tick(t, r, tick); });
+    const m = el(r, 'div', 'a4pj-tmain');
+    const tt = el(m, 'div', 'a4pj-ttitle is-link', t.title);
+    tt.setAttr('role', 'link'); tt.tabIndex = 0;
+    const openIt = () => this.plugin.openFile(t.path);
+    tt.addEventListener('click', openIt);
+    tt.addEventListener('keydown', (e) => { if (e.key === 'Enter') openIt(); });
+    const meta = el(m, 'div', 'a4pj-tmeta');
+    if (blocked) lockChip(meta, t.openBlockers, (p) => this.plugin.openFile(p), this.popOpts());
+    priorityChip(meta, t.priority, cfg);
+    if (o.showProject && t.projectKey) el(meta, 'span', 'a4pj-chip a4pj-proj', t.project || t.projectKey);
+    if (o.inbox && t.dateCreated) el(meta, 'span', 'a4pj-chip', `added ${shortDay(t.dateCreated, today)}`);
+    if (!o.inDone) this.dateChips(meta, t);
+    else if (t.archived) el(meta, 'span', 'a4pj-chip', 'archived');
+    if (t.steps && t.steps.total) el(meta, 'span', 'a4pj-chip', `${t.steps.done}/${t.steps.total} steps`);
+    if (!done && !o.inDone && !o.inbox && !t.recurrenceRaw) {
+      const sb = el(r, 'button', 'a4pj-sched'); setIcon(sb, 'calendar'); sb.setAttr('aria-label', 'Schedule'); sb.dataset.focus = `sched:${t.path}`;
+      sb.addEventListener('click', (e) => { e.stopPropagation(); this.openSchedule(t, sb); });
+    }
+    if (o.inbox) {
+      const acts = el(r, 'div', 'a4pj-acts');
+      const pb = el(acts, 'button', 'a4pj-btn a4pj-small'); setIcon(el(pb, 'span', 'a4pj-ic'), 'folder'); pb.appendText('Project');
+      pb.addEventListener('click', (e) => { e.stopPropagation(); this.openProjectPick(t, pb, r); });
+      const sb = el(acts, 'button', 'a4pj-btn a4pj-small'); setIcon(el(sb, 'span', 'a4pj-ic'), 'calendar'); sb.appendText('Schedule');
+      sb.addEventListener('click', (e) => { e.stopPropagation(); this.openSchedule(t, sb, r); });
+    }
+    if (o.inProject && !o.inDone && this.expanded.has(t.path)) this.renderSteps(parent, t);
+    return r;
+  }
+
+  dateChips(meta, t) {
+    const today = this.today; const cfg = this.cfg;
+    const open = isOpenTask(t, cfg);
+    if (isSomeday(t) && open) el(meta, 'span', 'a4pj-chip', 'someday');
+    if (t.start && open && (t.recurrenceRaw ? t.start > today : true)) {
+      iconChip(meta, 'is-start', `Starts ${shortDay(t.start, today)}${t.startTime ? `, ${timeText(t.startTime)}` : ''}`, 'calendar', (c) => this.pickDate(t, 'start', c), 'Start date and time: the first day it shows up. Open the calendar');
+    }
+    if (t.due && !t.recurrenceRaw) {
+      const late = isOverdueTask(t, today, cfg) && t.due < today;
+      const d = daysBetween(t.due, today);
+      const tm = t.dueTime ? `, ${timeText(t.dueTime)}` : '';
+      iconChip(meta, late ? 'is-warn' : (t.due === today ? 'is-today' : 'is-due'), late ? `Due ${shortDay(t.due, today)}${tm} · ${d}d late` : `Due ${shortDay(t.due, today)}${tm}`, 'calendar',
+        open ? (c) => this.pickDate(t, 'due', c) : null, 'Due date and time: when it must be done. Open the calendar');
+    }
+    if (t.plannedDay && !t.due && !t.recurrenceRaw) el(meta, 'span', 'a4pj-chip' + (t.plannedDay < today && open ? ' is-warn' : ''), `On ${shortDay(t.plannedDay, today)}${t.plannedHalf ? `, ${halfWord(t.plannedHalf)}` : ''}`);
+    else if (t.due && t.plannedHalf && !t.dueTime && !t.recurrenceRaw) el(meta, 'span', 'a4pj-chip', halfWord(t.plannedHalf));
+    if (t.recurrenceRaw) el(meta, 'span', 'a4pj-chip', `${repeatWords(t.recurrenceRaw).replace(/^Every/, 'repeats every').replace(/^Repeats/, 'repeats')}${t.time ? `, ${timeText(t.time)}` : (t.plannedHalf ? `, ${halfWord(t.plannedHalf)}` : '')}`);
+  }
+
+  async tick(t, row, btn) {
+    const cfg = this.cfg;
+    if (row.hasClass('is-busy')) return;
+    const today = this.plugin.engine.today();
+    if (today !== this.renderedToday) { new Notice('A new day started; the page has been refreshed.'); this.render(true); return; }
+    const wasDone = this.justDone.has(t.path) || (!t.recurrenceRaw && !isOpenTask(t, cfg));
+    // A row ticked a moment ago: a second click is the same as Undo.
+    if (this.justDone.has(t.path) && this.lastUndo && this.lastUndo.path === t.path) { const u = this.lastUndo.undo; this.clearJustDone(t.path); this.plugin.toast.hide(); if (u) await u(); this.render(true); return; }
+    row.addClass('is-busy');
+    row.toggleClass('is-done', !wasDone);
+    btn.toggleClass('is-on', !wasDone); btn.empty(); if (!wasDone) setIcon(btn, 'check');
+    const freed = !wasDone && !t.recurrenceRaw ? this.plugin.engine.freedBy(t.path) : [];
+    try {
+      const w = await this.plugin.completeTask(t, !wasDone);
+      if (t.recurrenceRaw) {
+        const res = w && w.result;
+        const msg = res ? (res.done ? `Done for ${shortDay(res.day, today)}${res.next ? `; next one ${shortDay(res.next, today)}` : ''}` : `Back to open for ${shortDay(res.day, today)}`) : 'Done';
+        this.plugin.toast.show(msg, w && w.undo);
+      } else if (!wasDone) {
+        this.justDone.set(t.path, window.setTimeout(() => { this.clearJustDone(t.path); this.render(); }, UNDO_MS));
+        this.lastUndo = { path: t.path, undo: w && w.undo };
+        this.plugin.toast.show(`Done: ${t.title}${unblocksText(freed)}`, w && w.undo ? async () => { this.clearJustDone(t.path); await w.undo(); this.render(true); } : null);
+      } else {
+        this.plugin.toast.show('Back to open', w && w.undo);
+      }
+    } catch (err) {
+      console.error('[a4-projects] tick failed', err);
+      new Notice(`Could not update "${t.title}". ${err && err.message ? err.message : ''}`.trim());
+      row.toggleClass('is-done', wasDone);
+    } finally { row.removeClass('is-busy'); this.scheduleRender(); }
+  }
+  clearJustDone(path) { const t = this.justDone.get(path); if (t) window.clearTimeout(t); this.justDone.delete(path); if (this.lastUndo && this.lastUndo.path === path) this.lastUndo = null; }
+
+  async renderSteps(parent, t) {
+    const box = el(parent, 'div', 'a4pj-steps');
+    const steps = await this.plugin.engine.steps(t.path);
+    for (const s of steps) {
+      const r = el(box, 'div', 'a4pj-step' + (s.done ? ' is-done' : ''));
+      const tk = el(r, 'button', 'a4pj-tick a4pj-tick-sm' + (s.done ? ' is-on' : '')); if (s.done) setIcon(tk, 'check');
+      tk.setAttr('aria-label', s.done ? 'Mark step not done' : 'Mark step done');
+      tk.addEventListener('click', async () => {
+        try { const w = await this.plugin.engine.toggleStep(t.path, s.line, !s.done); if (!w.result) new Notice('That step changed in the note; refreshing.'); } catch (e) { new Notice('Could not update that step.'); }
+        this.scheduleRender();
+      });
+      el(r, 'div', 'a4pj-step-t', s.text);
+    }
+    const add = el(box, 'div', 'a4pj-step-add');
+    el(add, 'span', 'a4pj-plus', '+');
+    const inp = el(add, 'input'); inp.type = 'text'; inp.placeholder = 'add a step, press Enter'; inp.dataset.focus = `step:${t.path}`;
+    inp.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !inp.value.trim()) return;
+      e.preventDefault();
+      const v = inp.value; inp.value = '';
+      try { const w = await this.plugin.engine.addStep(t.path, v); this.plugin.toast.show('Step added', w.undo); } catch (err) { new Notice('Could not add that step.'); inp.value = v; }
+      this.scheduleRender();
+    });
+  }
+
+  /* ---- Inbox ---------------------------------------------------------------- */
+
+  renderInbox(page) {
+    const cfg = this.cfg;
+    this.head(page, [['/ Projects', () => this.go({ page: 'overview' })]], 'Inbox');
+    this.quickAdd(page, { placeholder: 'Capture something (no project or date needed)' });
+    const list = this.tasks.filter((t) => isInboxTask(t, cfg) || (this.justDone.has(t.path) && !t.projectLink && !t.plannedDay))
+      .sort((a, b) => (isBlockedTask(a) - isBlockedTask(b)) || priorityWeight(b.priority, cfg) - priorityWeight(a.priority, cfg) || String(b.dateCreated || '').localeCompare(String(a.dateCreated || '')) || a.title.localeCompare(b.title));
+    const lb = el(page, 'div', 'a4pj-lbar');
+    el(lb, 'span', 'a4pj-kicker', 'No project, no date'); el(lb, 'span', 'a4pj-count', String(list.length));
+    if (!list.length) el(page, 'div', 'a4pj-empty', 'Inbox empty. Nice.');
+    const box = el(page, 'div', 'a4pj-list a4pj-inbox');
+    for (const t of list) this.taskRow(box, t, { inbox: true });
+  }
+
+  /* ---- popovers -------------------------------------------------------------- */
+
+  leave(row) { if (row) row.addClass('is-leaving'); }
+
+  pickDate(t, key, anchor) {
+    openWhenPicker(anchor, { ...whenPickerOpts(t, key, this.today), ...this.popOpts(),
+      onSave: async (r) => {
+        try {
+          const w = await saveWhen(this.plugin.engine, t, key, r);
+          this.plugin.toast.show(whenToast(t, key, r, this.today), w && w.undo);
+        } catch (e) { new Notice(String(e.message || e)); }
+        this.scheduleRender();
+      },
+    });
+  }
+
+  openSchedule(t, anchor, row) {
+    const today = this.today;
+    new Pop(anchor, `Schedule · ${t.title}`, (box, pop) => {
+      const tom = addDays(today, 1);
+      const place = async (d, h) => {
+        pop.close();
+        try {
+          const w = await this.plugin.placeTask(t, d, h, this.tasks.filter((x) => !x.archived));
+          if (w) { this.leave(row); this.plugin.toast.show(`On ${shortDay(d, today)}${h ? `, ${halfWord(h)}` : ''}${w.dropsTime ? `. ${timeText(w.dropsTime)} time taken off` : ''}`, w.undo); }
+        } catch (e) { console.error(e); new Notice('That did not work. Nothing was changed.'); }
+        this.scheduleRender();
+      };
+      for (const [label, d, h] of [['Today morning', today, 'am'], ['Today afternoon', today, 'pm'], ['Tomorrow morning', tom, 'am'], ['Tomorrow afternoon', tom, 'pm'], ['Any time today', today, null]]) {
+        const b = el(box, 'button', 'a4pj-pop-q'); el(b, 'span', null, label); el(b, 'span', 'a4pj-k', `${WEEKDAYS_SHORT[weekdayOf(d)]} ${partsOf(d).d}`);
+        b.addEventListener('click', () => place(d, h));
+      }
+      const other = el(box, 'button', 'a4pj-pop-q'); el(other, 'span', null, 'Another day…'); el(other, 'span', 'a4pj-k', 'calendar');
+      other.addEventListener('click', () => { pop.close(); openDatePicker(anchor, { title: `Put it on · ${t.title}`, value: t.plannedDay, today, ...this.popOpts(), allowClear: false, onPick: (d) => { if (d) place(d, t.plannedHalf || null); } }); });
+      // Someday (mockup approved 2026-10-06): no day, kept for later.
+      // A task with a due date asks first: the due date comes off too.
+      if (!isSomeday(t)) {
+        const sd = el(box, 'button', 'a4pj-pop-q a4pj-pop-someday'); el(sd, 'span', null, 'Someday'); el(sd, 'span', 'a4pj-k', 'no day, kept for later');
+        const go = async () => {
+          pop.close();
+          try { const w = await this.plugin.engine.someday(t.path); this.leave(row); this.plugin.toast.show(t.due ? 'Moved to Someday. The due date was taken off' : 'Moved to Someday', w.undo); }
+          catch (e) { console.error(e); new Notice('That did not work. Nothing was changed.'); }
+          this.scheduleRender();
+        };
+        sd.addEventListener('click', () => {
+          if (!t.due) { go(); return; }
+          box.empty();
+          el(box, 'div', 'a4pj-pop-title', `Someday · ${t.title}`);
+          el(box, 'div', 'a4pj-pop-note', `Due ${shortDay(t.due, today)}${t.dueTime ? `, ${timeText(t.dueTime)}` : ''}. Someday takes the due date off too, so it no longer sits on a day${t.dueTime && t.reminderSet != null ? ' or rings' : ''}.`);
+          const yes = el(box, 'button', 'a4pj-wp-save a4pj-pop-go', 'Move to Someday'); yes.addEventListener('click', go);
+          const no = el(box, 'button', 'a4pj-pop-q'); el(no, 'span', null, 'Keep the due date'); no.addEventListener('click', () => { pop.close(); this.openSchedule(t, anchor, row); });
+          pop.place(); yes.focus();
+        });
+      }
+      el(box, 'div', 'a4pj-pop-sep');
+      for (const [k, lab] of [['start', 'Starts'], ['due', 'Due']]) {
+        const r2 = el(box, 'div', 'a4pj-pop-row');
+        el(r2, 'label', null, lab);
+        const v = k === 'due' ? t.due : t.start;
+        const vt = k === 'due' ? t.dueTime : t.startTime;
+        const db = el(r2, 'button', 'a4pj-pick' + (v ? '' : ' is-dash')); setIcon(el(db, 'span', 'a4pj-ic'), 'calendar'); db.appendText(v ? `${shortDay(v, today)}${vt ? `, ${timeText(vt)}` : ''}` : 'Pick a date');
+        db.addEventListener('click', (e) => { e.stopPropagation(); pop.close(); this.pickDate(t, k, anchor); });
+      }
+      el(box, 'div', 'a4pj-pop-note', 'Starts = the first day it shows up. Due = when it must be done; a due time rings.');
+      if (t.plannedDay && !t.due) {
+        el(box, 'div', 'a4pj-pop-sep');
+        const u = el(box, 'button', 'a4pj-pop-q'); el(u, 'span', null, 'Unschedule'); el(u, 'span', 'a4pj-k', 'no day');
+        u.addEventListener('click', async () => { pop.close(); try { const w = await this.plugin.engine.unschedule(t.path); this.plugin.toast.show('Unscheduled', w.undo); } catch (e) { new Notice('Could not unschedule it.'); } this.scheduleRender(); });
+      }
+    }, this.popOpts());
+  }
+
+  openProjectPick(t, anchor, row, onDone) {
+    new Pop(anchor, `Move to project · ${t.title}`, (box, pop) => {
+      const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a project';
+      const host = el(box, 'div', 'a4pj-pop-list');
+      const choose = async (p) => {
+        pop.close();
+        try {
+          const w = await this.plugin.engine.setProject(t.path, p ? p.path : null);
+          if (p) this.leave(row);
+          this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo);
+        } catch (e) { new Notice('Could not move it.'); }
+        if (onDone) onDone(); else this.scheduleRender();
+      };
+      const draw = () => {
+        host.empty();
+        const q = find.value.trim().toLowerCase();
+        for (const [sp, lab] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
+          const list = this.plugin.engine.collectProjects().filter((p) => p.sphere === sp && !CLOSED_STATUSES.includes(p.status) && p.status !== 'backlog' && (!q || p.name.toLowerCase().includes(q)))
+            .sort((a, b) => (a.status !== 'active') - (b.status !== 'active') || a.name.localeCompare(b.name));
+          if (!list.length) continue;
+          el(host, 'div', 'a4pj-grp', lab);
+          for (const p of list) {
+            const b = el(host, 'button', 'a4pj-pop-q'); el(b, 'span', null, p.name);
+            if (p.key === t.projectKey) el(b, 'span', 'a4pj-k', 'current'); else if (p.status !== 'active') el(b, 'span', 'a4pj-k', p.status);
+            b.addEventListener('click', () => choose(p));
+          }
+        }
+        if (t.projectLink) { el(host, 'div', 'a4pj-pop-sep'); const nb = el(host, 'button', 'a4pj-pop-q'); el(nb, 'span', null, 'No project (back to Inbox)'); nb.addEventListener('click', () => choose(null)); }
+      };
+      find.addEventListener('input', draw);
+      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = host.querySelector('.a4pj-pop-q'); if (b) b.click(); } });
+      draw();
+    }, { ...this.popOpts(), cls: 'is-wide' });
+  }
+}
+
+/* ========================================================================== *
+ * The task card: shown above a task note in the normal note view.
+ * Obsidian's Properties list and the inline title are hidden on task notes
+ * (display only, a class on the view); "All properties" brings them back.
+ * The note itself is never changed by showing the card.
+ * ========================================================================== */
+
+class TaskCardManager {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+    this.showProps = new WeakMap(); // view -> true when "All properties" is open
+    this.observers = new Map();     // view -> MutationObserver (Reading view is drawn lazily)
+    this.timer = null;
+  }
+  start() {
+    const p = this.plugin;
+    const later = () => this.schedule();
+    p.registerEvent(this.app.workspace.on('layout-change', later));
+    p.registerEvent(this.app.workspace.on('file-open', later));
+    p.registerEvent(this.app.workspace.on('active-leaf-change', later));
+    p.registerEvent(this.app.workspace.on('resize', later));
+    // Another task changing can change this card's Blocked by / Blocks rows.
+    p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (this.shownPaths().has(f.path)) this.schedule(); else if (f.path.startsWith(PROJECTS_FOLDER + '/')) this.schedule(); else if (f.path.startsWith(TASKS_FOLDER + '/') && this.anyTaskShown()) this.schedule(); }));
+    p.registerEvent(this.app.vault.on('delete', () => { if (this.anyTaskShown()) this.schedule(); }));
+    p.registerEvent(this.app.vault.on('rename', later));
+    this.refreshAll();
+  }
+  stop() {
+    if (this.timer) window.clearTimeout(this.timer);
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) this.clear(leaf.view);
+    for (const o of this.observers.values()) o.disconnect();
+    this.observers.clear();
+  }
+  // A view's card host that has no card yet (e.g. Reading view drawn just now).
+  missing(view) { return this.hosts(view).some((h) => !h.parent.querySelector(':scope > .a4pj-card')); }
+  watch(view) {
+    if (this.observers.has(view) || typeof MutationObserver === 'undefined') return;
+    const o = new MutationObserver(() => { if (view.file && view.containerEl.hasClass('a4pj-task-note') && this.missing(view)) this.refresh(view); });
+    o.observe(view.contentEl, { childList: true, subtree: true });
+    this.observers.set(view, o);
+  }
+  schedule() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.refreshAll(); }, 120); }
+  anyTaskShown() { return this.app.workspace.getLeavesOfType('markdown').some((l) => l.view && l.view.containerEl && l.view.containerEl.hasClass('a4pj-task-note')); }
+  shownPaths() { const s = new Set(); for (const l of this.app.workspace.getLeavesOfType('markdown')) if (l.view && l.view.file) s.add(l.view.file.path); return s; }
+
+  refreshAll() {
+    const live = new Set(this.app.workspace.getLeavesOfType('markdown').map((l) => l.view));
+    for (const [v, o] of this.observers) if (!live.has(v)) { o.disconnect(); this.observers.delete(v); }
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+      const v = leaf.view;
+      if (!(v instanceof MarkdownView)) continue;
+      try { this.refresh(v); } catch (e) { console.error('[a4-projects] task card failed', e); }
+    }
+  }
+
+  clear(view) {
+    if (!view || !view.containerEl) return;
+    const o = this.observers.get(view); if (o) { o.disconnect(); this.observers.delete(view); }
+    view.containerEl.removeClass('a4pj-task-note', 'a4pj-hide-props', 'a4pj-builtin');
+    view.containerEl.querySelectorAll('.a4pj-card').forEach((c) => c.remove());
+  }
+
+  hosts(view) {
+    const out = [];
+    const sizer = view.contentEl.querySelector('.markdown-source-view .cm-sizer');
+    if (sizer) {
+      const content = sizer.querySelector(':scope > .cm-contentContainer');
+      out.push({ mode: 'source', parent: sizer, before: content || sizer.firstChild });
+    }
+    const ps = view.contentEl.querySelector('.markdown-reading-view .markdown-preview-sizer');
+    if (ps) {
+      const header = ps.querySelector(':scope > .mod-header');
+      if (header) out.push({ mode: 'preview', parent: header, before: null });
+      else out.push({ mode: 'preview', parent: ps, before: ps.firstChild });
+    }
+    return out;
+  }
+
+  refresh(view) {
+    const file = view.file;
+    const engine = this.plugin.engine;
+    if (!file || !engine.isTaskFile(file)) { this.clear(view); return; }
+    const c = view.containerEl;
+    c.addClass('a4pj-task-note');
+    this.watch(view);
+    c.toggleClass('a4pj-hide-props', this.plugin.settings.hideProps && !this.showProps.get(view));
+    c.toggleClass('a4pj-builtin', this.plugin.usesBuiltIn());
+    for (const h of this.hosts(view)) {
+      let card = h.parent.querySelector(':scope > .a4pj-card');
+      if (!card) { card = createDiv({ cls: 'a4pj-card a4pj-root-card' }); h.parent.insertBefore(card, h.before); }
+      else if (h.before && card.nextSibling !== h.before) h.parent.insertBefore(card, h.before);
+      const ae = document.activeElement;
+      if (card.contains(ae) && (ae.isContentEditable || (ae.tagName === 'INPUT' && ae.value))) continue; // never redraw under the cursor
+      this.render(card, view, file);
+    }
+    // A card left in a host that is gone from this file's view.
+    c.querySelectorAll('.a4pj-card').forEach((x) => { if (x.dataset.path && x.dataset.path !== file.path) x.remove(); });
+  }
+
+  // Redrawing empties the card first. On a short note the page then has
+  // nothing to scroll for a moment, the browser sets the scroll back to the
+  // top, and it stays there once the card is back. Holding the card's height
+  // while it is redrawn keeps the page exactly where it was.
+  render(card, view, file) {
+    const hold = card.isConnected ? card.offsetHeight : 0;
+    if (hold) card.style.minHeight = `${hold}px`;
+    try { this.draw(card, view, file); } finally { card.style.minHeight = ''; }
+  }
+
+  draw(card, view, file) {
+    const plugin = this.plugin; const engine = plugin.engine;
+    const cfg = engine.cfg(); const today = engine.today();
+    const fm = engine.fm(file);
+    const inArchive = file.path.startsWith(`${cfg.archiveFolder}/`);
+    const t = readTask(fm, file.path, file.basename, cfg, inArchive);
+    if (!t) { card.remove(); return; }
+    const cache = this.app.metadataCache.getFileCache(file);
+    const items = ((cache && cache.listItems) || []).filter((li) => li.task !== undefined && li.parent < 0);
+    t.steps = { total: items.length, done: items.filter((li) => li.task !== ' ').length };
+    card.empty();
+    card.dataset.path = file.path;
+    const narrow = view.contentEl.clientWidth > 0 && view.contentEl.clientWidth <= NARROW_WIDTH;
+    card.toggleClass('is-narrow', narrow);
+    setCardAccent(card, plugin.app);
+    const popOpts = { narrow, host: view.contentEl };
+    const project = t.projectKey ? engine.collectProjects().find((p) => p.key === t.projectKey) : null;
+    const open = isOpenTask(t, cfg);
+    const done = !t.recurrenceRaw && !open;
+    const refresh = () => this.schedule();
+    const act = async (fn, msg) => { try { const w = await fn(); if (msg) plugin.toast.show(typeof msg === 'function' ? msg(w) : msg, w && w.undo); } catch (e) { console.error('[a4-projects] card', e); new Notice(String((e && e.message) || e)); } refresh(); };
+
+    // crumb + buttons
+    const bar = el(card, 'div', 'a4pj-card-bar');
+    const cr = el(bar, 'div', 'a4pj-crumb');
+    const b1 = el(cr, 'button', null, '/ Projects'); b1.addEventListener('click', () => plugin.openProjects({ page: 'overview' }));
+    cr.appendText(' / ');
+    if (project) { const b2 = el(cr, 'button', null, project.name); b2.addEventListener('click', () => plugin.openProject(project.path)); }
+    else if (t.projectKey) cr.appendText(t.project || t.projectKey);
+    else { const b3 = el(cr, 'button', null, 'Inbox'); b3.addEventListener('click', () => plugin.openProjects({ page: 'inbox' })); }
+    cr.appendText(inArchive ? ' / Task (archived)' : ' / Task');
+    const acts = el(bar, 'div', 'a4pj-actions');
+    const pl = el(acts, 'button', 'a4pj-btn', 'Open in Planner'); pl.addEventListener('click', () => plugin.openPlanner(null));
+    const td = el(acts, 'button', 'a4pj-btn', 'Show on Today'); td.addEventListener('click', () => { if (t.plannedDay !== today && !(t.recurrenceRaw && taskOnDay(t, today))) new Notice('Not on today yet: use When to put it there.'); plugin.openToday(); });
+
+    // tick + name
+    const top = el(card, 'div', 'a4pj-card-top');
+    const big = el(top, 'button', 'a4pj-bigtick' + (done ? ' is-on' : ''));
+    if (done) setIcon(big, 'check');
+    big.setAttr('aria-label', done ? 'Mark not done' : (t.recurrenceRaw ? 'Mark this occurrence done' : 'Mark done'));
+    big.addEventListener('click', () => { const freed = !done && !t.recurrenceRaw ? engine.freedBy(t.path) : []; act(() => plugin.completeTask(t, !done), (w) => {
+      if (t.recurrenceRaw) { const r = w && w.result; return r ? (r.done ? `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}` : `Back to open for ${shortDay(r.day, today)}`) : 'Done'; }
+      return done ? 'Back to open' : `Done: ${t.title}${unblocksText(freed)}`;
+    }); });
+    const name = el(top, 'div', 'a4pj-tname' + (done ? ' is-done' : ''), t.title);
+    name.contentEditable = 'true'; name.spellcheck = false; name.setAttr('aria-label', 'Task name'); name.setAttr('role', 'textbox');
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); name.blur(); } if (e.key === 'Escape') { name.textContent = t.title; name.blur(); } });
+    name.addEventListener('blur', () => { const v = (name.textContent || '').replace(/\s+/g, ' ').trim(); if (v && v !== t.title) act(() => engine.rename(t.path, v), 'Renamed'); else name.textContent = t.title; });
+
+    const f = el(card, 'div', 'a4pj-fields');
+    const row = (lab) => { el(f, 'div', 'a4pj-lab', lab); return el(f, 'div', 'a4pj-val'); };
+    // Project
+    const pb = el(row('Project'), 'button', 'a4pj-pick'); setIcon(el(pb, 'span', 'a4pj-ic'), 'folder');
+    pb.appendText(project ? project.name : (t.projectKey ? t.project || t.projectKey : 'No project (Inbox)')); setIcon(el(pb, 'span', 'a4pj-ic a4pj-caret'), 'chevron-down');
+    pb.addEventListener('click', (e) => { e.stopPropagation(); this.projectPick(t, pb, popOpts, refresh); });
+    // Status
+    const ss = el(row('Status'), 'div', 'a4pj-seg a4pj-stseg');
+    const stOf = statusString(fm[cfg.F.status]);
+    for (const [k, lab] of [['open', 'Open'], ['in-progress', 'In progress'], ['blocked', 'Waiting']]) {
+      if (!cfg.statuses.some((s) => s.value === k)) continue;
+      const b = el(ss, 'button', stOf === k ? 'is-on' : '', lab);
+      b.dataset.st = k;
+      b.addEventListener('click', () => { if (stOf !== k) act(() => engine.setStatus(t.path, k), `Status: ${lab}`); });
+    }
+    // Priority
+    const ps = el(row('Priority'), 'div', 'a4pj-prisel');
+    for (const pr of [...cfg.priorities].sort((a, b) => b.weight - a.weight)) {
+      const b = el(ps, 'button', String(t.priority) === pr.value ? 'is-on' : '');
+      priorityChip(b, pr.value, cfg);
+      b.setAttr('aria-pressed', String(String(t.priority) === pr.value));
+      b.addEventListener('click', () => { if (String(t.priority) !== pr.value) act(() => engine.setProperty(t.path, 'priority', pr.value), `Priority: ${pr.label}`); });
+    }
+    // When (day + half)
+    const vw = row('When');
+    if (t.recurrenceRaw) el(vw, 'span', 'a4pj-muted', 'by its repeat');
+    else {
+      const wb = el(vw, 'button', 'a4pj-pick' + (t.plannedDay ? (t.plannedDay < today && open ? ' is-late' : '') : ' is-dash'));
+      setIcon(el(wb, 'span', 'a4pj-ic'), 'calendar');
+      wb.appendText(t.plannedDay ? (t.due ? `${shortDay(t.plannedDay, today)} (its due day)` : shortDay(t.plannedDay, today)) : 'Not planned');
+      wb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDatePicker(wb, { title: `When · ${t.title}`, value: t.plannedDay, today, ...popOpts, allowClear: !!(t.plannedDay && !t.due),
+          note: t.due ? 'It has a due date, so picking a day moves the due date (same as the Planner).' : 'The day to do it (Today and the Planner).',
+          onPick: (d) => act(async () => d ? plugin.placeTask(t, d, t.plannedHalf || null, engine.collectTasks(false)) : engine.unschedule(t.path), d ? `On ${shortDay(d, today)}` : 'Unscheduled') });
+      });
+    }
+    // A clock time on Due (or a repeating task's start) picks the half itself:
+    // the buttons give way to one line saying so (change it on Due / Starts).
+    if (t.time) {
+      const ln = el(vw, 'span', 'a4pj-auto');
+      setIcon(el(ln, 'span', 'a4pj-ic'), 'clock');
+      ln.appendText(`${halfOfTime(t.time) === 'am' ? 'Morning' : 'Afternoon'}, from the ${timeText(t.time)} ${t.recurrenceRaw ? 'start' : 'due'} time`);
+    } else {
+      const hs = el(vw, 'div', 'a4pj-seg a4pj-halfseg');
+      for (const [k, lab] of [['am', 'Morning'], ['pm', 'Afternoon'], ['', 'Any time']]) {
+        const b = el(hs, 'button', (t.plannedHalf || '') === k ? 'is-on' : '', lab);
+        b.dataset.half = k || 'any';
+        b.addEventListener('click', () => {
+          if ((t.plannedHalf || '') === k) return;
+          const half = k || null;
+          if (t.recurrenceRaw) act(() => engine.write(t.path, (x) => { if (half) x.planned_half = half; else delete x.planned_half; }), lab);
+          else act(() => plugin.placeTask(t, t.plannedDay || today, half, engine.collectTasks(false)), `${t.plannedDay ? shortDay(t.plannedDay, today) : 'Today'}, ${lab.toLowerCase()}`);
+        });
+      }
+    }
+    // Starts / Due
+    // Starts / Due: a date and an optional clock time (task times v3). The
+    // button opens the picker; the box understands plain words and shows what
+    // it understood under it before Enter saves.
+    for (const [k, lab, help] of [['start', 'Starts', 'first day it shows up'], ['due', 'Due', 'must be done by']]) {
+      if (k === 'due' && t.recurrenceRaw && !t.due) continue;
+      const v = row(lab);
+      const val = k === 'due' ? t.due : t.start;
+      const tm = k === 'due' ? t.dueTime : t.startTime;
+      const late = k === 'due' && val && val < today && open && !t.recurrenceRaw;
+      const dueToday = k === 'due' && val === today && open && !t.recurrenceRaw;
+      const b = el(v, 'button', 'a4pj-pick' + (val ? '' : ' is-dash') + (late ? ' is-late' : '') + (dueToday ? ' is-today' : '') + (k === 'start' && val ? ' is-dash' : ''));  // a due time is shown plainly; the bell next to it carries the colour (reminder mockup)
+      setIcon(el(b, 'span', 'a4pj-ic'), 'calendar'); b.appendText(val ? `${lab} ${shortDay(val, today)}${tm ? `, ${timeText(tm)}` : ''}` : 'Pick a date');
+      b.setAttr('aria-label', `${lab} date and time, open the calendar (${help})`);
+      const save = (r) => act(() => saveWhen(engine, t, k, r), whenToast(t, k, r, today));
+      b.addEventListener('click', (e) => { e.stopPropagation(); openWhenPicker(b, { ...whenPickerOpts(t, k, today), ...popOpts, onSave: save }); });
+      const tyw = el(v, 'span', 'a4pj-tyw');
+      const ty = el(tyw, 'input', 'a4pj-typed'); ty.type = 'text'; ty.placeholder = k === 'start' ? 'type: monday 9am' : 'type: tomorrow at 4pm'; ty.setAttr('aria-label', `Type a ${lab.toLowerCase()} date and time`);
+      const pv = el(tyw, 'div', 'a4pj-typed-pv'); pv.setAttr('aria-live', 'polite');
+      const parse = () => parseWhen(ty.value, today, { day: val, time: tm }, k);
+      const upd = () => {
+        const r = parse();
+        pv.empty(); pv.toggleClass('is-on', !!r); pv.toggleClass('is-err', !!(r && r.error));
+        if (!r) return;
+        pv.appendText(whenPreview(r, k, today, !!t.recurrenceRaw, reminderAfter(t, k, r)));
+        if (!r.error) el(pv, 'span', 'a4pj-enter', 'Enter to save');
+      };
+      ty.addEventListener('input', upd);
+      ty.addEventListener('blur', () => pv.removeClass('is-on'));
+      ty.addEventListener('focus', upd);
+      ty.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { ty.value = ''; upd(); return; }
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault();
+        const r = parse();
+        if (!r || r.error) { upd(); return; }
+        ty.value = ''; upd(); ty.blur(); // saved: the box empties so the card can redraw with the new value
+        save({ day: r.day, time: r.time, half: r.time ? undefined : (r.half || undefined) });
+      });
+      if (val && !(k === 'start' && t.recurrenceRaw)) {
+        const x = el(v, 'button', 'a4pj-x'); setIcon(x, 'x');
+        const what = `Remove the ${lab === 'Due' ? 'due' : 'start'} date${tm ? ' and its time' : ''}`;
+        x.setAttr('aria-label', what); x.setAttr('title', what);
+        x.addEventListener('click', () => save(null));
+      }
+      // Only a due time rings (a repeating task's start time rings each time it
+      // comes round). The bell says when, and is the button to change it.
+      const rings = k === (t.recurrenceRaw ? 'start' : 'due');
+      if (rings && val && open && !inArchive) {
+        if (tm) this.bellButton(v, t, k, val, tm, popOpts, act);
+        else el(v, 'span', 'a4pj-rem-hint', 'add a time to set a reminder');
+      } else if (tm && !rings) b.setAttr('title', "A start time doesn't ring; reminders ring at the due time.");
+    }
+    // Repeats
+    const rb = el(row('Repeats'), 'button', 'a4pj-pick' + (t.recurrenceRaw ? '' : ' is-dash'), repeatWords(t.recurrenceRaw));
+    rb.addEventListener('click', (e) => { e.stopPropagation(); this.repeatPick(t, rb, popOpts, act); });
+    // Blocked by / Blocks (dependencies mockup round 4)
+    this.depRow(row('Blocked by'), t, 'by', popOpts, act);
+    this.depRow(row('Blocks'), t, 'blocks', popOpts, act);
+    const ob = open && !inArchive ? engine.openBlockers({ path: t.path, blockedBy: t.blockedBy }) : [];
+    if (ob.length) { const bn = el(card, 'div', 'a4pj-blocked-note'); setIcon(el(bn, 'span', 'a4pj-ic'), 'lock'); el(bn, 'span', null, `Waiting on ${ob.map((b) => b.title).join(' and ')}. Shown dimmed and lower in lists until then.`); }
+    // small meta + all properties
+    const sm = el(card, 'div', 'a4pj-small-meta');
+    el(sm, 'span', null, t.dateCreated ? `Created ${longDay(t.dateCreated)}` : 'Created: not recorded');
+    el(sm, 'span', null, t.recurrenceRaw ? `${t.completeInstances.length} done so far` : (t.completedDate ? `Completed ${longDay(t.completedDate)}` : 'Not completed'));
+    if (t.steps.total) el(sm, 'span', null, `Steps ${t.steps.done}/${t.steps.total} (the tick boxes in the note)`);
+    if (plugin.settings.hideProps) {
+      const n = Object.keys(fm || {}).length;
+      const showing = !!this.showProps.get(view);
+      const pl2 = el(sm, 'button', 'a4pj-linkbtn', showing ? 'Hide all properties' : `All properties (${n})`);
+      pl2.addEventListener('click', () => { this.showProps.set(view, !showing); this.refresh(view); });
+    }
+    // add a step
+    const add = el(card, 'div', 'a4pj-step-add');
+    el(add, 'span', 'a4pj-plus', '+');
+    const ai = el(add, 'input'); ai.type = 'text'; ai.placeholder = t.steps.total ? 'Add a step, press Enter (steps are the tick boxes below)' : 'Add a step, press Enter';
+    ai.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter' || e.isComposing || !ai.value.trim()) return;
+      e.preventDefault();
+      const v = ai.value; ai.value = '';
+      await act(() => engine.addStep(t.path, v), 'Step added');
+    });
+  }
+
+  // The bell next to Due (reminder setup mockup): "4:15 PM · 15 min before",
+  // or a dashed "No reminder". A click lists the choices with the time each
+  // would ring; Other… takes typed words ("2 hours").
+  bellButton(parent, t, k, day, tm, popOpts, act) {
+    const engine = this.plugin.engine;
+    const cur = t.reminderSet;
+    const each = k === 'start' ? ' each time' : '';
+    const b = el(parent, 'button', 'a4pj-bell' + (cur == null ? ' is-none' : ''));
+    setIcon(el(b, 'span', 'a4pj-ic'), cur == null ? 'bell-off' : 'bell');
+    b.appendText(cur == null ? 'No reminder' : `${ringText(day, tm, cur)}${cur ? ` · ${reminderWords(cur)}` : ' · at the time'}`);
+    setIcon(el(b, 'span', 'a4pj-ic a4pj-caret'), 'chevron-down');
+    b.setAttr('aria-label', cur == null ? 'No reminder. Change the reminder' : `Reminder at ${ringText(day, tm, cur)}${each}. Change the reminder`);
+    b.setAttr('aria-haspopup', 'true');
+    const set = (n) => act(() => engine.setReminder(t.path, n), n == null ? 'No reminder' : `Reminder: ${reminderWords(n).toLowerCase()}${each}`);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      new Pop(b, null, (box, pop) => {
+        box.addClass('a4pj-bellmenu');
+        const item = (label, n, k2) => {
+          const q = el(box, 'button', 'a4pj-pop-q' + (cur === n ? ' is-cur' : ''));
+          el(q, 'span', null, label); if (k2) el(q, 'span', 'a4pj-k', k2);
+          q.addEventListener('click', () => { pop.close(); if (cur !== n) set(n); });
+        };
+        item('No reminder', null, null);
+        el(box, 'div', 'a4pj-pop-sep');
+        for (const n of REMINDER_CHOICES) item(n ? reminderWords(n) : 'At the time', n, ringText(day, tm, n));
+        if (cur != null && !REMINDER_CHOICES.includes(cur)) item(reminderWords(cur), cur, ringText(day, tm, cur));
+        el(box, 'div', 'a4pj-pop-sep');
+        const oth = el(box, 'button', 'a4pj-pop-q'); el(oth, 'span', null, 'Other…');
+        oth.addEventListener('click', () => {
+          oth.remove();
+          const w = el(box, 'div', 'a4pj-wp-other');
+          const oi = el(w, 'input', 'a4pj-input a4pj-wp-otherin'); oi.type = 'text'; oi.placeholder = '2 hours'; oi.setAttr('aria-label', 'How long before');
+          const out = el(w, 'span', 'a4pj-wp-otherout');
+          el(box, 'div', 'a4pj-wp-remhelp', 'Type minutes, hours or days, e.g. "45 min", "2 hours", "3 days". Enter saves.');
+          oi.addEventListener('input', () => { const n = parseReminderText(oi.value); out.toggleClass('is-err', n == null && !!oi.value.trim()); out.setText(n == null ? (oi.value.trim() ? "Didn't catch that" : '') : `before = ${ringText(day, tm, n)}`); });
+          oi.addEventListener('keydown', (e2) => { if (e2.key !== 'Enter' || e2.isComposing) return; e2.preventDefault(); const n = parseReminderText(oi.value); if (n == null) return; pop.close(); set(n); });
+          oi.focus(); pop.place();
+        });
+      }, { ...popOpts, cls: 'is-bell' });
+    });
+    return b;
+  }
+
+  // mode 'by': this task's own blockedBy. mode 'blocks': worked out from the
+  // other tasks; adding or removing there writes the OTHER task's blockedBy.
+  depRow(host, t, mode, popOpts, act) {
+    const engine = this.plugin.engine;
+    const box = el(host, 'div', 'a4pj-deps');
+    const list = mode === 'by' ? engine.blockerEntries(t.path) : engine.waitingOn(t.path);
+    if (!list.length) el(box, 'span', 'a4pj-muted', mode === 'by' ? 'Nothing' : 'No task waits on this');
+    for (const x of list) {
+      const d = el(box, 'span', 'a4pj-dep' + (x.missing ? ' is-missing' : (x.holds ? '' : ' is-done')));
+      if (mode === 'by') el(d, 'span', 'a4pj-dep-st', x.missing ? 'gone' : (x.holds ? 'open' : '✓ done'));
+      const a = el(d, x.path ? 'a' : 'span', 'a4pj-dep-t', x.title);
+      if (x.path) { a.setAttr('role', 'link'); a.tabIndex = 0; a.addEventListener('click', () => this.plugin.openFile(x.path)); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.plugin.openFile(x.path); }); }
+      if (x.missing) d.setAttr('aria-label', 'That task note no longer exists; it blocks nothing');
+      const rm = el(d, 'button', 'a4pj-x'); setIcon(rm, 'x'); rm.setAttr('aria-label', `Remove ${x.title}`);
+      rm.addEventListener('click', () => act(() => (mode === 'by' ? engine.removeBlocker(t.path, x.path, x.link) : engine.removeBlocker(x.path, t.path)), 'Removed'));
+    }
+    const add = el(box, 'button', 'a4pj-dep-add', mode === 'by' ? '+ Waiting on…' : '+ Add a task that waits on this');
+    add.addEventListener('click', (e) => { e.stopPropagation(); this.depPick(t, mode, add, popOpts, act); });
+  }
+
+  depPick(t, mode, anchor, popOpts, act) {
+    const engine = this.plugin.engine; const cfg = engine.cfg();
+    new Pop(anchor, mode === 'by' ? `${t.title} is waiting on…` : `Which task waits on ${t.title}?`, (box, pop) => {
+      const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a task'; find.setAttr('aria-label', 'Find a task');
+      const host = el(box, 'div', 'a4pj-pop-list');
+      const taken = new Set((mode === 'by' ? engine.blockerEntries(t.path) : engine.waitingOn(t.path)).map((x) => x.path).filter(Boolean));
+      const all = engine.collectTasks(false).filter((c) => c.path !== t.path && !c.archived && isOpenTask(c, cfg) && !taken.has(c.path));
+      const proj = t.projectKey ? engine.collectProjects().find((p) => p.key === t.projectKey) : null;
+      const projName = proj ? proj.name : (t.project || t.projectKey);
+      const draw = () => {
+        host.empty();
+        host.scrollTop = 0;
+        const q = find.value.trim();
+        const { mine, others } = depPickGroups(all, t.projectKey, q);
+        if (t.projectKey) {
+          el(host, 'div', 'a4pj-grp', projName);
+          if (!mine.length) el(host, 'div', 'a4pj-pop-empty', q ? 'No match in this project.' : 'No other open task in this project.');
+          for (const c of mine) row(c, true);
+          if (others.length) el(host, 'div', 'a4pj-grp', 'Other projects');
+        } else if (others.length) el(host, 'div', 'a4pj-grp', 'Open tasks');
+        for (const c of others) row(c);
+        if (!t.projectKey && !others.length) el(host, 'div', 'a4pj-pop-note', 'No open task matches.');
+      };
+      const row = (c, own) => {
+        const loop = mode === 'by' ? engine.wouldLoop(t.path, c.path) : engine.wouldLoop(c.path, t.path);
+        const b = el(host, 'button', 'a4pj-pop-q' + (loop ? ' is-no' : ''));
+        el(b, 'span', null, c.title);
+        if (loop || !own) el(b, 'span', 'a4pj-k', loop ? 'would loop' : (c.project || c.projectKey || 'Inbox'));
+        if (loop) {
+          b.setAttr('aria-disabled', 'true');
+          b.setAttr('aria-label', `${c.title}: can't, that would make a circle`);
+          b.addEventListener('click', () => new Notice("Can't: that would make a circle."));
+          return;
+        }
+        b.addEventListener('click', () => {
+          pop.close();
+          act(() => (mode === 'by' ? engine.addBlocker(t.path, c.path) : engine.addBlocker(c.path, t.path)), mode === 'by' ? `Now waiting on ${c.title}` : `${c.title} now waits on this`);
+        });
+      };
+      find.addEventListener('input', draw);
+      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = host.querySelector('.a4pj-pop-q:not(.is-no)'); if (b) b.click(); } });
+      draw();
+      el(box, 'div', 'a4pj-pop-note', mode === 'by' ? 'Open tasks only, this project first. A task that already waits on this one is greyed out.' : 'Saved on the other task (as its "Blocked by"); nothing is stored twice.');
+    }, { ...popOpts, cls: 'is-wide is-deps', fit: true });
+  }
+
+  projectPick(t, anchor, popOpts, refresh) {
+    const engine = this.plugin.engine;
+    new Pop(anchor, 'Project', (box, pop) => {
+      const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a project';
+      const host = el(box, 'div', 'a4pj-pop-list');
+      const choose = async (p) => {
+        pop.close();
+        try { const w = await engine.setProject(t.path, p ? p.path : null); this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo); } catch (e) { new Notice('Could not move it.'); }
+        refresh();
+      };
+      const draw = () => {
+        host.empty();
+        const q = find.value.trim().toLowerCase();
+        for (const [sp, lab] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
+          const list = engine.collectProjects().filter((p) => p.sphere === sp && !CLOSED_STATUSES.includes(p.status) && (!q || p.name.toLowerCase().includes(q)))
+            .sort((a, b) => ((OPEN_ORDER[a.status] ?? 3) - (OPEN_ORDER[b.status] ?? 3)) || a.name.localeCompare(b.name));
+          if (!list.length) continue;
+          el(host, 'div', 'a4pj-grp', lab);
+          for (const p of list) { const b = el(host, 'button', 'a4pj-pop-q'); el(b, 'span', null, p.name); if (p.key === t.projectKey) el(b, 'span', 'a4pj-k', 'current'); else if (p.status !== 'active') el(b, 'span', 'a4pj-k', p.status); b.addEventListener('click', () => choose(p)); }
+        }
+        el(host, 'div', 'a4pj-pop-sep');
+        const nb = el(host, 'button', 'a4pj-pop-q'); el(nb, 'span', null, 'No project (back to Inbox)'); nb.addEventListener('click', () => choose(null));
+      };
+      find.addEventListener('input', draw);
+      draw();
+    }, { ...popOpts, cls: 'is-wide' });
+  }
+
+  repeatPick(t, anchor, popOpts, act) {
+    const engine = this.plugin.engine;
+    const current = ruleBody(t.recurrenceRaw);
+    new Pop(anchor, 'Repeats', (box, pop) => {
+      for (const [k, lab] of REPEAT_PRESETS) {
+        const b = el(box, 'button', 'a4pj-pop-q'); el(b, 'span', null, lab);
+        if (current === k) el(b, 'span', 'a4pj-k', 'current');
+        b.addEventListener('click', () => { pop.close(); if (current !== k) act(() => engine.setRepeat(t.path, k), k ? `Repeats: ${lab.toLowerCase()}` : "Doesn't repeat"); });
+      }
+      el(box, 'div', 'a4pj-pop-sep');
+      const ty = el(box, 'input', 'a4pj-input a4pj-find'); ty.type = 'text'; ty.placeholder = 'or type: every other friday';
+      ty.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || !ty.value.trim()) return;
+        e.preventDefault();
+        const rule = repeatRule(ty.value);
+        if (!rule) { ty.value = ''; ty.placeholder = "Didn't catch that. Try: every monday"; return; }
+        pop.close(); act(() => engine.setRepeat(t.path, rule), 'Repeat changed');
+      });
+      el(box, 'div', 'a4pj-pop-note', 'Ticking a repeating task finishes this occurrence; the next one shows up on its day.');
+    }, popOpts);
+  }
+}
+
+/* ========================================================================== *
+ * Settings
+ * ========================================================================== */
+
+class ProjectsSettingTab extends PluginSettingTab {
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.addClass('a4pj-settings');
+    const s = this.plugin.settings;
+    new Setting(containerEl)
+      .setName('Task source')
+      .setDesc('Where ticks, new tasks and repeats are written. Built-in writes your task notes itself, exactly as TaskNotes does, so the notes look the same either way. A4 Today and the A4 Planner follow this choice too.')
+      .addDropdown((d) => {
+        for (const x of SOURCES) d.addOption(x.id, x.name);
+        d.setValue(s.source);
+        d.onChange(async (v) => {
+          if (v === 'checkbox') { new Notice('Obsidian checkbox tasks are not built yet. Nothing was changed.'); d.setValue(s.source); return; }
+          if (v === 'tasknotes' && !this.plugin.tnApi()) new Notice('TaskNotes is not turned on, so ticks and new tasks will not work until it is.');
+          s.source = v; await this.plugin.save(); this.plugin.cards.refreshAll(); this.display();
+        });
+      });
+    const src = SOURCES.find((x) => x.id === s.source);
+    containerEl.createDiv({ cls: 'setting-item-description a4pj-set-note', text: src ? src.desc : '' });
+    new Setting(containerEl)
+      .setName("Hide Obsidian's Properties list on task notes")
+      .setDesc('The task card shows and edits the same fields. "All properties" in the card opens the list for anything unusual. Nothing in the notes changes either way.')
+      .addToggle((t) => t.setValue(s.hideProps).onChange(async (v) => { s.hideProps = v; await this.plugin.save(); this.plugin.cards.refreshAll(); }));
+    const q = s.archiveQueue.length;
+    containerEl.createDiv({ cls: 'setting-item-description a4pj-set-note', text: `Done tasks move to the archive folder five minutes after they are ticked, as with TaskNotes${q ? ` (${q} waiting now)` : ''}.` });
+  }
+}
+
+A4ProjectsPlugin.logic = logic;
+module.exports = A4ProjectsPlugin;
+module.exports.TaskEngine = TaskEngine;
+module.exports.TaskLinks = TaskLinks; // for Scripts/tests (dependencies)
+module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for Scripts/tests (task card colour)
