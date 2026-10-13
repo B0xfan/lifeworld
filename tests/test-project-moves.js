@@ -154,6 +154,7 @@ const P = (name) => `${PD}/${name}.md`;
   assert.strictEqual(await w.p.promoteIdea(P('Idea')), false, 'promote without goal cancelled');
   assert.deepStrictEqual(notices, [], 'a cancel shows no notice');
   assert.strictEqual(await w.p.moveProject(P('Act'), 'active'), false, 'same column: no write');
+  assert.deepStrictEqual(notices, [], 'a card dropped back in its own column shows no notice');
   assert.strictEqual(await w.p.moveProject(P('Act'), 'cold-storage'), false, 'move only to board columns');
   assert.strictEqual(await w.p.moveProject(P('Idea'), 'active'), false, 'ideas go through Promote');
   assert.strictEqual(await w.p.moveProject(P('Cold'), 'active'), false, 'cold storage goes through Restore');
@@ -167,7 +168,7 @@ const P = (name) => `${PD}/${name}.md`;
   }
   assert.strictEqual(await w.p.writeProject(w.files.find((f) => f.basename === 'NotProject'), (fm) => { fm.status = 'done'; }), null, 'the List write refuses a non-project too');
   assert.ok(!w.writes.includes(`${PD}/Scan.pdf`), 'a non-note is never written');
-  assert.strictEqual(notices.length, 11, 'every refusal shows a notice (not a move to a non-column, a caller error)');
+  assert.strictEqual(notices.length, 10, 'every refusal shows a notice (not a move to a non-column, a caller error; not a same-column move)');
   assert.ok(notices.every((m) => /^Could not do that to "/.test(m)), 'the refusal notice');
   // Guards now decide inside the write, so a refusal may open it but changes nothing.
   for (const f of w.files) assert.deepStrictEqual(f.fm, notes[Object.keys(notes).find((k) => f.path === `${PD}/${k}` || f.path.endsWith(`${k}.md`))], `${f.path} unchanged`);

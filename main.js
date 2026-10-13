@@ -2059,7 +2059,7 @@ const SOURCES = [
   { id: 'tasknotes', name: 'TaskNotes', desc: 'Ticks, new tasks and repeats go through the TaskNotes plugin (it must be turned on).' },
   { id: 'checkbox', name: 'Obsidian checkboxes (not built yet)', desc: 'Plain - [ ] lines in your notes. Planned for the public version.' },
 ];
-const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], activity: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {} } };
+const DEFAULT_SETTINGS = { source: 'builtin', hideProps: true, tnSnapshot: null, archiveQueue: [], activity: [], ui: { closedOpen: false, doneOpen: {}, later: {}, someday: {}, view: 'list', kind: 'projects' } };
 
 function normalizeSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
@@ -2073,6 +2073,9 @@ function normalizeSettings(raw) {
       doneOpen: s.ui && s.ui.doneOpen && typeof s.ui.doneOpen === 'object' ? s.ui.doneOpen : {},
       later: s.ui && s.ui.later && typeof s.ui.later === 'object' ? s.ui.later : {},
       someday: s.ui && s.ui.someday && typeof s.ui.someday === 'object' ? s.ui.someday : {},
+      // Projects page switches (spec 4): today's List + Projects until picked otherwise.
+      view: s.ui && s.ui.view === 'board' ? 'board' : 'list',
+      kind: s.ui && s.ui.kind === 'tasks' ? 'tasks' : 'projects',
     },
     activity: Array.isArray(s.activity) ? s.activity.filter((e) => e && Number.isFinite(e.at) && typeof e.text === 'string').slice(0, ACTIVITY_CAP) : [],
   };
@@ -2737,16 +2740,17 @@ class A4ProjectsPlugin extends Plugin {
     } catch (e) { console.error('[a4-projects] could not read', f.path, e); return null; }
   }
   // The write; returns its Undo, or null when it failed or was refused (not a
-  // project, or apply returned false).
+  // project, or apply returned false). apply returning 'same' = already
+  // there: null, no notice.
   async writeProject(f, apply) {
-    let before, after, ok = false;
+    let before, after, ok = false, same = false;
     try {
       await this.app.fileManager.processFrontMatter(f, (fm) => {
         if (fm.type !== 'project') return;
-        before = fieldsOf(fm); ok = apply(fm) !== false; after = fieldsOf(fm);
+        before = fieldsOf(fm); const r = apply(fm); ok = r !== false && r !== 'same'; same = r === 'same'; after = fieldsOf(fm);
       });
     } catch (e) { console.error('[a4-projects] project write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
-    if (!ok) { this.refused(f.basename); return null; }
+    if (!ok) { if (!same) this.refused(f.basename); return null; }
     const changed = MOVE_FIELDS.filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])).length;
     // Resolves true only when at least one field was put back.
     return async () => {
@@ -2778,7 +2782,8 @@ class A4ProjectsPlugin extends Plugin {
     // Ideas go through Promote (goal), Cold Storage through Restore.
     const undo = await this.writeProject(f, (fm) => {
       const s = statusOf(fm);
-      if (s === status || SHELVED_STATUSES.includes(s)) return false;
+      if (s === status) return 'same'; // a card dropped back in its own column: silent
+      if (SHELVED_STATUSES.includes(s)) return false;
       applyProjectStatus(fm, status, today);
     });
     if (!undo) return false;
@@ -3554,6 +3559,22 @@ class ProjectsView extends ItemView {
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
       { label: `Inbox · ${inbox.length}`, icon: 'inbox', run: () => this.go({ page: 'inbox' }) },
     ]);
+    // Projects / Tasks, then List / Board (Projects only: Tasks is a board), as in the mockup.
+    const ui = this.plugin.settings.ui;
+    const act = page.querySelector('.a4pj-actions');
+    const switches = [['kind', 'Show', [['projects', 'Projects'], ['tasks', 'Tasks']]]];
+    if (ui.kind === 'projects') switches.push(['view', 'View', [['list', 'List'], ['board', 'Board']]]);
+    for (const [key, name, opts] of switches.reverse()) {
+      const seg = createDiv({ cls: 'a4pj-seg a4pj-switch', attr: { role: 'group', 'aria-label': name } });
+      for (const [k, l] of opts) {
+        const b = el(seg, 'button', ui[key] === k ? 'is-on' : '', l);
+        b.setAttr('aria-pressed', String(ui[key] === k));
+        b.addEventListener('click', async () => { if (ui[key] === k) return; ui[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); });
+      }
+      act.prepend(seg);
+    }
+    // shortcut: Board (section 7) and Tasks (section 9) are placeholders until those sections land.
+    if (ui.kind === 'tasks' || ui.view === 'board') { el(page, 'div', 'a4pj-empty', ui.kind === 'tasks' ? 'the tasks board comes in a later section' : 'the projects board comes in a later section'); return; }
     const tools = el(page, 'div', 'a4pj-tools');
     const seg = el(tools, 'div', 'a4pj-seg');
     for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['backlog', 'Backlog']]) {
@@ -3657,6 +3678,7 @@ class ProjectsView extends ItemView {
       const v = sel.value;
       const undo = await this.plugin.writeProject(f, (fm) => { applyProjectStatus(fm, v, today); });
       if (undo) this.plugin.toast.show(`Status: ${v}`, undo);
+      else sel.value = p.status; // refused or failed: show what the note still says
     });
     if (p.goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(p.goal)); a.addEventListener('click', () => this.openLink(p.goal, p.path)); }
     if (p.client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(p.client)); a.addEventListener('click', () => this.openLink(p.client, p.path)); }

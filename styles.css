@@ -502,3 +502,5 @@ html:not(#a4pj-guard) .a4pj-tl.is-done .a4pj-tl-title { color: var(--text-muted)
 
 /* Board action dialogs (section 4) */
 .a4pj-ask-input { width: 100%; }
+/* Projects page switches (Projects / Tasks, List / Board): the mockup's on look, not the filter chips' */
+html:not(#a4pj-guard) .a4pj-root .a4pj-seg.a4pj-switch button.is-on { background: var(--pj-wash); color: var(--pj-paper); box-shadow: inset 0 0 0 1px var(--pj-marker); }
