@@ -568,6 +568,25 @@ html:not(#a4pj-guard) .a4pj-root :is(.a4pj-bacts, .a4pj-bacts2) button:hover { t
 html:not(#a4pj-guard) .a4pj-root .a4pj-activity { display: flex; flex-direction: column; gap: 8px; max-width: 820px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-log { font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--pj-hair); display: flex; gap: 12px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-log .a4pj-when { font: 500 10.5px/2 var(--pj-f-mono); color: var(--pj-faint); flex: none; width: 120px; margin-left: 0; }
+/* Ideas and Cold Storage (section 8): heading + one line, cards two across, as in the mockup */
+html:not(#a4pj-guard) .a4pj-root .a4pj-sechead { display: flex; align-items: center; gap: 12px; max-width: 1220px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sechead h2 { font: 640 24px/1.2 var(--pj-f-display); margin: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-secnote { color: var(--pj-dim); font-size: 14px; margin: 6px 0 16px; max-width: 800px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; max-width: 1220px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf .a4pj-bcard { padding: 14px 18px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf .a4pj-bdesc { font-size: 14px; margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-from { --a: var(--pj-paper); text-transform: none; letter-spacing: 0; font: 600 11.5px/1.8 var(--pj-f-body); border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn { color: var(--pj-success); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-outline { border-color: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-fill { background: var(--pj-success); border-color: var(--pj-success); color: var(--pj-bg); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-fill:hover { filter: brightness(1.08); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-del { border-color: transparent; color: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-waiting { color: var(--pj-warning); border-color: color-mix(in srgb, var(--pj-warning) 60%, transparent); border-style: dashed; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-blocked { color: var(--pj-danger); border-color: color-mix(in srgb, var(--pj-danger) 60%, transparent); }
+.a4pj-ask-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.a4pj-ask-field label { font-weight: 600; font-size: var(--font-ui-small); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-shelf { grid-template-columns: 1fr; }
 /* phone: tiles 3 by 2, one column per screen, swiped (section 10 checks it) */
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-tiles { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-bfind { width: 100%; }

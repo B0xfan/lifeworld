@@ -102,7 +102,7 @@ const UNDO_MS = 5000;
 const NARROW_WIDTH = 760;
 const DONE_PREVIEW = 30;
 const CLOSED_STATUSES = ['done', 'failed', 'dropped'];
-const PROJECT_STATUSES = ['active', 'paused', 'waiting', 'blocked', 'backlog', 'done', 'failed', 'dropped'];
+const PROJECT_STATUSES = ['active', 'paused', 'waiting', 'blocked', 'backlog', 'done', 'failed', 'dropped', 'idea', 'cold-storage'];
 // Shelved: not open and not closed; they live on the board's Ideas and Cold Storage tabs.
 const SHELVED_STATUSES = ['idea', 'cold-storage'];
 const OPEN_ORDER = { active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 };
@@ -1055,6 +1055,7 @@ function readProject(fm, path, basename) {
     client: fm.client ? String(asList(fm.client)[0]) : null,
     endDate: toDayStr(fm.end_date),
     why: typeof fm.why === 'string' ? fm.why.trim() : '',
+    storedFrom: String(fm.stored_from || '').trim().toLowerCase(),
   };
 }
 
@@ -1102,6 +1103,14 @@ function firstBodyLine(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
   for (const l of s.slice(frontmatterEnd(s)).split('\n')) { const t = l.trim(); if (t && !t.startsWith('#') && !t.startsWith('![[')) return t; }
   return '';
+}
+// + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
+// idea and no goal; the one line is the first body line. `why` (free text) goes
+// through the YAML writer; the other values are fixed or checked by the caller.
+function ideaNote(title, line, why, sphere, today, stringify) {
+  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim();
+  const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
+  return `---\ntype: project\nstatus: idea\ncreated: ${today}\nsphere: ${sphere}\n${y}---\n\n# ${title}\n\n${l ? `${l}\n` : ''}`;
 }
 // "Oct 12, 4:10 PM": card dates and Activity times.
 function stampText(ms) { return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(' at ', ', '); }
@@ -1198,6 +1207,17 @@ function applyColdStorage(fm, why, today) {
 function restoreTarget(fm) {
   const s = String((fm && fm.stored_from) || '').trim().toLowerCase();
   return BOARD_COLUMNS.includes(s) ? { status: s, fellBack: false } : { status: 'backlog', fellBack: true };
+}
+// The project page's status menu: an idea leaves only by Promote (goal asked), a
+// stored project only by Restore (its saved column); nothing becomes an idea, and
+// Cold Storage only from a board column. null = not offered. Same value: null.
+function statusRoute(from, to, storedFrom) {
+  if (from === to) return null;
+  if (from === 'idea') return to === 'backlog' ? 'promote' : null;
+  if (from === 'cold-storage') return to === restoreTarget({ stored_from: storedFrom }).status ? 'restore' : null;
+  if (to === 'idea') return null;
+  if (to === 'cold-storage') return BOARD_COLUMNS.includes(from) ? 'cold' : null;
+  return 'write';
 }
 function applyRestore(fm, today) { const r = restoreTarget(fm); applyProjectStatus(fm, r.status, today); return r; }
 function hasGoalLink(fm) { return asList(fm && fm.goal).some((g) => String(g).includes('[[')); }
@@ -1627,7 +1647,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, statusRoute, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -2480,6 +2500,38 @@ class GoalPickModal extends SuggestModal {
   finish() { const d = this.done; this.done = null; if (d) d(this.picked); }
 }
 
+// "+ Add idea": title, one line, why, Work or Personal. Calls save(values) on OK
+// and closes only when it resolves a note (a taken name keeps the form open).
+class IdeaModal extends Modal {
+  constructor(app, area, save) { super(app); this.area = area; this.save = save; }
+  onOpen() {
+    this.titleEl.setText('Add an idea');
+    const field = (label, ph) => { const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: label }); const i = w.createEl('input', { type: 'text', cls: 'a4pj-ask-input' }); i.placeholder = ph; i.setAttr('aria-label', label); return i; };
+    const title = field('Title', 'Weekly beach cleanup group');
+    const line = field('One line', 'What it is, in a sentence');
+    const why = field('Why it is worth keeping', 'Not a project yet: no date or helpers lined up');
+    const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: 'Work or Personal' });
+    const sel = w.createEl('select', { cls: 'dropdown' }); sel.setAttr('aria-label', 'Work or Personal');
+    for (const [v, l] of [['', 'Choose…'], ['work', 'Work'], ['personal', 'Personal']]) sel.createEl('option', { text: l, value: v });
+    sel.value = this.area === 'work' || this.area === 'personal' ? this.area : '';
+    let busy = false;
+    const ok = async () => {
+      if (busy) return;
+      if (!title.value.trim()) { new Notice('Give the idea a title.'); title.focus(); return; }
+      if (!sel.value) { new Notice('Choose Work or Personal.'); sel.focus(); return; }
+      busy = true;
+      try { if (await this.save({ title: title.value, line: line.value, why: why.value, sphere: sel.value })) this.close(); }
+      finally { busy = false; }
+    };
+    for (const i of [title, line, why]) i.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok(); } });
+    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    row.createEl('button', { cls: 'mod-cta', text: 'Add idea' }).addEventListener('click', ok);
+    row.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+    window.setTimeout(() => title.focus(), 0);
+  }
+  onClose() { this.contentEl.empty(); }
+}
+
 class A4ProjectsPlugin extends Plugin {
   async onload() {
     this.settings = normalizeSettings(await this.loadData().catch(() => null));
@@ -2815,7 +2867,8 @@ class A4ProjectsPlugin extends Plugin {
   }
   // Only from a board column (the cards that offer it).
   // Re-checked after the dialog: a second dialog on a stored note only updates the why.
-  async coldStoreProject(path) {
+  // `log` false: the project page's status menu, not the board (spec 17 logs board actions only).
+  async coldStoreProject(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
     const why = await this.ask(`Why are you storing "${f.basename}"?`, '');
@@ -2827,10 +2880,10 @@ class A4ProjectsPlugin extends Plugin {
       applyColdStorage(fm, why, today);
     });
     if (!undo) return false;
-    this.toast.show(`Moved "${f.basename}" to Cold Storage`, this.logged(`You moved ${f.basename} to Cold Storage.`, undo));
+    this.toast.show(`Moved "${f.basename}" to Cold Storage`, log ? this.logged(`You moved ${f.basename} to Cold Storage.`, undo) : undo);
     return true;
   }
-  async restoreProject(path) {
+  async restoreProject(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
     const today = this.engine.today();
@@ -2838,12 +2891,12 @@ class A4ProjectsPlugin extends Plugin {
     const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'cold-storage') return false; r = applyRestore(fm, today); });
     if (!undo) return false;
     if (r.fellBack) new Notice(`"${f.basename}" had no earlier column saved, so it went to Backlog.`);
-    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, this.logged(`You restored ${f.basename} to ${COLUMN_LABEL[r.status]}.`, undo));
+    this.toast.show(`Restored "${f.basename}" to ${COLUMN_LABEL[r.status]}`, log ? this.logged(`You restored ${f.basename} to ${COLUMN_LABEL[r.status]}.`, undo) : undo);
     return true;
   }
   // The goal is mandatory outside ideas: the fresh read decides whether to ask,
   // the write refuses a promote that would still leave no goal.
-  async promoteIdea(path) {
+  async promoteIdea(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
     let goal = null;
@@ -2858,7 +2911,7 @@ class A4ProjectsPlugin extends Plugin {
       applyPromote(fm, goal, today);
     });
     if (!undo) return false;
-    this.toast.show(`Promoted "${f.basename}" to a project`, this.logged(`You promoted ${f.basename} to a project.`, undo));
+    this.toast.show(`Promoted "${f.basename}" to a project`, log ? this.logged(`You promoted ${f.basename} to a project.`, undo) : undo);
     return true;
   }
   // Cold Storage cards only (spec 10). Only this note, to the vault's own
@@ -2900,6 +2953,24 @@ class A4ProjectsPlugin extends Plugin {
     if (Platform.isMobile) { new Notice('Add new projects on the Mac: the New Project form only works there.'); return false; } // Quick Create is desktop-only
     new Notice('The New Project form needs the A4 Quick Create plugin turned on.');
     return false;
+  }
+  // "+ Add idea" (spec 11): a short form, then one new project note with status idea.
+  addIdea(area) { new IdeaModal(this.app, area, (v) => this.createIdea(v)).open(); }
+  // The only note this plugin creates for the board. Resolves the new file, or
+  // null (the form stays open) when the name is taken or the write failed.
+  // No Undo: removing a note is Delete permanently's job only (spec 19).
+  async createIdea({ title, line, why, sphere }) {
+    const t = String(title || '').replace(/\s+/g, ' ').trim();
+    if (!t || !['work', 'personal'].includes(sphere)) return null;
+    const name = sanitizeForFilename(t);
+    const path = `${PROJECTS_FOLDER}/${name}.md`;
+    if (this.app.vault.getAbstractFileByPath(path)) { new Notice(`There is already a project called "${name}".`); return null; }
+    let f;
+    try { f = await this.app.vault.create(path, ideaNote(t, line, why, sphere, this.engine.today(), obsidian.stringifyYaml)); }
+    catch (e) { console.error('[a4-projects] idea create failed', path, e); new Notice(`Could not add "${name}".`); return null; }
+    this.toast.show(`Added the idea "${f.basename}"`);
+    this.logActivity(`You added the idea ${f.basename}.`);
+    return f;
   }
   // Open goals (not achieved), A to Z, for Promote.
   goalFiles() {
@@ -3605,9 +3676,11 @@ class ProjectsView extends ItemView {
     const sp = this.state.focus;
     const ui = this.plugin.settings.ui;
     const board = ui.kind === 'projects' && ui.view === 'board';
-    // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button.
+    // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], board ? BOARD_TITLE[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [] : [
+    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], board ? BOARD_TITLE[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [
+      this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
+    ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
       { label: `Inbox · ${inbox.length}`, icon: 'inbox', run: () => this.go({ page: 'inbox' }) },
       board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() } : null,
@@ -3631,7 +3704,7 @@ class ProjectsView extends ItemView {
     if (board) { this.renderBoard(page); return; }
     const tools = el(page, 'div', 'a4pj-tools');
     const seg = el(tools, 'div', 'a4pj-seg');
-    for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['backlog', 'Backlog']]) {
+    for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['waiting', 'Waiting'], ['blocked', 'Blocked'], ['backlog', 'Backlog']]) {
       const b = el(seg, 'button', this.filter === k ? 'is-on' : '', l);
       b.addEventListener('click', () => { this.filter = k; this.render(true); });
     }
@@ -3720,14 +3793,9 @@ class ProjectsView extends ItemView {
       b.addEventListener('click', () => { if (this.tab === k) return; this.tab = k; this.query = ''; this.render(true, true); });
     }
     if (this.tab === 'activity') { this.renderActivity(page); return; }
-    // shortcut: the Ideas and Cold Storage tabs are filled in section 8.
-    if (this.tab !== 'projects') { el(page, 'div', 'a4pj-empty', 'this tab comes in a later section'); return; }
-    const areas = el(page, 'div', 'a4pj-areas'); areas.setAttr('role', 'group'); areas.setAttr('aria-label', 'Area');
-    for (const k of ['work', 'personal']) {
-      const b = el(areas, 'button', this.area === k ? 'is-on' : '', SPHERE_LABEL[k]);
-      b.setAttr('aria-pressed', String(this.area === k));
-      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); });
-    }
+    if (this.tab === 'cold') { this.renderCold(page); return; }
+    this.areaButtons(page);
+    if (this.tab === 'ideas') { this.renderIdeas(page); return; }
     const tiles = el(page, 'div', 'a4pj-tiles');
     const find = el(page, 'label', 'a4pj-bfind');
     el(find, 'span', null, 'Find a project');
@@ -3766,6 +3834,69 @@ class ProjectsView extends ItemView {
     }
   }
 
+  areaButtons(page) {
+    const areas = el(page, 'div', 'a4pj-areas'); areas.setAttr('role', 'group'); areas.setAttr('aria-label', 'Area');
+    for (const k of ['work', 'personal']) {
+      const b = el(areas, 'button', this.area === k ? 'is-on' : '', SPHERE_LABEL[k]);
+      b.setAttr('aria-pressed', String(this.area === k));
+      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); });
+    }
+  }
+
+  // Ideas and Cold Storage (spec 8, 11, 12): a heading, one line, cards two across.
+  // No search on either; Cold Storage has no area buttons (mockup).
+  shelf(page, title, note, count) {
+    const hd = el(page, 'div', 'a4pj-sechead'); el(hd, 'h2', null, title);
+    if (count != null) el(hd, 'span', 'a4pj-badge', String(count));
+    el(page, 'p', 'a4pj-secnote', note);
+    return el(page, 'div', 'a4pj-shelf');
+  }
+  shelfCard(grid, p, pills) {
+    const c = el(grid, 'div', 'a4pj-bcard');
+    c.tabIndex = 0; c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `scard:${p.path}`;
+    const top = el(c, 'div', 'a4pj-btop');
+    const pl = el(top, 'div', 'a4pj-pills');
+    if (p.sphere === 'work' || p.sphere === 'personal') el(pl, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
+    for (const t of pills || []) el(pl, 'span', 'a4pj-pill is-from', t);
+    el(c, 'div', 'a4pj-btitle', p.name);
+    this.descOf(p, el(c, 'div', 'a4pj-bdesc'));
+    const open = () => this.go({ page: 'project', project: p.path }); // as on the board
+    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
+    return { c, top, sec: (label, text, go) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); s.appendText(text); } };
+  }
+  renderIdeas(page) {
+    const grid = this.shelf(page, 'Idea inbox', 'Keep rough thoughts here. Promote one only when it deserves a place on the project board.');
+    const list = this.projects.filter((p) => p.status === 'idea' && (!this.area || p.sphere === this.area))
+      .sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+    if (!list.length) el(grid, 'div', 'a4pj-empty', 'no ideas here yet');
+    for (const p of list) {
+      const { c, sec } = this.shelfCard(grid, p);
+      if (p.why) sec('Why it is here', p.why);
+      const btns = el(c, 'div', 'a4pj-sbtns');
+      const ed = el(btns, 'button', 'a4pj-btn', 'Edit idea');
+      ed.addEventListener('click', async () => { const v = await this.plugin.ask(`Why is "${p.name}" worth keeping?`, p.why || ''); if (v != null) await this.plugin.setProjectWhy(p.path, v); });
+      el(btns, 'button', 'a4pj-btn is-outline', 'Promote to project').addEventListener('click', () => this.plugin.promoteIdea(p.path));
+    }
+  }
+  renderCold(page) {
+    const list = this.projects.filter((p) => p.status === 'cold-storage').sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+    const grid = this.shelf(page, 'Cold Storage', 'Projects you are not continuing right now, kept here until you want them back.', list.length);
+    if (!list.length) el(grid, 'div', 'a4pj-empty', 'nothing in Cold Storage');
+    for (const p of list) {
+      const to = restoreTarget({ stored_from: p.storedFrom });
+      const st = projectStats(p, this.tasks, this.today, this.cfg);
+      const { c, top, sec } = this.shelfCard(grid, p, to.fellBack ? [] : [`Previously in ${COLUMN_LABEL[to.status]}`]);
+      el(top, 'span', 'a4pj-bwhen', p.mtime ? `Stored ${stampText(p.mtime)}` : '');
+      sec('Why it was stored', p.why || 'No reason saved.');
+      sec('Saved next step', st.next ? st.next.title : 'None saved.', true);
+      el(c, 'div', 'a4pj-bsec a4pj-by', to.fellBack ? 'No earlier column was saved: Restore returns this project to Backlog.' : `Restore returns this project to ${COLUMN_LABEL[to.status]}.`);
+      const btns = el(c, 'div', 'a4pj-sbtns');
+      el(btns, 'button', 'a4pj-btn is-del', 'Delete permanently').addEventListener('click', () => this.plugin.deleteProjectPermanently(p.path));
+      el(btns, 'button', 'a4pj-btn is-fill', 'Restore').addEventListener('click', () => this.plugin.restoreProject(p.path));
+    }
+  }
+
   // Same column: no call at all. Otherwise moveProject; a refusal or failed write
   // shows its notice and the card stays put (the board only redraws from the notes).
   dropOn(path, column) {
@@ -3777,17 +3908,29 @@ class ProjectsView extends ItemView {
 
   // The card's description: read once per note change, filled in when it arrives.
   // Read for hidden cards too (search reads it); until then the old line stands in,
-  // and a search re-runs when the new one lands.
+  // and a search re-runs when the new one lands. Draws that ask while a read is
+  // pending join it (one read; every waiting card filled, every waiting search re-run).
   descOf(p, target, refill) {
-    const hit = this.descs.get(p.path);
-    if (hit && hit.mtime === p.mtime) { if (target) target.setText(hit.line); return hit.line; }
-    const f = this.plugin.engine.file(p.path);
-    if (f) this.app.vault.cachedRead(f).then((text) => {
-      const line = firstBodyLine(text); this.descs.set(p.path, { mtime: p.mtime, line });
-      if (target) target.setText(line);
-      if (refill && this.query && line !== (hit ? hit.line : '')) refill();
-    }).catch(() => {});
-    return hit ? hit.line : '';
+    let d = this.descs.get(p.path);
+    if (d && d.mtime === p.mtime) { if (target) target.setText(d.line); return d.line; }
+    if (!d) this.descs.set(p.path, d = { mtime: null, line: '' });
+    if (target) target.setText(d.line);
+    if (d.reading !== p.mtime) {
+      const f = this.plugin.engine.file(p.path);
+      if (!f) return d.line;
+      const mt = p.mtime, old = d.line;
+      d.reading = mt; d.targets = new Set(); d.refills = new Set();
+      this.app.vault.cachedRead(f).then((text) => {
+        if (d.reading !== mt) return; // a newer change is being read
+        const line = firstBodyLine(text), targets = d.targets, again = d.refills;
+        Object.assign(d, { mtime: mt, line, reading: null, targets: null, refills: null });
+        for (const t of targets) t.setText(line);
+        if (this.query && line !== old) for (const f of again) f();
+      }).catch(() => { if (d.reading === mt) Object.assign(d, { reading: null, targets: null, refills: null }); });
+    }
+    if (target) d.targets.add(target);
+    if (refill) d.refills.add(refill);
+    return d.line;
   }
 
   boardCard(host, p, st) {
@@ -3860,15 +4003,24 @@ class ProjectsView extends ItemView {
     const fact = (label) => { const f = el(facts, 'span', 'a4pj-fact'); el(f, 'b', null, label); return f; };
     fact('Sphere').appendText(p.sphere === 'work' ? 'Work' : p.sphere === 'personal' ? 'Personal' : 'not set');
     const sel = el(fact('Status'), 'select', 'a4pj-select dropdown');
-    for (const v of PROJECT_STATUSES) { const o = el(sel, 'option', null, v); o.value = v; }
+    // Ideas, Cold Storage and the way out of them go through Promote / Cold Storage / Restore (statusRoute).
+    for (const v of PROJECT_STATUSES) { const o = el(sel, 'option', null, v); o.value = v; o.disabled = v !== p.status && !statusRoute(p.status, v, p.storedFrom); }
     if (!PROJECT_STATUSES.includes(p.status)) { const o = el(sel, 'option', null, p.status || '(none)'); o.value = p.status; }
     sel.value = p.status;
     sel.addEventListener('change', async () => {
       const f = this.plugin.engine.file(p.path); if (!f) return;
       const v = sel.value;
-      const undo = await this.plugin.writeProject(f, (fm) => { applyProjectStatus(fm, v, today); });
-      if (undo) this.plugin.toast.show(`Status: ${v}`, undo);
-      else sel.value = p.status; // refused or failed: show what the note still says
+      const how = statusRoute(p.status, v, p.storedFrom);
+      let done = false;
+      if (how === 'promote') done = await this.plugin.promoteIdea(p.path, false);
+      else if (how === 'restore') done = await this.plugin.restoreProject(p.path, false);
+      else if (how === 'cold') done = await this.plugin.coldStoreProject(p.path, false);
+      else if (how === 'write') {
+        // The note decides, not the page: a note shelved since this page was drawn is refused.
+        const undo = await this.plugin.writeProject(f, (fm) => { if (SHELVED_STATUSES.includes(statusOf(fm))) return false; applyProjectStatus(fm, v, today); });
+        if (undo) { this.plugin.toast.show(`Status: ${v}`, undo); done = true; }
+      }
+      if (!done) sel.value = p.status; // cancelled, refused or failed: show what the note still says
     });
     if (p.goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(p.goal)); a.addEventListener('click', () => this.openLink(p.goal, p.path)); }
     if (p.client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(p.client)); a.addEventListener('click', () => this.openLink(p.client, p.path)); }
