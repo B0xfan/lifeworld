@@ -34,6 +34,13 @@ assert.strictEqual(R('active', 'waiting'), 'write');
 assert.strictEqual(R('', 'backlog'), 'write', 'a project with no status can be given one');
 assert.strictEqual(R('active', 'active'), null);
 assert.strictEqual(L.readProject({ type: 'project', status: 'cold-storage', stored_from: ' Paused ' }, 'p', 'p').storedFrom, 'paused');
+// The menu's plain write: the note on disk decides, so a stale page cannot shelve-skip.
+for (const s of ['idea', 'cold-storage', ' Idea ']) {
+  const fm = { status: s };
+  assert.strictEqual(L.applyPlainStatus(fm, 'paused', '2026-10-13'), false, `a note now "${s}" (page drawn before): refused`);
+  assert.strictEqual(fm.status, s, 'nothing written');
+}
+assert.strictEqual(L.applyPlainStatus({ status: 'active' }, 'paused', '2026-10-13').status, 'paused');
 
 /* ---- idea note shape ------------------------------------------------------- */
 const yaml = (o) => Object.entries(o).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n') + '\n';
@@ -42,6 +49,8 @@ assert.strictEqual(L.ideaNote('Beach cleanup', '  A signup   page. ', 'No date: 
 assert.strictEqual(L.ideaNote('X', '', '  ', 'work', '2026-10-13', yaml), '---\ntype: project\nstatus: idea\ncreated: 2026-10-13\nsphere: work\n---\n\n# X\n\n', 'no why, no line: the New Project shape');
 assert.strictEqual(L.firstBodyLine(L.ideaNote('X', 'One line.', '', 'work', '2026-10-13', yaml)), 'One line.', 'the one line is the card description');
 assert.ok(L.ideaNote('X', '', 'w', 'work', 'd', (o) => `why: ${o.why}`).includes('why: w\n---'), 'a YAML writer without a final newline still closes the block');
+for (const [typed, shown] of [['#beach cleanup ideas', 'beach cleanup ideas'], ['## Plan', 'Plan'], ['![[pic.png]] the spot', '[[pic.png]] the spot']])
+  assert.strictEqual(L.firstBodyLine(L.ideaNote('X', typed, '', 'work', 'd', yaml)), shown, `"${typed}" still shows as the card description`);
 
 /* ---- fake DOM -------------------------------------------------------------- */
 const node = (tag) => { const n = { tag, kids: [], listeners: {}, className: '', textContent: '', dataset: {}, attrs: {},
@@ -106,6 +115,27 @@ const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { sta
   // Header: + Add idea on Ideas only.
   assert.ok(/this\.tab === 'ideas' \? \{ label: '\+ Add idea'/.test(src));
   assert.ok(/\['waiting', 'Waiting'\], \['blocked', 'Blocked'\]/.test(src), 'List chips offer Waiting and Blocked');
+  assert.ok(/else if \(how === 'write'\) \{[^}]*applyPlainStatus\(fm, v, today\)/.test(src), 'the status menu write goes through the shelved-note guard');
+  assert.ok(/return applyPlainStatus\(fm, status, today\)/.test(src), 'a board move goes through it too');
+
+  /* ---- + Add idea form: Enter steps to the next box, only Why saves -------- */
+  {
+    let focused = null; const saved = [];
+    const fn = (tag, o) => { const n = { tag, kids: [], on: {}, value: '', textContent: (o && o.text) || '', attrs: {},
+      createEl(t, oo) { const c = fn(t, oo); n.kids.push(c); return c; }, createDiv(oo) { return n.createEl('div', oo); },
+      setAttr(k, v) { n.attrs[k] = v; }, addEventListener(t, f) { n.on[t] = f; }, focus() { focused = n; }, setText(t) { n.textContent = t; }, empty() { n.kids = []; } }; return n; };
+    if (typeof window === 'undefined') global.window = { setTimeout: () => {} };
+    const m = new plugin.IdeaModal({}, 'work', async (v) => { saved.push(v); return {}; });
+    Object.assign(m, { titleEl: fn('h'), contentEl: fn('div'), close() {} });
+    m.onOpen();
+    const [ti, li, wi] = walk(m.contentEl, (n) => n.tag === 'input');
+    const enter = (i) => i.on.keydown({ key: 'Enter', isComposing: false, preventDefault() {} });
+    ti.value = 'Beach cleanup';
+    enter(ti); assert.strictEqual(focused, li, 'Enter in Title: on to One line'); assert.strictEqual(saved.length, 0, 'Enter in Title does not save');
+    enter(li); assert.strictEqual(focused, wi, 'Enter in One line: on to Why'); assert.strictEqual(saved.length, 0, 'Enter in One line does not save');
+    enter(wi); await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(saved, [{ title: 'Beach cleanup', line: '', why: '', sphere: 'work' }], 'Enter in Why saves');
+  }
 
   /* ---- one description read per note change ------------------------------- */
   let reads = 0; let release;
@@ -120,17 +150,39 @@ const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { sta
   assert.strictEqual(dv.descOf(D), 'The line.'); assert.strictEqual(reads, 1, 'cached after');
   dv.descOf({ path: 'P/D.md', mtime: 6 }); assert.strictEqual(reads, 2, 'a note change reads again');
 
+  // With search text: every search that joined the read re-runs once when a new line lands.
+  const gates = []; const later = (text) => { const g = gates.shift(); g.release(text); return g.p; };
+  const sv = Object.assign(Object.create(V), { plugin: dv.plugin, descs: new Map(), query: 'cleanup',
+    app: { vault: { cachedRead: () => { const g = {}; g.p = new Promise((r) => { g.release = r; }); gates.push(g); return g.p; } } } });
+  const S = { path: 'P/S.md', mtime: 1 }; let runs = 0;
+  sv.descOf(S, null, () => runs++); sv.descOf(S, node('div'), () => runs++);
+  assert.strictEqual(gates.length, 1, 'joined: one read');
+  await later('Beach cleanup crew.'); await new Promise((r) => setImmediate(r));
+  assert.strictEqual(runs, 2, 'each waiting search re-run once');
+
+  // The note changes while a read is pending: the old read fills nothing, the new one fills the later card.
+  const oldCard = node('div'), newCard = node('div');
+  sv.descOf({ path: 'P/S.md', mtime: 2 }, oldCard); sv.descOf({ path: 'P/S.md', mtime: 3 }, newCard);
+  assert.strictEqual(gates.length, 2, 'a newer change starts its own read');
+  await later('Old text.'); await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual([oldCard.textContent, newCard.textContent], ['Beach cleanup crew.', 'Beach cleanup crew.'], 'the superseded read fills nothing');
+  await later('New text.'); await new Promise((r) => setImmediate(r));
+  assert.deepStrictEqual([oldCard.textContent, newCard.textContent], ['Beach cleanup crew.', 'New text.'], 'the newer read fills the later card only');
+  assert.strictEqual(sv.descOf({ path: 'P/S.md', mtime: 3 }), 'New text.');
+
   /* ---- + Add idea ----------------------------------------------------------- */
   const made = []; const toasts = []; const logs = [];
-  const exists = new Set(['04 Inner World/My Life/Projects/Taken.md']);
+  const dir = { children: [{ name: 'Taken.md', basename: 'Taken' }] };
   const pl = Object.assign(Object.create(plugin.prototype), {
     engine: { today: () => '2026-10-13' }, toast: { show: (m, u) => toasts.push([m, u]) }, logActivity: (t) => logs.push(t),
-    app: { vault: { getAbstractFileByPath: (p) => (exists.has(p) ? {} : null), create: async (p, c) => { made.push([p, c]); return { path: p, basename: p.split('/').pop().replace(/\.md$/, '') }; } } },
+    app: { vault: { getAbstractFileByPath: (p) => (p === '04 Inner World/My Life/Projects' ? dir : null), create: async (p, c) => { made.push([p, c]); return { path: p, basename: p.split('/').pop().replace(/\.md$/, '') }; } } },
   });
   fake.stringifyYaml = yaml;
   notices.length = 0;
   assert.strictEqual(await pl.createIdea({ title: 'Taken', line: '', why: '', sphere: 'work' }), null, 'a taken name keeps the form open');
   assert.ok(/already/.test(notices[0]));
+  assert.strictEqual(await pl.createIdea({ title: 'taken', line: '', why: '', sphere: 'work' }), null, 'a name that differs only in case is taken too (the Mac disk ignores case)');
+  assert.strictEqual(notices[1], 'There is already a project called "Taken".');
   assert.strictEqual(await pl.createIdea({ title: '  ', sphere: 'work' }), null);
   assert.strictEqual(await pl.createIdea({ title: 'X', sphere: 'unsorted' }), null, 'Work or Personal only');
   assert.strictEqual(made.length, 0);
@@ -156,5 +208,15 @@ const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { sta
   assert.strictEqual(await sp.restoreProject(file.path, true), false, 'already restored: refused');
   fm = { type: 'project', status: 'cold-storage', stored_from: 'paused' };
   assert.strictEqual(await sp.restoreProject(file.path), true); assert.strictEqual(quiet.length, 1, 'from the board: logged');
+  quiet.length = 0; sp.ask = async () => 'No time.'; sp.freshFm = async () => fm;
+  fm = { type: 'project', status: 'active' };
+  assert.strictEqual(await sp.coldStoreProject(file.path, false), true);
+  assert.strictEqual(fm.status, 'cold-storage'); assert.deepStrictEqual(quiet, [], 'Cold Storage from the status menu: not logged');
+  fm = { type: 'project', status: 'idea', goal: '[[G]]' };
+  assert.strictEqual(await sp.promoteIdea(file.path, false), true);
+  assert.strictEqual(fm.status, 'backlog'); assert.deepStrictEqual(quiet, [], 'Promote from the status menu: not logged');
+  fm = { type: 'project', status: 'idea', goal: '[[G]]' };
+  assert.strictEqual(await sp.promoteIdea(file.path), true); fm = { type: 'project', status: 'active' };
+  assert.strictEqual(await sp.coldStoreProject(file.path), true); assert.strictEqual(quiet.length, 2, 'both from the board: logged');
   console.log('shelf self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -1107,8 +1107,9 @@ function firstBodyLine(text) {
 // + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
 // idea and no goal; the one line is the first body line. `why` (free text) goes
 // through the YAML writer; the other values are fixed or checked by the caller.
+// A line starting with # or ![[ would read as a heading or embed (firstBodyLine): that start is dropped.
 function ideaNote(title, line, why, sphere, today, stringify) {
-  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim();
+  const w = String(why || '').trim(), l = String(line || '').replace(/\s+/g, ' ').trim().replace(/^[#!\s]+/, '');
   const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
   return `---\ntype: project\nstatus: idea\ncreated: ${today}\nsphere: ${sphere}\n${y}---\n\n# ${title}\n\n${l ? `${l}\n` : ''}`;
 }
@@ -1219,6 +1220,9 @@ function statusRoute(from, to, storedFrom) {
   if (to === 'cold-storage') return BOARD_COLUMNS.includes(from) ? 'cold' : null;
   return 'write';
 }
+// The status menu's plain write: the note on disk decides, so a page drawn before the
+// note was shelved cannot move it past Promote or Restore. false = refused.
+function applyPlainStatus(fm, status, today) { return !SHELVED_STATUSES.includes(statusOf(fm)) && applyProjectStatus(fm, status, today); }
 function applyRestore(fm, today) { const r = restoreTarget(fm); applyProjectStatus(fm, r.status, today); return r; }
 function hasGoalLink(fm) { return asList(fm && fm.goal).some((g) => String(g).includes('[[')); }
 // Promote an idea: Backlog, with the goal link when one was picked.
@@ -1647,7 +1651,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, statusRoute, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -2523,7 +2527,8 @@ class IdeaModal extends Modal {
       try { if (await this.save({ title: title.value, line: line.value, why: why.value, sphere: sel.value })) this.close(); }
       finally { busy = false; }
     };
-    for (const i of [title, line, why]) i.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok(); } });
+    // Enter steps to the next box; only the last one (why) saves: no Undo for a half-filled idea.
+    [title, line, why].forEach((i, n, all) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (all[n + 1]) all[n + 1].focus(); else ok(); } }));
     const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
     row.createEl('button', { cls: 'mod-cta', text: 'Add idea' }).addEventListener('click', ok);
     row.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
@@ -2858,8 +2863,7 @@ class A4ProjectsPlugin extends Plugin {
     const undo = await this.writeProject(f, (fm) => {
       const s = statusOf(fm);
       if (s === status) return 'same'; // a card dropped back in its own column: silent
-      if (SHELVED_STATUSES.includes(s)) return false;
-      applyProjectStatus(fm, status, today);
+      return applyPlainStatus(fm, status, today);
     });
     if (!undo) return false;
     this.toast.show(`Moved "${f.basename}" to ${COLUMN_LABEL[status]}`, this.logged(`You moved ${f.basename} to ${COLUMN_LABEL[status]}.`, undo));
@@ -2964,7 +2968,10 @@ class A4ProjectsPlugin extends Plugin {
     if (!t || !['work', 'personal'].includes(sphere)) return null;
     const name = sanitizeForFilename(t);
     const path = `${PROJECTS_FOLDER}/${name}.md`;
-    if (this.app.vault.getAbstractFileByPath(path)) { new Notice(`There is already a project called "${name}".`); return null; }
+    // Case-blind, like the Mac's disk: "beach cleanup" clashes with "Beach Cleanup".
+    const dir = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const taken = ((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${name}.md`.toLowerCase());
+    if (taken) { new Notice(`There is already a project called "${taken.basename}".`); return null; }
     let f;
     try { f = await this.app.vault.create(path, ideaNote(t, line, why, sphere, this.engine.today(), obsidian.stringifyYaml)); }
     catch (e) { console.error('[a4-projects] idea create failed', path, e); new Notice(`Could not add "${name}".`); return null; }
@@ -4016,8 +4023,7 @@ class ProjectsView extends ItemView {
       else if (how === 'restore') done = await this.plugin.restoreProject(p.path, false);
       else if (how === 'cold') done = await this.plugin.coldStoreProject(p.path, false);
       else if (how === 'write') {
-        // The note decides, not the page: a note shelved since this page was drawn is refused.
-        const undo = await this.plugin.writeProject(f, (fm) => { if (SHELVED_STATUSES.includes(statusOf(fm))) return false; applyProjectStatus(fm, v, today); });
+        const undo = await this.plugin.writeProject(f, (fm) => applyPlainStatus(fm, v, today));
         if (undo) { this.plugin.toast.show(`Status: ${v}`, undo); done = true; }
       }
       if (!done) sel.value = p.status; // cancelled, refused or failed: show what the note still says
@@ -4889,4 +4895,5 @@ module.exports = A4ProjectsPlugin;
 module.exports.TaskEngine = TaskEngine;
 module.exports.TaskLinks = TaskLinks; // for Scripts/tests (dependencies)
 module.exports.ProjectsView = ProjectsView; // for tests (switch clicks)
+module.exports.IdeaModal = IdeaModal; // for tests (Enter in the form)
 module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for Scripts/tests (task card colour)
