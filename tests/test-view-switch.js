@@ -32,7 +32,7 @@ const node = () => { const n = { kids: [], listeners: {}, className: '', textCon
 global.createDiv = () => node();
 const page = node(); page.act = node();
 const host = { settings: normalizeSettings({ ui: { view: 'board' } }), saved: null, async save() { this.saved = this.settings; } };
-const view = { plugin: host, cfg: {}, today: '2026-10-13', tasks: [], state: {}, query: 'x', head() {}, render() {} };
+const view = { plugin: host, cfg: {}, today: '2026-10-13', tasks: [], state: {}, query: 'x', tab: 'projects', head() {}, render() {}, renderBoard() {} };
 plugin.ProjectsView.prototype.renderOverview.call(view, page);
 host.settings = normalizeSettings({ ui: { view: 'board' } }); // Sync reload: new object, same pick
 const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c, text)).find(Boolean);

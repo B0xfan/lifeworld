@@ -102,13 +102,16 @@ const UNDO_MS = 5000;
 const NARROW_WIDTH = 760;
 const DONE_PREVIEW = 30;
 const CLOSED_STATUSES = ['done', 'failed', 'dropped'];
-const PROJECT_STATUSES = ['active', 'paused', 'backlog', 'done', 'failed', 'dropped'];
+const PROJECT_STATUSES = ['active', 'paused', 'waiting', 'blocked', 'backlog', 'done', 'failed', 'dropped'];
 // Shelved: not open and not closed; they live on the board's Ideas and Cold Storage tabs.
 const SHELVED_STATUSES = ['idea', 'cold-storage'];
 const OPEN_ORDER = { active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 };
 // The projects board's columns, in order (spec 5). Moves only go to these.
 const BOARD_COLUMNS = ['backlog', 'active', 'waiting', 'paused', 'blocked', 'done'];
 const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting', paused: 'Paused', blocked: 'Blocked', done: 'Done' };
+const COLUMN_SUB = { backlog: 'Ready to start', active: 'Actively moving', waiting: 'Needs a response', paused: 'Active, but not for now', blocked: 'Waiting on something', done: 'Finished work' };
+// Page title per board tab (mockup).
+const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed' };
 
 /* Activity (spec 17): the board's history, in plugin data only, never in a
  * note. settings.activity = [{ at: ms, text: 'You moved X to Waiting.' }],
@@ -1051,6 +1054,7 @@ function readProject(fm, path, basename) {
     goal: fm.goal ? String(asList(fm.goal)[0]) : null,
     client: fm.client ? String(asList(fm.client)[0]) : null,
     endDate: toDayStr(fm.end_date),
+    why: typeof fm.why === 'string' ? fm.why.trim() : '',
   };
 }
 
@@ -1086,6 +1090,21 @@ function overviewGroups(projects, filter, query, sphere) {
   }
   return out;
 }
+// Projects board (spec 5): the six columns only; `area` keeps one sphere; the search
+// looks at the name, the why and `extra` (description, next step).
+function onBoard(p, area, query, extra) {
+  const q = String(query || '').trim().toLowerCase();
+  return !!p && BOARD_COLUMNS.includes(p.status) && (!area || p.sphere === area)
+    && (!q || [p.name, p.why, ...(extra || [])].some((x) => String(x || '').toLowerCase().includes(q)));
+}
+// A note's short description: its first body line that is not a heading or an embed.
+function firstBodyLine(text) {
+  const s = String(text || '').replace(/\r\n/g, '\n');
+  for (const l of s.slice(frontmatterEnd(s)).split('\n')) { const t = l.trim(); if (t && !t.startsWith('#') && !t.startsWith('![[')) return t; }
+  return '';
+}
+// "Oct 12, 4:10 PM": card dates and Activity times.
+function stampText(ms) { return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(' at ', ', '); }
 function closedProjects(projects, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
   return projects.filter((p) => CLOSED_STATUSES.includes(p.status) && (!sphere || p.sphere === sphere) && (!q || p.name.toLowerCase().includes(q)))
@@ -1608,7 +1627,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, firstBodyLine, stampText, PROJECT_STATUSES, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -1676,7 +1695,7 @@ class TaskEngine {
     for (const c of root.children || []) {
       if (!(c instanceof TFile) || c.extension !== 'md') continue;
       const p = readProject(this.fm(c), c.path, c.basename);
-      if (p) out.push(p);
+      if (p) { p.mtime = c.stat ? c.stat.mtime : 0; out.push(p); }
     }
     return out;
   }
@@ -2858,6 +2877,25 @@ class A4ProjectsPlugin extends Plugin {
     await this.logActivity(`You deleted ${f.basename}.`);
     return true;
   }
+  // Edit on a board card (and Edit idea, section 8): only `why`; an empty answer
+  // keeps it. Not logged: spec 17 logs moves, not edits.
+  async setProjectWhy(path, why) {
+    const w = String(why || '').trim();
+    if (!w) return false;
+    const f = this.projectFile(path);
+    if (!f) return false;
+    const undo = await this.writeProject(f, (fm) => { if (fm.why === w) return 'same'; fm.why = w; });
+    if (!undo) return false;
+    this.toast.show(`Saved why for "${f.basename}"`, undo);
+    return true;
+  }
+  // "+ Add project" (spec 13): A4 Quick Create's own New Project form, unchanged.
+  addProject() {
+    const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
+    if (qc && typeof qc.openCreate === 'function' && qc.openCreate('project')) return true;
+    new Notice('The New Project form needs the A4 Quick Create plugin turned on.');
+    return false;
+  }
   // Open goals (not achieved), A to Z, for Promote.
   goalFiles() {
     const root = this.app.vault.getAbstractFileByPath(GOALS_FOLDER);
@@ -3439,6 +3477,10 @@ class ProjectsView extends ItemView {
     this.pending = false;
     this.narrow = false;
     this.bodyComp = null;
+    this.tab = 'projects'; // board tab: projects / ideas / cold / activity
+    this.area = null;      // board Work / Personal button (null = both)
+    this.descs = new Map(); // path -> { mtime, line }: card descriptions, read once per change
+    this.dragPath = null;
   }
 
   getViewType() { return VIEW_TYPE; }
@@ -3452,7 +3494,7 @@ class ProjectsView extends ItemView {
     const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
     this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
     this.focusAdd = !!s.focusAdd;
-    if (changed) { this.query = ''; this.expanded.clear(); }
+    if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; }
     this.render(true, changed);
     await super.setState(state, result);
     if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader(); // tab title follows the list
@@ -3555,15 +3597,19 @@ class ProjectsView extends ItemView {
     const overdueAll = this.tasks.filter((t) => isOverdueTask(t, today, cfg));
     // Opened from the sidebar's Work / Personal item: that list only (the crumb goes back to all).
     const sp = this.state.focus;
-    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', [
+    const ui = this.plugin.settings.ui;
+    const board = ui.kind === 'projects' && ui.view === 'board';
+    // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button.
+    const side = board && this.tab !== 'projects';
+    this.head(page, sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], board ? BOARD_TITLE[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
       { label: `Inbox · ${inbox.length}`, icon: 'inbox', run: () => this.go({ page: 'inbox' }) },
+      board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() } : null,
     ]);
     // Projects / Tasks, then List / Board (Projects only: Tasks is a board), as in the mockup.
-    const ui = this.plugin.settings.ui;
     const act = page.querySelector('.a4pj-actions');
     const switches = [['kind', 'Show', [['projects', 'Projects'], ['tasks', 'Tasks']]]];
-    if (ui.kind === 'projects') switches.push(['view', 'View', [['list', 'List'], ['board', 'Board']]]);
+    if (ui.kind === 'projects' && !side) switches.push(['view', 'View', [['list', 'List'], ['board', 'Board']]]);
     for (const [key, name, opts] of switches.reverse()) {
       const seg = createDiv({ cls: 'a4pj-seg a4pj-switch', attr: { role: 'group', 'aria-label': name } });
       for (const [k, l] of opts) {
@@ -3574,8 +3620,9 @@ class ProjectsView extends ItemView {
       }
       act.prepend(seg);
     }
-    // shortcut: Board (section 7) and Tasks (section 9) are placeholders until those sections land.
-    if (ui.kind === 'tasks' || ui.view === 'board') { el(page, 'div', 'a4pj-empty', ui.kind === 'tasks' ? 'the tasks board comes in a later section' : 'the projects board comes in a later section'); return; }
+    // shortcut: Tasks (section 9) is a placeholder until that section lands.
+    if (ui.kind === 'tasks') { el(page, 'div', 'a4pj-empty', 'the tasks board comes in a later section'); return; }
+    if (board) { this.renderBoard(page); return; }
     const tools = el(page, 'div', 'a4pj-tools');
     const seg = el(tools, 'div', 'a4pj-seg');
     for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['backlog', 'Backlog']]) {
@@ -3652,6 +3699,136 @@ class ProjectsView extends ItemView {
     const go = () => this.go({ page: 'project', project: p.path });
     c.addEventListener('click', go);
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  }
+
+  /* ---- projects board (spec 5, 6, 13; mockup approved 2026-10-13) ---------- */
+
+  renderBoard(page) {
+    const tabs = el(page, 'div', 'a4pj-tabs'); tabs.setAttr('role', 'tablist');
+    // Tab counts are full totals, whatever area is chosen.
+    const count = { projects: this.projects.filter((p) => onBoard(p)).length, ideas: this.projects.filter((p) => p.status === 'idea').length, cold: this.projects.filter((p) => p.status === 'cold-storage').length };
+    for (const [k, l] of [['projects', 'Projects'], ['ideas', 'Ideas'], ['cold', 'Cold Storage'], ['activity', 'Activity']]) {
+      const b = el(tabs, 'button', this.tab === k ? 'is-on' : '', l);
+      b.setAttr('role', 'tab'); b.setAttr('aria-selected', String(this.tab === k));
+      if (k in count) el(b, 'span', 'a4pj-badge', String(count[k]));
+      b.addEventListener('click', () => { if (this.tab === k) return; this.tab = k; this.query = ''; this.render(true, true); });
+    }
+    if (this.tab === 'activity') { this.renderActivity(page); return; }
+    // shortcut: the Ideas and Cold Storage tabs are filled in section 8.
+    if (this.tab !== 'projects') { el(page, 'div', 'a4pj-empty', 'this tab comes in a later section'); return; }
+    const areas = el(page, 'div', 'a4pj-areas'); areas.setAttr('role', 'group'); areas.setAttr('aria-label', 'Area');
+    for (const k of ['work', 'personal']) {
+      const b = el(areas, 'button', this.area === k ? 'is-on' : '', SPHERE_LABEL[k]);
+      b.setAttr('aria-pressed', String(this.area === k));
+      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); });
+    }
+    const tiles = el(page, 'div', 'a4pj-tiles');
+    const find = el(page, 'label', 'a4pj-bfind');
+    el(find, 'span', null, 'Find a project');
+    const inp = el(find, 'input'); inp.type = 'search'; inp.placeholder = 'Search title, reason, next step'; inp.value = this.query; inp.dataset.focus = 'board-search';
+    const board = el(page, 'div', 'a4pj-board');
+    // Typing redraws the tiles and columns only, so the box keeps focus.
+    const fill = () => this.fillBoard(tiles, board);
+    inp.addEventListener('input', () => { this.query = inp.value; fill(); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Escape' && inp.value) { e.preventDefault(); inp.value = ''; this.query = ''; fill(); } });
+    // render() waits while the search box has text in it; leaving the box catches up.
+    inp.addEventListener('blur', () => { if (this.pending) this.scheduleRender(); });
+    fill();
+  }
+
+  fillBoard(tiles, board) {
+    tiles.empty(); board.empty();
+    const cfg = this.cfg; const today = this.today;
+    const shown = this.projects.filter((p) => onBoard(p))
+      .map((p) => ({ p, st: projectStats(p, this.tasks, today, cfg) }))
+      .filter(({ p, st }) => onBoard(p, this.area, this.query, [this.descOf(p), st.next && st.next.title]))
+      .sort((a, b) => b.p.mtime - a.p.mtime || a.p.name.localeCompare(b.p.name));
+    for (const k of BOARD_COLUMNS) {
+      const items = shown.filter((x) => x.p.status === k);
+      const t = el(tiles, 'button', 'a4pj-tile'); t.dataset.col = k;
+      el(t, 'b', null, String(items.length)); el(t, 'span', null, COLUMN_LABEL[k]);
+      const col = el(board, 'div', 'a4pj-col'); col.dataset.col = k;
+      t.addEventListener('click', () => { col.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' }); col.removeClass('is-flash'); void col.offsetWidth; col.addClass('is-flash'); });
+      const hd = el(col, 'div', 'a4pj-colhead'); el(hd, 'h3', null, COLUMN_LABEL[k]); el(hd, 'span', 'a4pj-badge', String(items.length));
+      el(col, 'div', 'a4pj-colsub', COLUMN_SUB[k]);
+      const list = el(col, 'div', 'a4pj-cards');
+      if (!items.length) el(list, 'div', this.query ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : 'Drop a project here');
+      for (const { p, st } of items) this.boardCard(list, p, st);
+      col.addEventListener('dragover', (e) => { if (!this.dragPath) return; e.preventDefault(); col.addClass('is-drop'); });
+      col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.removeClass('is-drop'); });
+      col.addEventListener('drop', (e) => { col.removeClass('is-drop'); if (!this.dragPath) return; e.preventDefault(); this.dropOn(this.dragPath, k); });
+    }
+  }
+
+  // Same column: no call at all. Otherwise moveProject; a refusal or failed write
+  // shows its notice and the card stays put (the board only redraws from the notes).
+  dropOn(path, column) {
+    this.dragPath = null;
+    const p = this.projects.find((x) => x.path === path);
+    if (!p || p.status === column) return;
+    this.plugin.moveProject(path, column);
+  }
+
+  // The card's description: read once per note change, filled in when it arrives.
+  descOf(p, target) {
+    const hit = this.descs.get(p.path);
+    if (hit && hit.mtime === p.mtime) { if (target) target.setText(hit.line); return hit.line; }
+    const f = target && this.plugin.engine.file(p.path);
+    if (f) this.app.vault.cachedRead(f).then((text) => { const line = firstBodyLine(text); this.descs.set(p.path, { mtime: p.mtime, line }); target.setText(line); }).catch(() => {});
+    return '';
+  }
+
+  boardCard(host, p, st) {
+    const c = el(host, 'div', 'a4pj-bcard');
+    c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `bcard:${p.path}`;
+    if (!Platform.isMobile) { // phones: the Move menu (spec 18)
+      c.draggable = true;
+      c.addEventListener('dragstart', (e) => {
+        this.dragPath = p.path;
+        const a = document.activeElement; if (a && a.tagName === 'INPUT' && this.contentEl.contains(a)) a.blur(); // or the drop's redraw waits on the search box
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.name); }
+        c.addClass('is-dragging');
+      });
+      c.addEventListener('dragend', () => { c.removeClass('is-dragging'); this.dragPath = null; });
+    }
+    const top = el(c, 'div', 'a4pj-btop');
+    const pills = el(top, 'div', 'a4pj-pills');
+    if (p.sphere === 'work' || p.sphere === 'personal') el(pills, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
+    el(top, 'span', 'a4pj-bwhen', p.mtime ? stampText(p.mtime) : '');
+    el(c, 'div', 'a4pj-btitle', p.name);
+    this.descOf(p, el(c, 'div', 'a4pj-bdesc'));
+    const sec = (label, text, go) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); s.appendText(text); };
+    if (p.why) sec('Why here', p.why);
+    if (st.total) el(c, 'div', 'a4pj-by', `${st.done} of ${st.total} tasks done`);
+    if (st.next) { sec('Next', st.next.title, true); el(c, 'div', 'a4pj-by', 'Click to read notes'); }
+    const acts = el(c, 'div', 'a4pj-bacts');
+    const mv = el(acts, 'button', null, 'Move'); mv.addEventListener('click', () => this.moveMenu(mv, p));
+    const ed = el(acts, 'button', null, 'Edit'); ed.addEventListener('click', () => this.editWhy(p));
+    const cs = el(el(c, 'div', 'a4pj-bacts2'), 'button', null, 'Move to Cold Storage');
+    cs.addEventListener('click', () => this.plugin.coldStoreProject(p.path));
+    const open = () => this.plugin.openFile(p.path);
+    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
+  }
+
+  moveMenu(anchor, p) {
+    const m = new obsidian.Menu();
+    for (const k of BOARD_COLUMNS) m.addItem((i) => i.setTitle(COLUMN_LABEL[k] + (k === p.status ? ' (here now)' : '')).setDisabled(k === p.status).onClick(() => this.plugin.moveProject(p.path, k)));
+    const r = anchor.getBoundingClientRect();
+    m.showAtPosition({ x: r.left, y: r.bottom });
+  }
+
+  async editWhy(p) {
+    const v = await this.plugin.ask(`Why is "${p.name}" in ${COLUMN_LABEL[p.status] || p.status}?`, p.why || '');
+    if (v != null) await this.plugin.setProjectWhy(p.path, v);
+  }
+
+  // Plain text only (el sets textContent): entries carry note names.
+  renderActivity(page) {
+    const rows = el(page, 'div', 'a4pj-activity');
+    const list = this.plugin.settings.activity;
+    if (!list.length) el(rows, 'div', 'a4pj-empty', 'nothing yet: moves made on the board show up here');
+    for (const a of list) { const r = el(rows, 'div', 'a4pj-log'); el(r, 'span', 'a4pj-when', stampText(a.at)); el(r, 'span', null, a.text); }
   }
 
   /* ---- project page ------------------------------------------------------- */
