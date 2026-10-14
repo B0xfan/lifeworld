@@ -186,7 +186,6 @@ class LifeWorldPlugin extends Plugin {
     this.saving = this.saving.catch(() => {}).then(async () => {
       const snap = copy(this.store);
       this.writing = true;
-      this.syncedDuring = null;
       try {
         await this.saveData(snap);
         // A Sync change taken during this write: its corners stay the record of what is on disk
@@ -207,7 +206,11 @@ class LifeWorldPlugin extends Plugin {
   // and its settings page is redrawn if open (what Obsidian did for each plugin).
   async onExternalSettingsChange() {
     const before = this.store;
+    const was = this.ondisk;
     const now = await this.readStore();
+    // A save of ours that ended during the read: the file holds it, not `now`, and its corners
+    // must count as changed here, or the older values just read replace them (review p2-s3b).
+    const saved = this.ondisk !== was;
     // shortcut: a damaged file arriving by Sync is ignored (usually half-synced; the full one follows).
     if (!now) { console.warn('LifeWorld: settings changed outside but the file is damaged; kept the current settings'); return; }
     // A corner changed here and not yet on disk (its save queued or under way) keeps the change
@@ -215,15 +218,15 @@ class LifeWorldPlugin extends Plugin {
     // before this change, so one more write follows it.
     const merged = { ...now };
     const kept = [];
-    for (const k of new Set([...Object.keys(before), ...Object.keys(this.ondisk)])) {
-      if (JSON.stringify(before[k]) === JSON.stringify(this.ondisk[k])) continue;
+    for (const k of new Set([...Object.keys(before), ...Object.keys(was)])) {
+      if (JSON.stringify(before[k]) === JSON.stringify(was[k])) continue;
       kept.push(k);
       if (k in before) merged[k] = before[k]; else delete merged[k];
     }
     this.ondisk = now;
     this.store = merged;
-    if (this.writing) {
-      this.syncedDuring = { now: copy(now), kept };
+    if (this.writing) this.syncedDuring = { now: copy(now), kept };
+    if (this.writing || saved) {
       this.writeStore().catch((e) => console.error('LifeWorld: the save after a settings change from outside failed', e));
     }
     for (const [m] of PART_LIST) {

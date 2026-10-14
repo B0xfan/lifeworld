@@ -399,5 +399,18 @@ const start = async (data) => {
   ok(logged.some((e) => e.includes('save after a settings change from outside failed')), 'a failed follow-up write leaves a log line');
   race.host.unload();
 
+  // Review p2-s3b nice-to-have 1: a save made here that ends while the Sync file is still being
+  // read keeps its change, and the file ends with both (the older read used to replace it).
+  const slow = await start({ 'a4-today': { layout: ['a'] }, 'a4-sidebar': { sort: 'az' } });
+  const plainRead = slow.host.loadData;
+  disk[slow.dir] = JSON.stringify({ 'a4-today': { layout: ['a'] }, 'a4-sidebar': { sort: 'synced' } });
+  slow.host.loadData = async function () { const d = await plainRead.call(this); await slow.parts['a4-today'].saveData({ layout: ['mine'] }); return d; };
+  await slow.host.onExternalSettingsChange();
+  slow.host.loadData = plainRead;
+  await slow.host.saving;
+  eq([await slow.parts['a4-today'].loadData(), await slow.parts['a4-sidebar'].loadData()], [{ layout: ['mine'] }, { sort: 'synced' }], 'save during the Sync read: in memory, the change made here and the Sync change');
+  eq(JSON.parse(disk[slow.dir]), { 'a4-today': { layout: ['mine'] }, 'a4-sidebar': { sort: 'synced' } }, 'save during the Sync read: on disk, both');
+  slow.host.unload();
+
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });
