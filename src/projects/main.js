@@ -1926,7 +1926,7 @@ class IdeaModal extends Modal {
     const line = field('One line', 'What it is, in a sentence');
     const why = field('Why it is worth keeping', 'Not a project yet: no date or helpers lined up');
     const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: 'Work or personal' });
-    const sel = w.createEl('select', { cls: 'dropdown' }); sel.setAttr('aria-label', 'Work or Personal');
+    const sel = w.createEl('select', { cls: 'dropdown' }); sel.setAttr('aria-label', 'Work or personal');
     for (const [v, l] of [['', 'Choose…'], ['work', 'Work'], ['personal', 'Personal']]) sel.createEl('option', { text: l, value: v });
     sel.value = this.area === 'work' || this.area === 'personal' ? this.area : '';
     let busy = false;

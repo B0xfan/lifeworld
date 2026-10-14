@@ -264,7 +264,7 @@ const start = async (data) => {
   eq(IDS.map((id) => dmg.parts[id].saved), [null, null, null, null], 'every part starts on defaults');
   eq(disk[dmg.dir], bad, 'the original is not written over at start');
   await dmg.parts['a4-today'].saveData({ layout: [] });
-  eq(JSON.parse(disk[dmg.dir]), { 'a4-today': { layout: [] } }, 'after the copy exists, saving works again');
+  eq(JSON.parse(disk[dmg.dir]), { 'a4-today': { layout: [] }, lifeworld: { carriedOver: true } }, 'after the copy exists, saving works again (carry-over marked done)');
   dmg.host.unload();
 
   notices.length = 0; failCopy = true;
@@ -313,6 +313,16 @@ const start = async (data) => {
   eq(disk[dmg2.dir], bad, 'nothing saved at start');
   ok(notices.length === 1 && /default settings/.test(notices[0]), 'the notice says default settings, and that is true');
   dmg2.host.unload();
+  // Review p2-s3 should-fix 1: a part that saved nothing after the damaged start does not take its old
+  // plugin's settings at a later start either.
+  disk[OLD('a4-planner')] = JSON.stringify({ folded: ['old'] });
+  const dmg3 = await startQuiet(bad);
+  await dmg3.parts['a4-today'].saveData({ layout: ['new'] });
+  dmg3.host.unload();
+  const after = await start(JSON.parse(disk[dmg3.dir]));
+  eq([after.parts['a4-today'].saved, after.parts['a4-planner'].saved], [{ layout: ['new'] }, null], 'restart after a damaged start: Today keeps its save, the Planner stays on defaults (old file not taken)');
+  after.host.unload();
+  delete disk[OLD('a4-planner')];
 
   // The save after a carry-over fails (disk full): LifeWorld still starts, on what was carried, with a notice.
   notices.length = 0; failSave = true;
@@ -366,6 +376,27 @@ const start = async (data) => {
   await s3; await race.host.saving;
   writeDelay = () => 0;
   eq([JSON.parse(disk[race.dir])['a4-today'], JSON.parse(disk[race.dir])['a4-sidebar']], [{ layout: ['c'] }, { sort: 'synced again' }], 'a save under way alone: the file ends with both');
+  // Review p2-s3 should-fix 2: a second Sync change to the same corner, landing while the follow-up
+  // write runs, is taken (it was dropped as if it were a change made here).
+  const pause = (ms) => new Promise((res) => setTimeout(res, ms));
+  const syncSidebar = async (v) => { disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-sidebar': { sort: v } }); await race.host.onExternalSettingsChange(); };
+  writeDelay = () => 20;
+  const s4 = race.parts['a4-today'].saveData({ layout: ['d'] });
+  await pause(5); await syncSidebar('sync1');
+  await s4; await pause(5); // the follow-up write is under way
+  ok(race.host.writing, 'the second Sync change lands during the follow-up write');
+  await syncSidebar('sync2');
+  await race.host.saving;
+  writeDelay = () => 0;
+  eq([await race.parts['a4-sidebar'].loadData(), JSON.parse(disk[race.dir])['a4-sidebar'], JSON.parse(disk[race.dir])['a4-today']], [{ sort: 'sync2' }, { sort: 'sync2' }, { layout: ['d'] }], 'second Sync change kept, in memory and on disk; the change made here too');
+  // Review p2-s3 nice-to-have 3: the follow-up write failing is logged, not swallowed.
+  const logged = []; const ce2 = console.error; console.error = (...a) => logged.push(a.join(' '));
+  writeDelay = () => 20;
+  const s5 = race.parts['a4-today'].saveData({ layout: ['e'] });
+  await pause(5); failSave = true; await syncSidebar('sync3');
+  await s5; await race.host.saving.catch(() => {});
+  failSave = false; writeDelay = () => 0; console.error = ce2;
+  ok(logged.some((e) => e.includes('save after a settings change from outside failed')), 'a failed follow-up write leaves a log line');
   race.host.unload();
 
   console.log(`host self-check: OK (${n} checks)`);

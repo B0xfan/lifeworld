@@ -37,7 +37,9 @@ class LifeWorldPlugin extends Plugin {
     this.gone = false;
     const found = await this.readStore();
     if (!found) await this.setAsideDamaged();
-    this.store = found || {};
+    // A damaged file starts on defaults with carry-over marked done, so a part that saves nothing
+    // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
+    this.store = found || { [HOST]: { carriedOver: true } };
     this.ondisk = copy(this.store); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
     this.tabs = {};
     // A part with no corner yet takes its old plugin's settings file once (read only, left as it
@@ -45,7 +47,7 @@ class LifeWorldPlugin extends Plugin {
     // Not after a damaged file: older settings must never quietly replace the newer ones in the
     // copy kept aside, and the notice promises default settings.
     let carried = false;
-    if (found) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
+    if (!(this.store[HOST] && this.store[HOST].carriedOver)) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
     // A failed save here must not stop LifeWorld: it runs on what was carried, the next save retries.
     if (carried) await this.writeStore().catch((e) => {
       console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
@@ -184,7 +186,19 @@ class LifeWorldPlugin extends Plugin {
     this.saving = this.saving.catch(() => {}).then(async () => {
       const snap = copy(this.store);
       this.writing = true;
-      try { await this.saveData(snap); this.ondisk = snap; } finally { this.writing = false; }
+      this.syncedDuring = null;
+      try {
+        await this.saveData(snap);
+        // A Sync change taken during this write: its corners stay the record of what is on disk
+        // (the follow-up write puts them there), or a second Sync change to them would look like
+        // a change made here and be dropped (review p2-s3). Corners kept from here are in snap.
+        const s = this.syncedDuring;
+        this.ondisk = snap;
+        if (s) {
+          this.ondisk = copy(s.now);
+          for (const k of s.kept) if (k in snap) this.ondisk[k] = snap[k]; else delete this.ondisk[k];
+        }
+      } finally { this.writing = false; this.syncedDuring = null; }
     });
     return this.saving;
   }
@@ -200,13 +214,18 @@ class LifeWorldPlugin extends Plugin {
     // made here; every other corner takes the file's. A write under way carries the corners from
     // before this change, so one more write follows it.
     const merged = { ...now };
+    const kept = [];
     for (const k of new Set([...Object.keys(before), ...Object.keys(this.ondisk)])) {
       if (JSON.stringify(before[k]) === JSON.stringify(this.ondisk[k])) continue;
+      kept.push(k);
       if (k in before) merged[k] = before[k]; else delete merged[k];
     }
     this.ondisk = now;
     this.store = merged;
-    if (this.writing) this.writeStore().catch(() => {});
+    if (this.writing) {
+      this.syncedDuring = { now: copy(now), kept };
+      this.writeStore().catch((e) => console.error('LifeWorld: the save after a settings change from outside failed', e));
+    }
     for (const [m] of PART_LIST) {
       const p = this.running[m.id];
       if (!p || typeof p.onExternalSettingsChange !== 'function') continue;

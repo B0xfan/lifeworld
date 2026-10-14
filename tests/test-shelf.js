@@ -135,6 +135,9 @@ const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { sta
     Object.assign(m, { titleEl: fn('h'), contentEl: fn('div'), close() {} });
     m.onOpen();
     const [ti, li, wi] = walk(m.contentEl, (n) => n.tag === 'input');
+    const fields = m.contentEl.kids.filter((n) => n.kids[0] && n.kids[0].tag === 'label');
+    assert.strictEqual(fields.length, 4, 'four fields');
+    for (const f of fields) assert.strictEqual(f.kids[1].attrs['aria-label'], f.kids[0].textContent, `screen readers hear the visible label: ${f.kids[0].textContent}`);
     const enter = (i) => i.on.keydown({ key: 'Enter', isComposing: false, preventDefault() {} });
     ti.value = 'Beach cleanup';
     enter(ti); assert.strictEqual(focused, li, 'Enter in Title: on to One line'); assert.strictEqual(saved.length, 0, 'Enter in Title does not save');
