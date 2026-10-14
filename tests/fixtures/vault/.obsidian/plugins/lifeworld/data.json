@@ -8,6 +8,10 @@
         "goals": "04 Inner World/My Life/Goals",
         "habits": "04 Inner World/My Life/Habits",
         "journal": "04 Inner World/Journal"
+      },
+      "feeds": {
+        "calendar": "02 Planner/Calendar Events.md",
+        "weather": "02 Planner/Weather Today.md"
       }
     }
   }

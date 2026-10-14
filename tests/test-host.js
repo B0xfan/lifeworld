@@ -484,6 +484,13 @@ const start = async (data) => {
   ok(T.isScratchpadPath('00 Daily Scratchpad/10-04-2026.md', jdn) && !T.isScratchpadPath('03 WiP/x.md', jdn) && T.isScratchpadPath('2026-10-04.md', { folder: '' }) && !T.isScratchpadPath('a/2026-10-04.md', { folder: '' }), 'scratchpad notes: in the daily notes folder');
   await owner.parts['a4-today'].saveData({ layout: ['x'] }); await owner.host.saving;
   eq(JSON.parse(disk[owner.dir]).lifeworld, fixJson('plugins/lifeworld/data.json').lifeworld, 'preset: saving a part leaves the Your vault settings as they were');
+  // Phase 2 section 5: the calendar and weather notes the old code had built in come from the preset.
+  const PL = LW.parts['a4-planner'].prototype;
+  const notesSeen = [];
+  const calApp = { vault: { getAbstractFileByPath: (p) => { notesSeen.push(p); return null; } }, metadataCache: { getFileCache: () => null } };
+  PL.calendarEvents.call({ app: calApp });
+  LW.parts['a4-today'].prototype.calendarFrontmatter.call({ app: calApp });
+  eq(notesSeen, ['02 Planner/Calendar Events.md', '02 Planner/Calendar Events.md'], 'preset: the Planner and Today read the old calendar note');
 
   // The owner's own settings, read only (A4_VAULT; else the frozen copy): Obsidian's Daily notes setting gives
   // the old scratchpad path and template, TaskNotes' folders and names are the preset's.
@@ -496,6 +503,18 @@ const start = async (data) => {
   eq(['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'reminders', 'recurrence', 'completedDate', 'dateCreated', 'dateModified', 'blockedBy'].filter((k) => hisTn.fieldMapping[k] !== k).concat(hisTn.fieldMapping.completeInstances === 'complete_instances' && hisTn.fieldMapping.skippedInstances === 'skipped_instances' ? [] : ['instances']), [], "the owner's notes use the default property names");
   if (!require('./lib/paths').FROZEN) ok(Object.values(OLDF).every((d) => fs.statSync(path.join(V, d)).isDirectory()), "every preset folder exists in the owner's vault");
   owner.host.unload();
+
+  // New install: no calendar or weather note is read at all.
+  const nf = await start({});
+  const nfSeen = [];
+  LW.parts['a4-planner'].prototype.calendarEvents.call({ app: { vault: { getAbstractFileByPath: (p) => { nfSeen.push(p); return null; } } } });
+  eq(nfSeen, [], 'new install: the Planner reads no calendar note');
+  // A calendar note set from the phone (Sync) is read at once.
+  disk[nf.dir] = JSON.stringify({ lifeworld: { vault: { feeds: { calendar: 'Feeds/Cal.md' } } } });
+  await nf.host.onExternalSettingsChange();
+  LW.parts['a4-planner'].prototype.calendarEvents.call({ app: { vault: { getAbstractFileByPath: (p) => { nfSeen.push(p); return null; } } } });
+  eq(nfSeen, ['Feeds/Cal.md'], 'a calendar note set on another device is read');
+  nf.host.unload();
 
   // The Property names dialog: rows, the three checks, Reset to defaults, Done.
   const pn = await start({});

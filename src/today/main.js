@@ -65,9 +65,12 @@
  *  - The widget layout lives in this plugin's own data.json (saveData),
  *    never in a note. Hiding a widget touches no note.
  *  - Settings › Calendars (1.2.0, 2026-10-04): the calendars picked are
- *    saved in data.json as calendars.selected (stable ids). The sync script
- *    reads them and fetches only those; on the Mac the plugin runs that
- *    script right after a change (and with --refresh for "Refresh list").
+ *    saved in data.json as calendars.selected (stable ids). The program that
+ *    writes the calendar note reads them and fetches only those. Running it
+ *    right after a change (and for "Refresh list") is an add-on's job: it
+ *    sets `calendarSync` on this part (phase 2 section 5; no Node code here).
+ *  - Settings › Today page › Your name (phase 2 section 5): saved in
+ *    data.json as userName, shown in the greeting; empty = no name.
  *
  * The capture link (obsidian://a4-today-capture?text=...) only OPENS the
  * capture box pre-filled; saving still takes the user's own Enter. A link
@@ -77,24 +80,15 @@
 'use strict';
 
 const obsidian = require('obsidian');
-const { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting, Platform } = obsidian;
+const { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting } = obsidian;
 
 /* ========================================================================== *
  * Constants (A4 paths; this build is for one vault, not generalized)
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-today';
-const USER_NAME = LW_LOCAL_USER_NAME; // from local.json at build time (never committed); '' without it
-const WEATHER_NOTE = '02 Planner/Weather Today.md';
-const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
 const MOOD_FOLDER = '04 Inner World/My Life/Mood';
-// Calendar sync, run from the Mac's Settings › Calendars (same interpreter and
-// script the launchd job com.audrey.a4-calendar-sync uses; its own lock stops
-// two runs overlapping). Desktop only; on the phone the 10-minute job does it.
-const SYNC_PYTHON = LW_LOCAL_SYNC_PYTHON; // from local.json at build time; '' = sync cannot start (spawn error, handled)
-const SYNC_SCRIPT = 'Scripts/sync-calendar.py';
-const SYNC_LOG = 'Scripts/logs/calendar-sync.log';
-const SYNC_AFTER_CHANGE_MS = 2500;
+const SYNC_AFTER_CHANGE_MS = 2500; // a calendar choice is handed to the add-on's sync this long after the last tick
 const QUICK_NOTES_HEADING = '## Quick notes';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
 const MOOD_COMMAND = 'a4-health:new-mood-checkin';
@@ -104,8 +98,8 @@ const CALENDAR_DAYS_AHEAD = 7;
 const JOURNAL_EXCERPT_CHARS = 260;
 const CAPTURE_MAX_CHARS = 2000;
 const NARROW_WIDTH = 720;                   // one column + up/down arrows below this
-// What Today redraws for: '02 Planner/' holds the weather and calendar notes (settings in section 5).
-const watchedPrefixes = () => ['02 Planner/', vaultFolders.tasks + '/', vaultFolders.archive + '/', vaultFolders.habits + '/', MOOD_FOLDER + '/', vaultFolders.projects + '/', vaultFolders.journal + '/'];
+// What Today redraws for: the weather and calendar notes (when set) and the folders it reads.
+const watchedPrefixes = () => [feedNotes.weather, feedNotes.calendar].filter(Boolean).concat([vaultFolders.tasks + '/', vaultFolders.archive + '/', vaultFolders.habits + '/', MOOD_FOLDER + '/', vaultFolders.projects + '/', vaultFolders.journal + '/']);
 const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · Undo" line, a few seconds
 
 /* ========================================================================== *
@@ -120,7 +114,7 @@ const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
 const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
-const { vaultFolders, propNames, dailyNotes, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
+const { vaultFolders, propNames, feedNotes, dailyNotes, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
 
 /* ---- tasks ---------------------------------------------------------------- */
 
@@ -151,8 +145,9 @@ function greeting(hour) {
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 }
-// No name set (no local.json): no trailing comma.
-function greetingLine(hour) { return USER_NAME ? `${greeting(hour)}, ${USER_NAME}` : greeting(hour); }
+// Settings › Today page › Your name; empty: no trailing comma.
+function greetingLine(hour, name) { const n = normalizeUserName(name); return n ? `${greeting(hour)}, ${n}` : greeting(hour); }
+function normalizeUserName(raw) { return typeof raw === 'string' ? raw.trim().slice(0, 60) : ''; }
 
 /* ---- moving a task (same writes as the A4 Daily Planner's assignItem) ----- */
 
@@ -787,21 +782,13 @@ function placeWidget(layout, id, zone, index) {
 function sameLayout(a, b) { return JSON.stringify(normalizeLayout(a)) === JSON.stringify(normalizeLayout(b)); }
 
 /* ---- calendar picker (Settings › Calendars) ------------------------------- *
- * Mockup approved 2026-10-04 (mockup-calendar-picker.html). Scripts/sync-calendar.py writes every calendar
- * on the account into Calendar Events.md's `calendars` frontmatter list
- * (GL-002, amendment 2026-10-04); the choice is saved HERE, in this part's
- * settings as calendars.selected (calendar ids), and the sync reads it (told
- * where by syncEnv) and
+ * Mockup approved 2026-10-04 (mockup-calendar-picker.html). The program that
+ * writes the calendar note lists every calendar on the account in its
+ * `calendars` frontmatter list; the choice is saved HERE, in this part's
+ * settings as calendars.selected (calendar ids), and that program reads it and
  * fetches only those. Ids are stable hashes, so a rename never loses a tick.
  */
 const CAL_GROUP_ORDER = ['My calendars', 'Shared', 'Subscribed', 'Other'];
-
-// The sync script's environment: where this part's settings file is, and the corner in it
-// (inside LifeWorld, one file holds every part's settings under its old id; built alone, the
-// file is this plugin's own and the script reads its top level when the corner is absent).
-function syncEnv(env, base, manifest) {
-  return { ...env, A4_ROOT: base, A4_TODAY_DATA_PATH: `${base}/${manifest.dir}/data.json`, A4_TODAY_DATA_KEY: manifest.id };
-}
 
 // Saved choice -> array of ids, or null when nothing has been saved yet.
 function normalizeCalSel(raw) {
@@ -876,7 +863,7 @@ const logic = {
   greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES,
-  normalizeCalSel, syncEnv, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
+  normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
 };
@@ -892,10 +879,14 @@ class A4TodayPlugin extends Plugin {
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
     this.openOnStartup = normalizeOpenOnStartup(saved.openOnStartup);
+    this.userName = normalizeUserName(saved.userName);
+    // Runs the calendar sync now: (refresh) => Promise<boolean>. Set by an add-on (A4 extras, section 7);
+    // none = the picker saves the choice and the next scheduled sync picks it up.
+    this.calendarSync = null;
     this.addSettingTab(new TodaySettingTab(this.app, this));
     // First run after the picker shipped: adopt what the sync is already
     // fetching (it carried old ticks over) as the saved choice.
-    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && file.path === CALENDAR_NOTE) this.adoptCalendarChoice(); }));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && feedNotes.calendar && file.path === feedNotes.calendar) this.adoptCalendarChoice(); }));
     this.app.workspace.onLayoutReady(() => this.adoptCalendarChoice());
     this.registerEvent(this.app.workspace.on('css-change', () => this.applyLook()));
 
@@ -920,8 +911,9 @@ class A4TodayPlugin extends Plugin {
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
     this.openOnStartup = normalizeOpenOnStartup(saved.openOnStartup);
+    this.userName = normalizeUserName(saved.userName);
     this.applyLook();
-    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => l.view && l.view.onLayoutChangedElsewhere && l.view.onLayoutChangedElsewhere());
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (!l.view) return; if (l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); if (l.view.data && l.view.renderHeader) l.view.renderHeader(); });
   }
 
   async saveLayout(layout) {
@@ -938,6 +930,14 @@ class A4TodayPlugin extends Plugin {
     await this.saveData(data);
   }
 
+  async saveUserName(name) {
+    this.userName = normalizeUserName(name);
+    const data = (await this.loadData()) || {};
+    data.userName = this.userName;
+    await this.saveData(data);
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.data && l.view.renderHeader) l.view.renderHeader(); });
+  }
+
   async saveLook(look) {
     this.look = normalizeLook(look);
     const data = (await this.loadData()) || {};
@@ -949,7 +949,7 @@ class A4TodayPlugin extends Plugin {
   /* ---- calendar picker ---- */
 
   calendarFrontmatter() {
-    const f = this.app.vault.getAbstractFileByPath(CALENDAR_NOTE);
+    const f = feedNotes.calendar ? this.app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
     const c = f instanceof TFile ? this.app.metadataCache.getFileCache(f) : null;
     return (c && c.frontmatter) || null;
   }
@@ -975,30 +975,15 @@ class A4TodayPlugin extends Plugin {
     } finally { this.adopting = false; }
   }
 
-  canRunSync() {
-    return !!(SYNC_PYTHON && Platform && Platform.isDesktopApp && this.app.vault.adapter && this.app.vault.adapter.basePath);
-  }
+  canRunSync() { return typeof this.calendarSync === 'function'; }
 
-  // Runs Scripts/sync-calendar.py now (desktop). Resolves true on success.
+  // Runs the add-on's calendar sync now; one run at a time, a request during a run runs once after it.
+  // Resolves true on success.
   runCalendarSync(refresh) {
     if (!this.canRunSync()) return Promise.resolve(false);
     if (this.syncRun) { this.syncAgain = this.syncAgain || !!refresh || 'plain'; return this.syncRun; }
-    const base = this.app.vault.adapter.basePath;
-    this.syncRun = new Promise((resolve) => {
-      try {
-        const cp = require('child_process');
-        const fs = require('fs');
-        const path = require('path');
-        const logPath = path.join(base, SYNC_LOG);
-        fs.mkdirSync(path.dirname(logPath), { recursive: true });
-        const out = fs.openSync(logPath, 'a');
-        const args = [path.join(base, SYNC_SCRIPT)];
-        if (refresh) args.push('--refresh');
-        const child = cp.spawn(SYNC_PYTHON, args, { cwd: base, env: syncEnv(process.env, base, this.manifest), stdio: ['ignore', out, out] });
-        const done = (ok) => { try { fs.closeSync(out); } catch { /* closed */ } resolve(ok); };
-        child.on('error', (e) => { console.warn('[a4-today] calendar sync could not start', e); done(false); });
-        child.on('exit', (code) => done(code === 0));
-      } catch (e) { console.warn('[a4-today] calendar sync could not start', e); resolve(false); }
+    this.syncRun = Promise.resolve().then(() => this.calendarSync(!!refresh)).then((ok) => ok === true, (e) => {
+      console.warn('[a4-today] calendar sync failed', e); return false;
     }).then((ok) => {
       this.syncRun = null;
       const again = this.syncAgain; this.syncAgain = null;
@@ -1347,6 +1332,19 @@ class TodaySettingTab extends PluginSettingTab {
       paintSwatches();
       paintPreview();
     };
+    // The approved step 0 mockup's first Today page row (lifeworld-step0-mockup.html, Settings).
+    new Setting(containerEl)
+      .setName('Your name')
+      .setDesc('Shown in the greeting. Leave empty for none.')
+      .addText((t) => {
+        t.setPlaceholder('Optional').setValue(this.plugin.userName);
+        t.inputEl.setAttr('aria-label', 'Your name');
+        // Saved when the box is left or Enter is pressed, not on every keystroke.
+        t.inputEl.addEventListener('change', async () => {
+          await this.plugin.saveUserName(t.getValue());
+          if (preview && preview.isConnected) preview.querySelector('.a4t-pv-title').setText(greetingLine(new Date().getHours(), this.plugin.userName));
+        });
+      });
     new Setting(containerEl)
       .setName('Open the today page when Obsidian starts')
       .setDesc('Turn off to reopen whatever you had open last.')
@@ -1374,7 +1372,7 @@ class TodaySettingTab extends PluginSettingTab {
       });
     preview = containerEl.createDiv({ cls: 'a4t-preview' });
     preview.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
-    preview.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours()) });
+    preview.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours(), this.plugin.userName) });
     preview.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
     const dark = () => document.body.classList.contains('theme-dark');
     const paintSwatches = () => {
@@ -1397,7 +1395,7 @@ class TodaySettingTab extends PluginSettingTab {
     this.renderCalendars();
     if (this._calRef) this.app.metadataCache.offref(this._calRef);
     this._calRef = this.app.metadataCache.on('changed', (file) => {
-      if (file && file.path === CALENDAR_NOTE && this.calHost && this.calHost.isConnected) this.renderCalendars();
+      if (file && feedNotes.calendar && file.path === feedNotes.calendar && this.calHost && this.calHost.isConnected) this.renderCalendars();
     });
     this.plugin.registerEvent(this._calRef);
   }
@@ -1610,7 +1608,7 @@ class TodayView extends ItemView {
 
     // Weather
     let weather = null;
-    const wf = app.vault.getAbstractFileByPath(WEATHER_NOTE);
+    const wf = feedNotes.weather ? app.vault.getAbstractFileByPath(feedNotes.weather) : null;
     if (wf instanceof TFile) {
       const fm = (app.metadataCache.getFileCache(wf) || {}).frontmatter;
       if (fm && fm.temp != null) weather = fm;
@@ -1618,7 +1616,7 @@ class TodayView extends ItemView {
 
     // Calendar
     let events = [];
-    const cf = app.vault.getAbstractFileByPath(CALENDAR_NOTE);
+    const cf = feedNotes.calendar ? app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
     if (cf instanceof TFile) {
       const fm = (app.metadataCache.getFileCache(cf) || {}).frontmatter;
       events = eventsWindow(fm && fm.events, today, CALENDAR_DAYS_AHEAD);
@@ -1832,7 +1830,7 @@ class TodayView extends ItemView {
     const d = this.data;
     const now = new Date();
     this.kickerEl.setText(longDate(d.today));
-    this.titleEl.setText(greetingLine(now.getHours()));
+    this.titleEl.setText(greetingLine(now.getHours(), this.plugin.userName));
     this.plateEl.setText(plateText(this.openCount(), d.lists.total));
   }
 

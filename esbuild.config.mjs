@@ -4,10 +4,6 @@ import esbuild from 'esbuild';
 import { builtinModules } from 'node:module';
 import fs from 'node:fs';
 
-// Owner-only values (a name, a local interpreter path) live in local.json, which git ignores
-// and which never ships; without it the build uses empty values.
-const local = fs.existsSync('local.json') ? JSON.parse(fs.readFileSync('local.json', 'utf8')) : {};
-
 const common = {
   bundle: true,
   format: 'cjs',
@@ -16,8 +12,6 @@ const common = {
   // Provided by Obsidian at runtime, never bundled.
   external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', ...builtinModules],
   define: {
-    LW_LOCAL_USER_NAME: JSON.stringify(local.userName || ''),
-    LW_LOCAL_SYNC_PYTHON: JSON.stringify(local.syncPython || ''),
     LW_START_VAULT: 'null',
   },
   logLevel: 'warning',

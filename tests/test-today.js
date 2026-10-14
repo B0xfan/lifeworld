@@ -425,9 +425,16 @@ const ev = L.eventsWindow([
   { date: '2026-10-11', all_day: true, summary: 'too far' },
 ], '2026-10-03', 7);
 eq(ev.map((e) => e.summary), ['All day', 'Market', 'edge'], 'calendar window today..+7, all-day first');
-// The calendar sync is told where Today's settings live: inside LifeWorld, its corner of the one file.
-eq(L.syncEnv({ PATH: '/bin' }, '/v', { id: 'a4-today', dir: '.obsidian/plugins/lifeworld' }), { PATH: '/bin', A4_ROOT: '/v', A4_TODAY_DATA_PATH: '/v/.obsidian/plugins/lifeworld/data.json', A4_TODAY_DATA_KEY: 'a4-today' }, 'calendar sync: settings file and corner passed to the script');
-ok(/spawn\(SYNC_PYTHON, args, \{[^}]*env: syncEnv\(process\.env, base, this\.manifest\)/.test(require('fs').readFileSync(SRC, 'utf8')), 'calendar sync is started with that environment');
+// Phase 2 section 5: no Node module anywhere in the public code (the Mac calendar sync left Today).
+{
+  const fs = require('fs'); const pth = require('path');
+  const SRC_DIR = pth.join(__dirname, '..', 'src');
+  const builtins = new Set(require('module').builtinModules.flatMap((m) => [m, `node:${m}`]).concat(['electron']));
+  const js = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? js(pth.join(d, e.name)) : e.name.endsWith('.js') ? [pth.join(d, e.name)] : []));
+  const used = js(SRC_DIR).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)].filter((m) => builtins.has(m[1])).map((m) => `${pth.relative(SRC_DIR, f)}: ${m[1]}`));
+  eq(used, [], 'no Node or Electron module is required anywhere in src/');
+  ok(!/SYNC_PYTHON|SYNC_SCRIPT|syncEnv|LW_LOCAL_/.test(fs.readFileSync(SRC, 'utf8')), 'Today has no calendar-sync script, interpreter or build-time owner value left');
+}
 eq(L.eventDayLabel('2026-10-05', '2026-10-03'), 'Mon 5', 'event day label');
 eq(L.longDate('2026-10-03'), 'Saturday, October 3', 'long date');
 const je = L.journalExcerpt('# Head\n\nWent to [[Corner Shop]] and [[04 Inner World/My Life/Guide/Swim Club|Swim Club]]. **Good** day.', 260);
@@ -654,6 +661,32 @@ const startupChecks = (async () => {
   const sync = await startupRun({ openOnStartup: true });
   sync.p.applyLook = nop2; await sync.p.saveData({ openOnStartup: false }); await sync.p.onExternalSettingsChange();
   eq(sync.p.openOnStartup, false, 'synced change of the setting is picked up');
+  // Settings › Today page › Your name (phase 2 section 5; approved step 0 mockup).
+  const named = await startupRun({ ...JSON.parse(JSON.stringify(keep)), userName: '  Sam ' });
+  eq(named.p.userName, 'Sam', 'your name: read from the saved settings, trimmed');
+  eq([L.greetingLine(9, named.p.userName), L.greetingLine(14, ''), L.greetingLine(18, '  ')], ['Good morning, Sam', 'Good afternoon', 'Good evening'], 'greeting: with the name; empty means no name and no comma');
+  await named.p.saveUserName(' Kim ');
+  eq([named.stored(), named.p.userName], [{ ...keep, userName: 'Kim' }, 'Kim'], 'your name: saving keeps every other saved choice');
+  eq((await startupRun(null)).p.userName, '', 'new install: no name');
+  named.p.applyLook = nop2; await named.p.saveData({ userName: 'Lee' }); await named.p.onExternalSettingsChange();
+  eq(named.p.userName, 'Lee', 'your name from another device is picked up');
+  const src0 = require('fs').readFileSync(SRC, 'utf8');
+  const tab = src0.slice(src0.indexOf('class TodaySettingTab'));
+  ok(/\.setName\('Your name'\)\s*\.setDesc\('Shown in the greeting\. Leave empty for none\.'\)\s*\.addText\(\(t\) => \{\s*t\.setPlaceholder\('Optional'\)/.test(tab), 'Your name row: wording and placeholder as drawn');
+  ok([...tab.matchAll(/\.setName\('([^']+)'\)/g)][0][1] === 'Your name', 'Your name is the first Today page row, as drawn');
+  // The calendar sync is an add-on's (A4 extras, section 7): without one there is nothing to run.
+  ok(!on.p.canRunSync() && (await on.p.runCalendarSync(true)) === false && on.p.scheduleCalendarSync(() => {}) === false, 'no add-on: no sync is run, the picker only saves');
+  const runs = []; let release;
+  on.p.calendarSync = (refresh) => { runs.push(refresh); return new Promise((r) => { release = r; }); };
+  const first = on.p.runCalendarSync(true);
+  const second = on.p.runCalendarSync(false); const third = on.p.runCalendarSync(false);
+  await new Promise((r) => setTimeout(r, 0)); release(true);
+  await new Promise((r) => setTimeout(r, 0)); release(true);
+  eq([await first, await second, await third, runs], [true, true, true, [true, false]], "add-on's sync: run with the refresh flag; requests during a run make one more run, not two");
+  on.p.calendarSync = () => { throw new Error('planted'); };
+  const w = console.warn; console.warn = () => {};
+  eq(await on.p.runCalendarSync(false), false, "add-on's sync failing: reported as not finished, no crash");
+  console.warn = w;
   // Static: the one self-opening call in the code is the guarded startup line.
   const src = require('fs').readFileSync(SRC, 'utf8');
   const self = src.match(/onLayoutReady\([^\n]*openToday[^\n]*/g) || [];

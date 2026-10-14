@@ -32,9 +32,8 @@ for (const [id, cls] of [['a4-projects', 'A4ProjectsPlugin'], ['a4-today', 'A4To
 }
 assert.strictEqual(require(MAIN).name, 'LifeWorldPlugin', 'the one plugin class');
 assert.strictEqual(fs.readdirSync(path.join(ROOT, 'dist', 'a4-today', 'fonts')).length, 4, 'Today ships its four font licence texts');
-// Greeting: the build-time name when local.json has one, else no trailing comma.
-const localFile = path.join(__dirname, '..', 'local.json');
-const name = fs.existsSync(localFile) ? JSON.parse(fs.readFileSync(localFile, 'utf8')).userName || '' : '';
+// Greeting: the name comes from Settings › Today page (phase 2 section 5), never from the build.
 const T = require(path.join(__dirname, '..', 'dist', 'a4-today', 'main.js')).logic;
-assert.strictEqual(T.greetingLine(9), name ? `Good morning, ${name}` : 'Good morning', 'greeting line');
+assert.strictEqual(T.greetingLine(9), 'Good morning', 'greeting line: no name built in');
+assert.ok(!/LW_LOCAL_|local\.json/.test(fs.readFileSync(path.join(__dirname, '..', 'esbuild.config.mjs'), 'utf8')), 'the build reads no owner-only values');
 console.log('build self-check: OK');

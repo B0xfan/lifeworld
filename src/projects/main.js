@@ -3054,8 +3054,8 @@ class ProjectsView extends ItemView {
   async onOpen() {
     this.contentEl.empty();
     this.contentEl.addClass('a4pj-root');
-    // Tasks, projects, and the calendar note's folder (a setting in section 5).
-    const relevant = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/'));
+    // Tasks and projects (Projects reads no calendar or weather note).
+    const relevant = (p) => typeof p === 'string' && (inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/'));
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('rename', (f, old) => { if ((f && relevant(f.path)) || relevant(old)) { if (this.state.project === old) this.state.project = f.path; this.scheduleRender(); } }));

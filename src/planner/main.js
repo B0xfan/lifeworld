@@ -79,7 +79,6 @@ const { Plugin, ItemView, TFile, TFolder, Notice, setIcon } = require('obsidian'
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-planner';
-const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
 const DEFAULT_PRIORITIES = [
   { value: 'none', label: 'None', weight: 0 },
   { value: 'low', label: 'Low', weight: 1 },
@@ -103,7 +102,7 @@ const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, remin
 const { understand, parseClock, quickAddChips, quickAddPlan } = require('../core/quickadd');
 const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
-const { vaultFolders, inTaskFolders, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
+const { vaultFolders, feedNotes, inTaskFolders, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
 
 // One frontmatter write that remembers what the keys it changed held before;
 // the returned undo() puts exactly those back (a key that was absent is
@@ -467,7 +466,7 @@ class A4PlannerPlugin extends Plugin {
   }
 
   calendarEvents() {
-    const f = this.app.vault.getAbstractFileByPath(CALENDAR_NOTE);
+    const f = feedNotes.calendar ? this.app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
     if (!(f instanceof TFile)) return [];
     const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter;
     return fm ? asList(fm.events) : [];
@@ -644,8 +643,8 @@ class PlannerView extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass('a4pl-root');
     this.anchor = dayOf(new Date());
-    // The task folders, and the calendar note's folder (a setting in section 5).
-    const watched = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || inTaskFolders(p));
+    // The task folders, and the calendar note (when set).
+    const watched = (p) => typeof p === 'string' && ((!!feedNotes.calendar && p === feedNotes.calendar) || inTaskFolders(p));
     const relevant = (f) => f && watched(f.path);
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (relevant(f)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (relevant(f)) this.scheduleRender(); }));

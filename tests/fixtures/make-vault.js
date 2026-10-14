@@ -86,7 +86,7 @@ w('.obsidian/plugins/tasknotes/data.json', JSON.stringify({ ...snap, enableNotif
 w('.obsidian/plugins/a4-projects/data.json', JSON.stringify({ tnSnapshot: snap }, null, 2) + '\n');
 // Obsidian's Daily notes setting and LifeWorld's "Your vault" folders, shaped like the owner's.
 w('.obsidian/daily-notes.json', JSON.stringify({ folder: '00 Daily Scratchpad', format: 'MM-DD-YYYY', autorun: false, template: '06 AI Team/AI Team Knowledge/Templates/Daily Scratchpad' }, null, 2) + '\n');
-w('.obsidian/plugins/lifeworld/data.json', JSON.stringify({ lifeworld: { vault: { folders: { tasks: '02 Planner/TaskNotes/Tasks', archive: '02 Planner/TaskNotes/Archive', projects: PJ, goals: '04 Inner World/My Life/Goals', habits: '04 Inner World/My Life/Habits', journal: '04 Inner World/Journal' } } } }, null, 2) + '\n');
+w('.obsidian/plugins/lifeworld/data.json', JSON.stringify({ lifeworld: { vault: { folders: { tasks: '02 Planner/TaskNotes/Tasks', archive: '02 Planner/TaskNotes/Archive', projects: PJ, goals: '04 Inner World/My Life/Goals', habits: '04 Inner World/My Life/Habits', journal: '04 Inner World/Journal' }, feeds: { calendar: '02 Planner/Calendar Events.md', weather: '02 Planner/Weather Today.md' } } } }, null, 2) + '\n');
 w('.obsidian/zk-prefixer.json', JSON.stringify({ folder: '00 Daily Scratchpad', format: 'MM-DD-YYYY - h-mm A', template: '' }, null, 2) + '\n');
 w('00 Daily Scratchpad/10-01-2026.md', 'Made-up daily note for the test data.\n');
 w('06 AI Team/Agents/agent-index.md', '# Agents\n\nMade-up roster for the test data.\n');

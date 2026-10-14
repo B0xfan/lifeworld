@@ -16,6 +16,10 @@ const START = typeof LW_START_VAULT !== 'undefined' && LW_START_VAULT ? LW_START
 
 const folders = {};
 const names = {};
+// Notes another program keeps up to date, read "from a note" (phase 2 section 5): the calendar
+// (its `events` and `calendars` lists) and the weather. '' = none, the new-install default; an
+// owner's preset holds the paths. Stored only in the settings file (no row, build plan section 2).
+const feeds = { calendar: '', weather: '' };
 const daily = { ...DAILY_DEFAULTS, ...(START.daily || {}) }; // fallback when Obsidian's setting cannot be read
 let renamed = false; // any property name differs from LifeWorld's own
 
@@ -60,6 +64,8 @@ function setVault(saved) {
   const ok = !namesProblem(want);
   for (const [k, v] of want) names[k] = ok ? v : k;
   renamed = PROPS.some((k) => names[k] !== k);
+  const fd = s.feeds && typeof s.feeds === 'object' ? s.feeds : {};
+  for (const k of Object.keys(feeds)) feeds[k] = cleanFolder(fd[k]) || cleanFolder((START.feeds || {})[k]);
 }
 setVault(null);
 
@@ -115,4 +121,4 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
-module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, feedNotes: feeds, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

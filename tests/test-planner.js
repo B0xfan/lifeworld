@@ -63,12 +63,8 @@ const srcP = fs.readFileSync(SRC, 'utf8');
 const srcT = fs.readFileSync(TODAY_SRC, 'utf8');
 const viaCore = [fromCore(srcP, SHARED), fromCore(srcT, SHARED)];
 for (const name of SHARED) ok(viaCore.every((f) => f(name)), `Planner and Today take ${name} from the shared core (no own copy)`);
-// The constants the shared code reads must agree too.
-for (const c of ['CALENDAR_NOTE']) {
-  const re = new RegExp(`^const ${c} = (.*);$`, 'm');
-  const a = re.exec(srcP); const b = re.exec(srcT);
-  ok(a && b && a[1] === b[1], `same constant: ${c}`);
-}
+// The calendar note both read: the one "from a note" setting in the core (phase 2 section 5), no own constant.
+ok(![srcP, srcT].some((s) => /const CALENDAR_NOTE/.test(s)) && [srcP, srcT].every((s) => /feedNotes\.calendar/.test(s) && /\{[^}]*\bfeedNotes\b[^}]*\} = require\('\.\.\/core\/vault'\)/.test(s)), 'Planner and Today read the calendar note from the core setting');
 
 /* ---- 2. moves behave exactly like A4 Today's (and the old Daily Planner's) -- */
 const ORDERS = [[], [10], [10, 20], [-5, 0, 7.5, 30], [1, 1, 1]];
