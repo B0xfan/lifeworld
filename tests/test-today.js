@@ -553,6 +553,16 @@ async function writeBack() {
     await plugin.capture('second');
     ok(/- \d\d:\d\d  hello there\n- \d\d:\d\d  second\n\n## WhatsApp\n?$/.test(files[p1]), 'second capture appended');
     eq(await plugin.capture('   '), null, 'blank capture writes nothing');
+    // Review p2-s4 nice-to-have 2: a nested daily-note date format gets its year and month folders.
+    const made = [];
+    const mk = app.vault.createFolder; app.vault.createFolder = async (p) => { made.push(p); return mk(p); };
+    app.internalPlugins = { getEnabledPluginById: () => ({ options: { folder: 'Daily', format: 'YYYY/MM/YYYY-MM-DD', template: 'T' } }) };
+    files['T.md'] = '# {{title}}\n';
+    const pn = await plugin.capture('nested');
+    const d = new Date(); const ymd = L.dayOf(d);
+    eq([pn, made], [`Daily/${ymd.slice(0, 4)}/${ymd.slice(5, 7)}/${ymd}.md`, ['Daily', `Daily/${ymd.slice(0, 4)}`, `Daily/${ymd.slice(0, 4)}/${ymd.slice(5, 7)}`]], 'nested date format: the note and every folder on the way are created');
+    ok(/^# \d{4}-\d\d-\d\d$/m.test(files[pn]) && files[pn].includes(`# ${ymd}\n`) && files[pn].includes('nested'), 'nested date format: the capture is written; {{title}} is the note name, not its folders');
+    delete app.internalPlugins;
   }
   // "Move all N to today" and its Undo (1.2.3)
   {

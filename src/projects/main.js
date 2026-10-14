@@ -13,8 +13,8 @@
  *
  * Data (never a parallel model, GL-013 rule 1; fields: GL-002 ruling
  * "Built-in task engine and Projects", 2026-10-04):
- *  - Task notes in 02 Planner/TaskNotes/Tasks (and Archive for the Done
- *    lists), read and written EXACTLY as TaskNotes 4.12.5 writes them: same
+ *  - Task notes in the tasks folder (and the finished tasks folder for the
+ *    Done lists; both in Settings › Your vault), read and written EXACTLY as TaskNotes 4.12.5 writes them: same
  *    fields, values, key order and timestamp format. The write plans below
  *    are ports of TaskNotes' own code (TaskService.updateProperty,
  *    taskRecurringPlanning.buildRecurringTaskCompletePlan, TaskCreationService,
@@ -66,7 +66,7 @@
  *  - Start date = TaskNotes' `scheduled` (one-off tasks) or the rule's
  *    DTSTART (repeating tasks). Steps = top-level Markdown checkboxes in the
  *    note body. No new fields.
- *  - Project notes (type: project) in 04 Inner World/My Life/Projects:
+ *  - Project notes (type: project) in the projects folder (Settings › Your vault):
  *    sphere, status, goal, client, end_date.
  *
  * Writes go through app.fileManager.processFrontMatter; only step
@@ -1829,10 +1829,11 @@ class TaskLinks {
     const p = this.plugin;
     p.registerMarkdownPostProcessor((el, ctx) => this.postProcess(el, ctx));
     try { p.registerEditorExtension(this.editorExtension()); } catch (e) { console.warn('[a4-projects] task links in Live Preview unavailable', e); }
-    const isTask = (f) => f instanceof TFile && f.path.endsWith('.md') && (this.engine().isTaskFile(f) || /TaskNotes/.test(f.path));
+    // A note in the task folders (Settings › Your vault); by path, so a deleted note (no cache left) counts too.
+    const isTask = (f) => f instanceof TFile && f.path.endsWith('.md') && inTaskFolders(f.path);
     p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (isTask(f)) this.refreshSoon(); }));
     p.registerEvent(this.app.vault.on('rename', (f) => { if (isTask(f)) this.refreshSoon(); }));
-    p.registerEvent(this.app.vault.on('delete', (f) => { if (f instanceof TFile && /TaskNotes/.test(f.path)) this.refreshSoon(); }));
+    p.registerEvent(this.app.vault.on('delete', (f) => { if (isTask(f)) this.refreshSoon(); }));
     p.register(() => { if (this.timer) window.clearTimeout(this.timer); });
   }
   // Plugin off: put the plain links back in open reading views.

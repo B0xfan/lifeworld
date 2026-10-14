@@ -38,7 +38,7 @@ class Plugin extends Component {
 }
 class Notice { constructor(m) { notices.push(m); } }
 // Settings page stand-ins: a Setting records what it shows; an element records what is put in it.
-const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, text: '', empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, toggleClass(c, on) { this.cls = this.cls.filter((x) => x !== c); if (on) this.cls.push(c); },
+const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, text: '', on: {}, addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, fire(t) { return Promise.all((this.on[t] || []).map((f) => f())); }, empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, toggleClass(c, on) { this.cls = this.cls.filter((x) => x !== c); if (on) this.cls.push(c); },
   setAttr(k, v) { this.attr[k] = v; }, setText(t) { this.text = t; }, createDiv(o) { return this.createEl('div', o); },
   createEl(t, o) { const d = fakeEl(t); if (o && o.text) d.text = o.text; if (o && o.attr) Object.assign(d.attr, o.attr); this.kids.push(d); return d; } });
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = fakeEl(); } }
@@ -49,7 +49,7 @@ class Setting {
   setHeading() { this.rec.heading = true; return this; }
   addToggle(cb) { const r = this.rec; const t = { setValue(v) { r.on = v; return t; }, setDisabled(v) { r.disabled = v; return t; }, onChange(f) { r.change = f; return t; } }; cb(t); return this; }
   // A text box: typing = setValue then its onChange, as Obsidian's does.
-  addText(cb) { const r = this.rec; const t = { inputEl: fakeEl('input'), setPlaceholder(v) { r.placeholder = v; return t; }, setValue(v) { r.value = v; return t; }, getValue() { return r.value; }, onChange(f) { r.change = f; return t; }, type(v) { r.value = v; return r.change && r.change(v); } }; r.text = t; cb(t); return this; }
+  addText(cb) { const r = this.rec; const t = { inputEl: fakeEl('input'), setPlaceholder(v) { r.placeholder = v; return t; }, setValue(v) { r.value = v; return t; }, getValue() { return r.value; }, onChange(f) { r.change = f; return t; }, type(v) { r.value = v; return r.change && r.change(v); }, commit(v) { t.type(v); return t.inputEl.fire('change'); } }; r.text = t; cb(t); return this; }
   addButton(cb) { const b = { setButtonText(v) { b.label = v; return b; }, onClick(f) { b.click = f; return b; }, setCta() { b.cta = true; return b; }, setDisabled(v) { b.disabled = v; return b; } }; (this.rec.buttons = this.rec.buttons || []).push(b); cb(b); return this; }
 }
 class Modal { constructor(app) { this.app = app; this.contentEl = fakeEl('div'); } open() { this.isOpen = true; this.onOpen(); } close() { this.isOpen = false; this.onClose(); } setTitle(t) { this.title = t; return this; } }
@@ -452,11 +452,18 @@ const start = async (data) => {
   withDaily(fresh.app, { folder: 'Daily notes/', format: 'YYYY-MM-DD' });
   ok(vaultRows(fresh.host).find((r) => r.name === 'Daily notes').desc === "Uses Obsidian's own Daily notes settings (folder \"Daily notes\", YYYY-MM-DD)", "Daily notes reads Obsidian's own setting each time the page is drawn");
   // A folder typed in: saved, read by every part; emptied: back to the default.
-  await vaultRows(fresh.host)[0].text.type('My Tasks/ ');
+  // Review p2-s4 nice-to-have 1: typing alone saves nothing; leaving the box (or Enter) saves.
+  vaultRows(fresh.host)[0].text.type('My Ta');
+  await fresh.host.saving;
+  eq([disk[fresh.dir], freshEngine.cfg().tasksFolder], [JSON.stringify({}), 'Tasks'], 'a folder being typed is neither saved nor read');
+  await vaultRows(fresh.host)[0].text.commit('My Tasks/ ');
   await fresh.host.saving;
   eq([JSON.parse(disk[fresh.dir]).lifeworld.vault.folders.tasks, freshEngine.cfg().tasksFolder], ['My Tasks/', 'My Tasks'], 'a typed folder is saved and read (trailing slash dropped)');
-  await vaultRows(fresh.host)[0].text.type('');
+  await vaultRows(fresh.host)[0].text.commit('');
   eq(freshEngine.cfg().tasksFolder, 'Tasks', 'an emptied folder falls back to the default');
+  await vaultRows(fresh.host)[0].text.commit(' ../x//y/./ ');
+  eq(freshEngine.cfg().tasksFolder, 'x/y', "a folder's '..', '.' and doubled slashes are dropped");
+  await vaultRows(fresh.host)[0].text.commit('');
   fresh.host.unload();
 
   // The owner's preset (the frozen vault's LifeWorld file and Obsidian Daily notes setting, shaped like
@@ -552,6 +559,51 @@ const start = async (data) => {
   const same = { due: 1 };
   ok(CV.readable(same) === same, 'nothing renamed: the very same frontmatter object is read');
   eq(CV.namesProblem([['A', 'ok'], ['B', ' ok ']]), 'Two rows use "ok". Each needs its own name.', 'names are compared trimmed');
+
+  // Review p2-s4 should-fix 1: a name Obsidian or LifeWorld already reads is refused, in any case.
+  for (const r of ['tags', 'Aliases', 'cssclasses', 'archived', 'weekly_goal', ' contexts ']) eq(CV.namesProblem([['Title', r]]), `"${r.trim()}" is already used by Obsidian or LifeWorld. Pick another name.`, `"${r.trim()}" refused`);
+  CV.setVault({ names: { title: 'tags' } });
+  eq([CV.propNames.title, CV.isRenamed()], ['title', false], 'a saved file renaming to a reserved name falls back to the default names');
+  CV.setVault(null);
+  // The list comes from the code: every engine field outside the renamable ones is reserved.
+  const fieldsSrc = fs.readFileSync(path.join(ROOT, 'src', 'projects', 'main.js'), 'utf8');
+  const fixed = [...fieldsSrc.slice(fieldsSrc.indexOf('const DEFAULT_FIELDS'), fieldsSrc.indexOf('};', fieldsSrc.indexOf('const DEFAULT_FIELDS'))).matchAll(/:\s*'([^']+)'/g)].map((m) => m[1]);
+  ok(fixed.length > 15, 'the engine field list was found');
+  eq(fixed.filter((f) => !CV.PROPS.includes(f) && !CV.isReserved(f)), [], 'every fixed-name engine field is reserved');
+  ok(/fm\.weekly_goal/.test(fs.readFileSync(path.join(ROOT, 'src', 'planner', 'main.js'), 'utf8')) && CV.isReserved('weekly_goal'), "the Planner's weekly_goal is reserved");
+  const dlgR = await start({});
+  const nr = vaultRows(dlgR.host).find((r) => r.name === 'Property names');
+  let mR; const MR = LW.PropertyNamesModal; const oR = MR.prototype.open; MR.prototype.open = function () { mR = this; oR.call(this); }; nr.buttons[0].click(); MR.prototype.open = oR;
+  mR.inputs.find((x) => x.label === 'Title').t.type('tags');
+  eq([mR.err.text, mR.done.disabled, mR.inputs.find((x) => x.label === 'Title').t.inputEl.cls.includes('lw-bad')], ['"tags" is already used by Obsidian or LifeWorld. Pick another name.', true, true], 'dialog: a reserved name is refused, its row marked, Done off');
+  dlgR.host.unload();
+
+  // Review p2-s4 nice-to-have 3: a save that ends during the Sync read, with the file already holding
+  // the result, needs no extra write.
+  const calm = await start({ 'a4-today': { layout: ['a'] } });
+  const readQ = calm.host.loadData;
+  calm.host.loadData = async function () { await calm.parts['a4-today'].saveData({ layout: ['a'] }); return readQ.call(this); };
+  writes.length = 0;
+  await calm.host.onExternalSettingsChange();
+  calm.host.loadData = readQ;
+  await calm.host.saving;
+  eq(writes, ['begin', 'end'], 'save during the Sync read, nothing new: only that save, no extra write');
+  calm.host.unload();
+
+  // Review p2-s4 should-fix 2: a task note deleted from the tasks folder (here the default "Tasks", no
+  // "TaskNotes" in the path) redraws the task links.
+  const tl = await start({});
+  const TL = LW.parts['a4-projects'].TaskLinks;
+  const evs = {};
+  const tlApp = { metadataCache: { on: (n, f) => { evs[n] = f; } }, vault: { on: (n, f) => { evs[n] = f; } } };
+  const links = new TL({ app: tlApp, engine: { isTaskFile: () => false }, registerMarkdownPostProcessor() {}, registerEditorExtension() {}, registerEvent() {}, register() {} });
+  links.editorExtension = () => null;
+  let redraws = 0; links.refreshSoon = () => { redraws++; };
+  links.start();
+  evs.delete(new TFile('Tasks/Gone.md')); evs.delete(new TFile('Notes/Other.md'));
+  evs.rename(new TFile('Tasks/Renamed.md'));
+  eq(redraws, 2, 'deleting or renaming a note in the tasks folder redraws task links; other notes do not');
+  tl.host.unload();
 
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

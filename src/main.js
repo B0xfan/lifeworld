@@ -271,6 +271,7 @@ class LifeWorldPlugin extends Plugin {
     // A save of ours that ended during the read: the file holds it, not `now`, and its corners
     // must count as changed here, or the older values just read replace them (review p2-s3b).
     const saved = this.ondisk !== was;
+    const ours = this.ondisk; // what that save put on disk; it landed after the Sync write that started this read
     // shortcut: a damaged file arriving by Sync is ignored (usually half-synced; the full one follows).
     if (!now) { console.warn('LifeWorld: settings changed outside but the file is damaged; kept the current settings'); return; }
     // A corner changed here and not yet on disk (its save queued or under way) keeps the change
@@ -286,7 +287,9 @@ class LifeWorldPlugin extends Plugin {
     this.ondisk = now;
     this.store = merged;
     if (this.writing) this.syncedDuring = { now: copy(now), kept };
-    if (this.writing || saved) {
+    // After a save that ended during the read, write only if the file does not already hold the
+    // result (review p2-s4: no write when nothing changed).
+    if (this.writing || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
       this.writeStore().catch((e) => console.error('LifeWorld: the save after a settings change from outside failed', e));
     }
     for (const [m] of PART_LIST) {
@@ -300,6 +303,8 @@ class LifeWorldPlugin extends Plugin {
     // Parts switched on or off, or Your vault changed, elsewhere (the phone): follow them here too.
     if (JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST])) {
       const h = this.store[HOST];
+      // The settings page needs no redraw here: Obsidian 1.14.4 calls the open page's update() after
+      // this handler, which draws it again (refreshCurrentPage).
       if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) { vault.setVault(h && h.vault); this.redrawViews(); }
       await this.applyParts();
     }
@@ -340,7 +345,10 @@ class LifeWorldSettingTab extends PluginSettingTab {
     new Setting(el).setName('Your vault').setHeading();
     for (const [key, name, desc] of FOLDER_ROWS) {
       new Setting(el).setName(name).setDesc(desc).addText((t) => {
-        t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(vault.vaultFolders[key]).onChange((v) => this.plugin.setVaultSettings({ folders: { [key]: v.trim() } }));
+        t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(vault.vaultFolders[key]);
+        // Saved when the box is left or Enter is pressed (the change event), not on every keystroke:
+        // a half-typed folder would be read and sent out through Sync (review p2-s4).
+        t.inputEl.addEventListener('change', () => this.plugin.setVaultSettings({ folders: { [key]: t.getValue().trim() } }));
         t.inputEl.setAttr('aria-label', name);
       });
     }
@@ -396,7 +404,7 @@ class PropertyNamesModal extends Modal {
     const msg = vault.namesProblem(this.inputs.map((x) => [x.label, x.t.getValue()]));
     const count = {};
     for (const x of this.inputs) { const v = x.t.getValue().trim(); count[v] = (count[v] || 0) + 1; }
-    for (const x of this.inputs) { const v = x.t.getValue().trim(); x.t.inputEl.toggleClass('lw-bad', !v || count[v] > 1 || vault.BAD_NAME.test(v)); }
+    for (const x of this.inputs) { const v = x.t.getValue().trim(); x.t.inputEl.toggleClass('lw-bad', !v || count[v] > 1 || vault.BAD_NAME.test(v) || vault.isReserved(v)); }
     this.err.setText(msg);
     this.done.setDisabled(!!msg);
     return !msg;

@@ -21,8 +21,16 @@ let renamed = false; // any property name differs from LifeWorld's own
 
 // A character a property name cannot hold (the approved mockup's rule).
 const BAD_NAME = /[:#[\]{}|,]/;
+// Names a task property cannot be renamed to, because something already reads them by that name:
+// Obsidian's own (tags, aliases, cssclasses and their old one-word forms; Obsidian 1.14.4 matches
+// them in any case) and the task note properties LifeWorld reads under a fixed name (the engine's
+// fields outside PROPS, Projects' DEFAULT_FIELDS; the Planner's weekly_goal). Compared in any case.
+const RESERVED = ['tags', 'aliases', 'cssclasses', 'tag', 'alias', 'cssclass',
+  'archived', 'contexts', 'timeEstimate', 'recurrence_anchor', 'googleCalendarExceptionOriginalScheduled', 'googleCalendarMovedOriginalDates', 'weekly_goal'];
+const isReserved = (v) => RESERVED.some((r) => r.toLowerCase() === String(v).trim().toLowerCase());
 
-const cleanFolder = (v) => (typeof v === 'string' ? v.trim().replace(/^\/+|\/+$/g, '') : '');
+// A folder as typed -> 'a/b': no leading, trailing or doubled slash, no '.' or '..' step.
+const cleanFolder = (v) => (typeof v === 'string' ? v.trim().split('/').filter((x) => x && x !== '.' && x !== '..').join('/') : '');
 
 // -> '' when the names can be used, else what is wrong (the Property names dialog shows it).
 // Each entry: [row label, name]. Same checks as the approved mockup: empty, two rows the same, a
@@ -34,6 +42,7 @@ function namesProblem(list) {
     if (!v) return 'A property name cannot be empty.';
     if (seen.has(v)) return `Two rows use "${v}". Each needs its own name.`;
     if (BAD_NAME.test(v)) return `"${v}" has a character property names cannot use.`;
+    if (isReserved(v)) return `"${v}" is already used by Obsidian or LifeWorld. Pick another name.`;
     seen.add(v);
   }
   return '';
@@ -106,4 +115,4 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
-module.exports = { BAD_NAME, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

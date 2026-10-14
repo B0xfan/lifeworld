@@ -1,16 +1,16 @@
 /* A4 Today: a calm overview of the day, in its own tab.
  *
  * Built 2026-10-03 (Dex) from the approved mockup
- * (03 WiP/2026-09-22-business-ideas/mockup-today-page.html, round 2) and the
+ * (mockup-today-page.html, round 2) and the
  * A4 build section of 2026-10-03_today-page-obsidian-plugin-plan.md.
  * Hand-written CommonJS, no build step, same as the other A4 plugins.
  * Written new; Lifeworld's Today page was read as a reference for shape only.
  *
  * What it reads (never a parallel data model, GL-013 rule 1):
- *  - TaskNotes task notes in 02 Planner/TaskNotes/Tasks, with the same
+ *  - TaskNotes task notes in the tasks folder (Settings › Your vault), with the same
  *    planned_day / planned_half / planned_order contract as the A4 Daily
  *    Planner ("due always wins": a dated task sits on its due date).
- *  - 02 Planner/Weather Today.md and 02 Planner/Calendar Events.md, both
+ *  - The weather note and the calendar note (paths in LifeWorld's settings), both
  *    machine-written feeds (read-only here).
  *  - Habit notes (type: habit, the '## Log' body format A4 Habits owns),
  *    mood check-ins, active projects, the latest journal entry.
@@ -787,8 +787,7 @@ function placeWidget(layout, id, zone, index) {
 function sameLayout(a, b) { return JSON.stringify(normalizeLayout(a)) === JSON.stringify(normalizeLayout(b)); }
 
 /* ---- calendar picker (Settings › Calendars) ------------------------------- *
- * Mockup approved 2026-10-04 (03 WiP/2026-09-22-business-ideas/
- * mockup-calendar-picker.html). Scripts/sync-calendar.py writes every calendar
+ * Mockup approved 2026-10-04 (mockup-calendar-picker.html). Scripts/sync-calendar.py writes every calendar
  * on the account into Calendar Events.md's `calendars` frontmatter list
  * (GL-002, amendment 2026-10-04); the choice is saved HERE, in this part's
  * settings as calendars.selected (calendar ids), and the sync reads it (told
@@ -1258,7 +1257,12 @@ class A4TodayPlugin extends Plugin {
     if (!(file instanceof TFile)) {
       const content = insertQuickNote(await this.newScratchpadContent(now, dn), line);
       try {
-        if (dn.folder && !this.app.vault.getAbstractFileByPath(dn.folder)) await this.app.vault.createFolder(dn.folder);
+        // Every missing folder on the way, so a nested date format ('YYYY/MM/YYYY-MM-DD') works too.
+        const steps = path.split('/').slice(0, -1);
+        for (let i = 1; i <= steps.length; i++) {
+          const dir = steps.slice(0, i).join('/');
+          if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
+        }
         await this.app.vault.create(path, content);
         return path;
       } catch (e) {
@@ -1276,7 +1280,8 @@ class A4TodayPlugin extends Plugin {
     const tpl = d.template ? this.app.vault.getAbstractFileByPath(/\.md$/i.test(d.template) ? d.template : `${d.template}.md`) : null;
     const fmt = momentFormat();
     if (tpl instanceof TFile) {
-      try { return renderTemplate(await this.app.vault.read(tpl), now, fmt, scratchNameFor(now, d, fmt)); } catch { /* fall through */ }
+      // {{title}} is the note's own name, also when the date format nests it in folders.
+      try { return renderTemplate(await this.app.vault.read(tpl), now, fmt, scratchNameFor(now, d, fmt).split('/').pop()); } catch { /* fall through */ }
     }
     return `---\ntype: scratchpad\ndate: ${dayOf(now)}\n---\n`;
   }

@@ -1,16 +1,16 @@
 /* A4 Planner: the week/day planning board, Lifeworld-style, for A4's TaskNotes tasks.
  *
  * Built 2026-10-04 (Dex) from the approved mockup
- * (03 WiP/2026-09-22-business-ideas/mockup-planner.html, round 5).
+ * (mockup-planner.html, round 5).
  * Hand-written CommonJS, no build step. Replaces the A4 Daily Planner
  * (a4-daily-planner) once confirmed; until then both stay installed.
  *
  * Reads (never a parallel data model):
- *  - TaskNotes task notes in 02 Planner/TaskNotes/Tasks (tag `task`), with the
+ *  - TaskNotes task notes in the tasks folder (Settings › Your vault; tag `task`), with the
  *    planned_day / planned_half / planned_order / weekly_goal contract
  *    (GL-002). "Due always wins": a dated task sits on its due date.
  *  - TaskNotes' own settings for completed statuses and priorities.
- *  - 02 Planner/Calendar Events.md (read-only copy of Apple Calendar).
+ *  - The calendar note (path in LifeWorld's settings; read only).
  *  - Goal notes and their projects, for the Goals tab.
  *
  * Writes:

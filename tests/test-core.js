@@ -15,7 +15,7 @@ const EXPORTS = {
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['PARTS', 'partOf'],
-  vault: ['BAD_NAME', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'setVault', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
+  vault: ['BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'setVault', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
   quickadd: ['DOW_NAMES', 'DOW_CODES', 'MON_NAMES', 'dowIndex', 'nextDow', 'validDay', 'parseDayWord', 'DAY_RE', 'repeatRule', 'REPEAT_RE', 'understand', 'parseClock', 'whenValue', 'firstOccurrence', 'DOW_LONG', 'joinWords', 'ordinal', 'repeatWords', 'shortDay', 'halfWord', 'quickAddChips', 'quickAddPlan'],
 };
 let n = 0;
