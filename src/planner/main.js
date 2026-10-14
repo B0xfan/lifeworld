@@ -395,7 +395,7 @@ class A4PlannerPlugin extends Plugin {
     this.data = { ...DEFAULT_DATA, ...saved, collapsed: { ...(saved.collapsed || {}) }, made: { ...(saved.made || {}) } };
     this.registerView(VIEW_TYPE, (leaf) => new PlannerView(leaf, this));
     this.addRibbonIcon('calendar-days', 'Open Planner', () => this.openPlanner());
-    this.addCommand({ id: 'open', name: 'Open Planner', callback: () => this.openPlanner() });
+    this.addCommand({ id: 'open', name: 'Open planner', callback: () => this.openPlanner() });
   }
 
   onunload() { closeOpenPopovers(); }
@@ -406,7 +406,7 @@ class A4PlannerPlugin extends Plugin {
   openFind() {
     const pj = partOf(this.app, 'a4-projects');
     if (pj && typeof pj.openFind === 'function') { pj.openFind(); return true; }
-    new Notice('Find needs A4 Projects turned on.');
+    new Notice('Find needs the projects and tasks part turned on.');
     return false;
   }
 
@@ -579,7 +579,7 @@ class A4PlannerPlugin extends Plugin {
   // it when the task lands in that time's half of the day (the move rule).
   async createTask({ title, project, day, half, details, time }, items) {
     const api = this.tasksApi();
-    if (!api) { new Notice('Turn on A4 Projects to add tasks.'); return null; }
+    if (!api) { new Notice('Adding tasks needs the projects and tasks part turned on.'); return null; }
     const lane = day ? laneOf(items, day, half) : [];
     const order = orderForInsert(lane.map((x) => x.plannedOrder), lane.length);
     const data = { title: String(title).trim(), customFrontmatter: plannedFields(day, half, order) };
@@ -596,7 +596,7 @@ class A4PlannerPlugin extends Plugin {
   // the lane's untimed tasks, as Projects' laneOrders).
   async createTyped(text, project, items, today) {
     const api = this.tasksApi();
-    if (!api) { new Notice('Turn on A4 Projects to add tasks.'); return null; }
+    if (!api) { new Notice('Adding tasks needs the projects and tasks part turned on.'); return null; }
     const r = understand(text, today);
     if (!r.title) return null;
     const { input, lane } = quickAddPlan(r, today);
@@ -1235,7 +1235,7 @@ class PlannerView extends ItemView {
         await this.plugin.markEventMade(d.ev, today);
         new Notice(day ? `Task made for ${moveLabel(day, half, today)}` : 'Task made, in Unscheduled');
       } else if (toPool) {
-        if (await this.plugin.unscheduleTask(d.item)) new Notice('Back to Unscheduled');
+        if (await this.plugin.unscheduleTask(d.item)) new Notice('Back to unscheduled');
       } else {
         const res = await this.plugin.moveTask(d.item, day, half, d.at, this.items);
         if (res) this.plugin.movedNotice(d.item, day, half, res, () => this.scheduleRender());
@@ -1365,7 +1365,7 @@ class SchedulePopover {
       else {
         const u = h(el, 'button', 'a4pl-pop-q');
         h(u, 'span', null, 'Unschedule'); h(u, 'span', 'a4pl-pop-k', 'back to list');
-        u.addEventListener('click', () => this.act(async () => { if (await this.view.plugin.unscheduleTask(this.it)) new Notice('Back to Unscheduled'); }));
+        u.addEventListener('click', () => this.act(async () => { if (await this.view.plugin.unscheduleTask(this.it)) new Notice('Back to unscheduled'); }));
       }
     }
   }

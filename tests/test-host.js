@@ -112,6 +112,7 @@ const start = async (data) => {
   eq(Object.keys(parts), IDS, 'four parts, each under its old id');
   for (const id of IDS) eq(parts[id].manifest.dir, dir, `${id} sits in LifeWorld's folder`);
   eq(Object.keys(app.commands).sort(), IDS.map((id) => `${id}:open`).sort(), 'commands keep their old ids, no clash between parts');
+  ok(Object.values(app.commands).every((c) => c.name === "LifeWorld: Open"), 'every command shows as "LifeWorld: ..." (Obsidian prefixes the manifest name)');
   ok(app.tabs.length === 1 && app.tabs[0] === host.settingTab && app.tabs[0].plugin === host, 'one settings page, LifeWorld\'s; the parts add none of their own');
   eq(Object.keys(host.tabs), IDS, 'each part\'s own settings are kept for that page');
 

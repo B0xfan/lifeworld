@@ -457,7 +457,8 @@ if (VAULT) {
   eq(L.findMark('Check with Sam to log in', 'sam'), ['Check with ', 'Sam', ' to log in'], 'find: the matched letters are marked, case kept');
   eq([L.findMark('abc', 'x'), L.findMark('abc', 'a')], [null, null], 'find: no mark without a match or under two letters');
   const src = fs.readFileSync(SRC, 'utf8');
-  ok(/addCommand\(\{ id: 'find-task', name: 'Find a task', hotkeys: \[\{ modifiers: \['Mod', 'Shift'\], key: 'O' \}\], callback: \(\) => this\.openFind\(\) \}\)/.test(src), 'command "Find a task", Cmd/Ctrl+Shift+O');
+  ok(/addCommand\(\{ id: 'find-task', name: 'Find a task', callback: \(\) => this\.openFind\(\) \}\)/.test(src), 'command "Find a task" (same id, so a hotkey set for it still works)');
+  ok(!/hotkeys:/.test(src), 'no default hotkey (directory rule; the owner\'s own key is set in phase 3)');
   ok(/this\.shown = findTasks\(this\.tasks, query, this\.cfg, this\.limit\)/.test(src) && /this\.tasks = plugin\.engine\.collectTasks\(true\)/.test(src), 'Find window uses the Projects page search on every task');
   ok(/onChooseSuggestion\(t\) \{ this\.plugin\.openFile\(t\.path\); \}/.test(src), 'Enter opens the task note (its card) in a new tab');
   ok(/setPlaceholder\('Find a task or project…'\)/.test(src) && /'to open the task'/.test(src), 'Find window words as in the mockup');

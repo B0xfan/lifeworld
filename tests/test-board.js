@@ -95,7 +95,7 @@ global.document = { activeElement: null, querySelector: () => null };
 fake.Platform.isMobile = true;
 notices.length = 0;
 assert.strictEqual(plugin.prototype.addProject.call({ app: { plugins: { plugins: {} } } }), false);
-assert.ok(/Mac/.test(notices[0]) && !/turned on/.test(notices[0]), 'phone: no "turn on the plugin" advice');
+assert.ok(/on your computer/.test(notices[0]) && !/turned on/.test(notices[0]), 'phone: no "turn on the plugin" advice');
 fake.Platform.isMobile = false;
 
 (async () => {

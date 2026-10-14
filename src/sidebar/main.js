@@ -683,7 +683,7 @@ class A4SidebarView extends ItemView {
   run(id) {
     if (id !== 'switcher:open') this.clicked = null;
     if (this.hasCommand(id)) { this.app.commands.executeCommandById(id); this.markActive(); if (id !== 'switcher:open') this.closeDrawer(); return true; }
-    new Notice('That part of A4 is not turned on.');
+    new Notice('That part is not turned on.');
     return false;
   }
 
@@ -1104,7 +1104,7 @@ class A4SidebarView extends ItemView {
   revealInFiles(f) {
     const fe = this.app.internalPlugins && this.app.internalPlugins.getPluginById && this.app.internalPlugins.getPluginById('file-explorer');
     if (fe && fe.instance && fe.instance.revealInFolder) fe.instance.revealInFolder(f);
-    else new Notice('Open the Files tab to find it.');
+    else new Notice('Open the files tab to find it.');
   }
 
   menuFor(f, e, opts) {
@@ -1122,7 +1122,7 @@ class A4SidebarView extends ItemView {
       menu.addItem((i) => i.setTitle('Rename...').setIcon('pencil').setSection('action').onClick(() => new RenameModal(this.app, f).open()));
       menu.addItem((i) => i.setTitle('Delete').setIcon('trash').setSection('danger').onClick(() => this.app.fileManager.promptForDeletion(f)));
     }
-    menu.addItem((i) => i.setTitle('Show in Files').setIcon('folder-open').setSection('view').onClick(() => this.revealInFiles(f)));
+    menu.addItem((i) => i.setTitle('Show in files').setIcon('folder-open').setSection('view').onClick(() => this.revealInFiles(f)));
     this.app.workspace.trigger('file-menu', menu, f, 'a4-sidebar', this.leaf);
     if (e instanceof MouseEvent) menu.showAtMouseEvent(e); else menu.showAtPosition({ x: e.x, y: e.y });
   }
@@ -1286,7 +1286,7 @@ class FilesChrome {
     };
     // Terminal is a desktop-only plugin; no dead button on the phone.
     if (!IS_MOBILE) add('a4sb-top-terminal', 'terminal', 'Open terminal', () => {
-      if (!this.app.commands.executeCommandById('terminal:open-terminal.integrated.root')) new Notice('Turn on the Terminal plugin to use this button.');
+      if (!this.app.commands.executeCommandById('terminal:open-terminal.integrated.root')) new Notice('Turn on the terminal plugin to use this button.');
     });
     add('a4sb-top-settings', 'settings', 'Settings', () => this.app.setting.open());
   }
@@ -1325,15 +1325,15 @@ class A4SidebarPlugin extends Plugin {
       this.saveState();
     }));
     this.addRibbonIcon('layout-list', 'Open the A4 sidebar', () => this.activate());
-    this.addCommand({ id: 'open', name: 'Open the A4 sidebar', callback: () => this.activate() });
+    this.addCommand({ id: 'open', name: 'Open the sidebar', callback: () => this.activate() });
     // The toolbar commands (0.7.0): ours, so the buttons work with ICOR Connect off.
     for (const [id, c] of Object.entries(CORE_TOOLS)) {
       this.addCommand({ id, name: c.name, callback: () => {
         if (!this.app.commands.executeCommandById(c.core)) new Notice(`Turn on the ${c.plugin} core plugin in Settings to use this.`);
       } });
     }
-    this.addCommand({ id: 'new-scratchpad-canvas', name: 'New canvas in the Daily Scratchpad', callback: () => this.newCanvas() });
-    this.addCommand({ id: 'open-team-roster', name: 'Open the AI Team roster', callback: () => this.openRoster() });
+    this.addCommand({ id: 'new-scratchpad-canvas', name: 'New canvas in the daily scratchpad', callback: () => this.newCanvas() });
+    this.addCommand({ id: 'open-team-roster', name: 'Open the AI team roster', callback: () => this.openRoster() });
     this.chrome = new FilesChrome(this);
     this.app.workspace.onLayoutReady(async () => {
       // First run only: add the tab next to Files and show it. After that
@@ -1408,7 +1408,7 @@ class A4SidebarPlugin extends Plugin {
 
   runTool(id) {
     if (this.app.commands.executeCommandById(id)) return true;
-    new Notice('That part of A4 is not turned on.');
+    new Notice('That part is not turned on.');
     return false;
   }
 
@@ -1459,7 +1459,7 @@ class A4SidebarPlugin extends Plugin {
 
   async openRoster(e) {
     const f = this.app.vault.getAbstractFileByPath(ROSTER);
-    if (!(f instanceof TFile)) { new Notice('The AI Team roster note is missing.'); return; }
+    if (!(f instanceof TFile)) { new Notice('The AI team roster note is missing.'); return; }
     await this.app.workspace.getLeaf(e && Keymap.isModEvent(e)).openFile(f);
     if (IS_MOBILE) { const ls = this.app.workspace.leftSplit; if (ls && ls.collapse && !ls.collapsed) ls.collapse(); }
   }
@@ -1493,7 +1493,7 @@ class NewestFirstListModal extends Modal {
         this.draw();
       }));
     }
-    new Setting(contentEl).addButton((b) => b.setButtonText('+ Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
+    new Setting(contentEl).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
       await this.plugin.updateSort({ ...this.plugin.state.sort, newestFirstIn: this.plugin.state.sort.newestFirstIn.concat(path) });
       this.draw();
     }, new Set(this.plugin.state.sort.newestFirstIn)).open()));
@@ -1509,7 +1509,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
     el.addClass('a4sb-settings');
     const sort = () => this.plugin.state.sort;
     const save = async (patch) => { await this.plugin.updateSort({ ...sort(), ...patch }); };
-    new Setting(el).setName('Sort order').setHeading();
+    // No own heading: LifeWorld's page puts these under "Sidebar" (decided 2026-10-13).
     new Setting(el).setName('Dates').setDesc('Notes whose name starts with a date are sorted by the real date and time.')
       .addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: v })));
     const nf = sort().newestFirstIn;
@@ -1534,7 +1534,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
       });
       s.addExtraButton((b) => b.setIcon('x').setTooltip('Remove').onClick(async () => { await this.plugin.setFolderSort(path, null); this.display(); }));
     }
-    new Setting(el).addButton((b) => b.setButtonText('+ Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
+    new Setting(el).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
       await this.plugin.setFolderSort(path, 'az');
       this.display();
     }, new Set(Object.keys(sort().perFolder))).open()));

@@ -1925,7 +1925,7 @@ class IdeaModal extends Modal {
     const title = field('Title', 'Weekly beach cleanup group');
     const line = field('One line', 'What it is, in a sentence');
     const why = field('Why it is worth keeping', 'Not a project yet: no date or helpers lined up');
-    const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: 'Work or Personal' });
+    const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: 'Work or personal' });
     const sel = w.createEl('select', { cls: 'dropdown' }); sel.setAttr('aria-label', 'Work or Personal');
     for (const [v, l] of [['', 'Choose…'], ['work', 'Work'], ['personal', 'Personal']]) sel.createEl('option', { text: l, value: v });
     sel.value = this.area === 'work' || this.area === 'personal' ? this.area : '';
@@ -1933,7 +1933,7 @@ class IdeaModal extends Modal {
     const ok = async () => {
       if (busy) return;
       if (!title.value.trim()) { new Notice('Give the idea a title.'); title.focus(); return; }
-      if (!sel.value) { new Notice('Choose Work or Personal.'); sel.focus(); return; }
+      if (!sel.value) { new Notice('Choose work or personal.'); sel.focus(); return; }
       busy = true;
       try { if (await this.save({ title: title.value, line: line.value, why: why.value, sphere: sel.value })) this.close(); }
       finally { busy = false; }
@@ -1956,14 +1956,14 @@ class A4ProjectsPlugin extends Plugin {
     this.register(() => this.toast.destroy());
     this.registerView(VIEW_TYPE, (leaf) => new ProjectsView(leaf, this));
     this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview' }));
-    this.addCommand({ id: 'open', name: 'Open Projects', callback: () => this.openProjects({ page: 'overview' }) });
+    this.addCommand({ id: 'open', name: 'Open projects', callback: () => this.openProjects({ page: 'overview' }) });
     this.addCommand({ id: 'open-work', name: 'Open work projects', callback: () => this.openProjects({ page: 'overview', focus: 'work' }) });
     this.addCommand({ id: 'open-personal', name: 'Open personal projects', callback: () => this.openProjects({ page: 'overview', focus: 'personal' }) });
-    this.addCommand({ id: 'open-inbox', name: 'Open the task Inbox', callback: () => this.openProjects({ page: 'inbox' }) });
+    this.addCommand({ id: 'open-inbox', name: 'Open the task inbox', callback: () => this.openProjects({ page: 'inbox' }) });
     this.addCommand({ id: 'move-overdue-to-today', name: 'Move all overdue tasks to today', callback: () => this.moveOverdueToToday(null) });
-    this.addCommand({ id: 'add-task', name: 'Add a task to the Inbox', callback: () => this.openProjects({ page: 'inbox', focusAdd: true }) });
+    this.addCommand({ id: 'add-task', name: 'Add a task to the inbox', callback: () => this.openProjects({ page: 'inbox', focusAdd: true }) });
     // Cmd/Ctrl+Shift+O: free in a default Obsidian and its plugins (checked 2026-10-06); changeable in Settings › Hotkeys.
-    this.addCommand({ id: 'find-task', name: 'Find a task', hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'O' }], callback: () => this.openFind() });
+    this.addCommand({ id: 'find-task', name: 'Find a task', callback: () => this.openFind() });
     this.addSettingTab(new ProjectsSettingTab(this.app, this));
     this.cards = new TaskCardManager(this);
     this.taskLinks = new TaskLinks(this);
@@ -2158,7 +2158,7 @@ class A4ProjectsPlugin extends Plugin {
   }
   run(id) { const c = this.app.commands; if (c && c.commands && c.commands[id]) { c.executeCommandById(id); return true; } return false; }
   openPlanner(projectKey) {
-    if (!this.run(PLANNER_COMMAND)) { new Notice('The A4 Planner is not turned on.'); return; }
+    if (!this.run(PLANNER_COMMAND)) { new Notice('The planner is not turned on.'); return; }
     if (!projectKey) return;
     window.setTimeout(() => {
       const leaf = this.app.workspace.getLeavesOfType('a4-planner')[0];
@@ -2168,7 +2168,7 @@ class A4ProjectsPlugin extends Plugin {
   }
   // Public (A4 Today, A4 Planner, the "Find a task" command): the Find window.
   openFind() { const m = new FindTaskModal(this); m.open(); return m; }
-  openToday() { if (!this.run(TODAY_COMMAND)) new Notice('A4 Today is not turned on.'); }
+  openToday() { if (!this.run(TODAY_COMMAND)) new Notice('The today page is not turned on.'); }
   openFile(path, newTab) { const f = this.engine.file(path); if (f) this.app.workspace.getLeaf(newTab === false ? false : 'tab').openFile(f); }
 
   /* ---- shared actions ---------------------------------------------------- */
@@ -2414,8 +2414,8 @@ class A4ProjectsPlugin extends Plugin {
   addProject() {
     const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
     if (qc && typeof qc.openCreate === 'function' && qc.openCreate('project')) return true;
-    if (Platform.isMobile) { new Notice('Add new projects on the Mac: the New Project form only works there.'); return false; } // Quick Create is desktop-only
-    new Notice('The New Project form needs the A4 Quick Create plugin turned on.');
+    if (Platform.isMobile) { new Notice('Add new projects on your computer: the new project form only works there.'); return false; } // Quick Create is desktop-only
+    new Notice('The new project form needs the A4 Quick Create plugin turned on.');
     return false;
   }
   // "+ Add idea" (spec 11): a short form, then one new project note with status idea.
@@ -2591,7 +2591,7 @@ function openDatePicker(anchor, o) {
     };
     draw();
     const foot = el(box, 'div', 'a4pj-dp-foot');
-    const ty = el(foot, 'input', 'a4pj-input'); ty.type = 'text'; ty.placeholder = 'or type: friday, oct 20'; ty.setAttr('aria-label', 'Type a date');
+    const ty = el(foot, 'input', 'a4pj-input'); ty.type = 'text'; ty.placeholder = 'Or type: friday, oct 20'; ty.setAttr('aria-label', 'Type a date');
     ty.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
@@ -3808,7 +3808,7 @@ class ProjectsView extends ItemView {
     }
     const add = el(box, 'div', 'a4pj-step-add');
     el(add, 'span', 'a4pj-plus', '+');
-    const inp = el(add, 'input'); inp.type = 'text'; inp.placeholder = 'add a step, press Enter'; inp.dataset.focus = `step:${t.path}`;
+    const inp = el(add, 'input'); inp.type = 'text'; inp.placeholder = 'Add a step, press enter'; inp.dataset.focus = `step:${t.path}`;
     inp.addEventListener('keydown', async (e) => {
       if (e.key !== 'Enter' || e.isComposing || !inp.value.trim()) return;
       e.preventDefault();
@@ -4084,7 +4084,7 @@ class TaskCardManager {
     cr.appendText(inArchive ? ' / Task (archived)' : ' / Task');
     const acts = el(bar, 'div', 'a4pj-actions');
     const pl = el(acts, 'button', 'a4pj-btn', 'Open in Planner'); pl.addEventListener('click', () => plugin.openPlanner(null));
-    const td = el(acts, 'button', 'a4pj-btn', 'Show on Today'); td.addEventListener('click', () => { if (t.plannedDay !== today && !(t.recurrenceRaw && taskOnDay(t, today))) new Notice('Not on today yet: use When to put it there.'); plugin.openToday(); });
+    const td = el(acts, 'button', 'a4pj-btn', 'Show on Today'); td.addEventListener('click', () => { if (t.plannedDay !== today && !(t.recurrenceRaw && taskOnDay(t, today))) new Notice('Not on today yet: choose a day to put it there.'); plugin.openToday(); });
 
     // tick + name
     const top = el(card, 'div', 'a4pj-card-top');
@@ -4388,7 +4388,7 @@ class TaskCardManager {
         b.addEventListener('click', () => { pop.close(); if (current !== k) act(() => engine.setRepeat(t.path, k), k ? `Repeats: ${lab.toLowerCase()}` : "Doesn't repeat"); });
       }
       el(box, 'div', 'a4pj-pop-sep');
-      const ty = el(box, 'input', 'a4pj-input a4pj-find'); ty.type = 'text'; ty.placeholder = 'or type: every other friday';
+      const ty = el(box, 'input', 'a4pj-input a4pj-find'); ty.type = 'text'; ty.placeholder = 'Or type: every other friday';
       ty.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' || !ty.value.trim()) return;
         e.preventDefault();
@@ -4414,7 +4414,7 @@ class ProjectsSettingTab extends PluginSettingTab {
     const s = this.plugin.settings;
     new Setting(containerEl)
       .setName('Task source')
-      .setDesc('Where ticks, new tasks and repeats are written. Built-in writes your task notes itself, exactly as TaskNotes does, so the notes look the same either way. A4 Today and the A4 Planner follow this choice too.')
+      .setDesc('Where ticks, new tasks and repeats are written. Built-in writes your task notes itself, exactly as TaskNotes does, so the notes look the same either way. The today page and the planner follow this choice too.')
       .addDropdown((d) => {
         for (const x of SOURCES) d.addOption(x.id, x.name);
         d.setValue(s.source);
@@ -4427,8 +4427,8 @@ class ProjectsSettingTab extends PluginSettingTab {
     const src = SOURCES.find((x) => x.id === s.source);
     containerEl.createDiv({ cls: 'setting-item-description a4pj-set-note', text: src ? src.desc : '' });
     new Setting(containerEl)
-      .setName("Hide Obsidian's Properties list on task notes")
-      .setDesc('The task card shows and edits the same fields. "All properties" in the card opens the list for anything unusual. Nothing in the notes changes either way.')
+      .setName("Hide Obsidian's properties list on task notes")
+      .setDesc('The task card shows and edits the same fields, and opens the full list for anything unusual. Nothing in the notes changes either way.')
       .addToggle((t) => t.setValue(s.hideProps).onChange(async (v) => { s.hideProps = v; await this.plugin.save(); this.plugin.cards.refreshAll(); }));
     const q = s.archiveQueue.length;
     containerEl.createDiv({ cls: 'setting-item-description a4pj-set-note', text: `Done tasks move to the archive folder five minutes after they are ticked, as with TaskNotes${q ? ` (${q} waiting now)` : ''}.` });

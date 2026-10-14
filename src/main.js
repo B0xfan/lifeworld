@@ -72,7 +72,9 @@ class LifeWorldPlugin extends Plugin {
   async startPart([manifest, Part]) {
     if (this.gone) return;
     const id = manifest.id;
-    const part = new Part(this.app, { ...manifest, dir: this.manifest.dir });
+    // Old id (commands, tabs, ribbon buttons and anyone's hotkeys keep theirs); LifeWorld's name, so
+    // Obsidian shows every command as "LifeWorld: ..." (it prefixes manifest.name, 1.14.4).
+    const part = new Part(this.app, { ...manifest, name: this.manifest.name, dir: this.manifest.dir });
     part.loadData = async () => copy(this.store[id]);
     part.saveData = (data) => { this.store[id] = copy(data); return this.writeStore(); };
     // Kept for LifeWorld's one settings page instead of a page of its own.

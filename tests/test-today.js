@@ -594,7 +594,7 @@ async function writeBack() {
   eq(ran, ['a4-planner:open'], 'planner button opens the A4 Planner');
   ran.length = 0;
   Plugin.prototype.openPlanner.call(withCmds(['a4-daily-planner:open-board']));
-  eq([ran, notices], [[], ['The A4 Planner is not turned on.']], 'old Daily Planner is never a fallback');
+  eq([ran, notices], [[], ['The planner is not turned on.']], 'old Daily Planner is never a fallback');
   notices.length = 0;
   ok(!/a4-daily-planner/.test(require('fs').readFileSync(SRC, 'utf8').replace(/\/\/.*$/gm, '')), 'no old Daily Planner reference in code');
 }
@@ -657,7 +657,7 @@ function nop2() {}
   const withPj = (pj) => Object.assign(Object.create(Plugin.prototype), { app: { plugins: { plugins: pj ? { 'a4-projects': pj } : {} } } });
   notices.length = 0;
   ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find' && notices.length === 0, 'Find opens A4 Projects\' Find window');
-  ok(withPj(null).openFind() === false && notices[0] === 'Find needs A4 Projects turned on.', 'Find without A4 Projects: a plain notice, no error');
+  ok(withPj(null).openFind() === false && notices[0] === 'Find needs the projects and tasks part turned on.', 'Find without A4 Projects: a plain notice, no error');
   const src = require('fs').readFileSync(SRC, 'utf8');
   const head = src.slice(src.indexOf('  buildShell() {'), src.indexOf("    const edit = head.createDiv({ cls: 'a4t-edit-actions' });"));
   ok(head.indexOf("findBtn.appendText('Find')") > 0 && head.indexOf("findBtn.appendText('Find')") < head.indexOf("editBtn.appendText('Edit layout')"), 'Find button sits just before Edit layout');

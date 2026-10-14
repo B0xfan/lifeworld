@@ -896,7 +896,7 @@ class A4TodayPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE, (leaf) => new TodayView(leaf, this));
     this.addRibbonIcon('sun', 'Open Today', () => this.openToday());
-    this.addCommand({ id: 'open', name: 'Open Today', callback: () => this.openToday() });
+    this.addCommand({ id: 'open', name: 'Open today', callback: () => this.openToday() });
     this.addCommand({ id: 'capture', name: "Quick capture to today's scratchpad", callback: () => new CaptureModal(this.app, this, '').open() });
     // Opens the capture box pre-filled; the user's Enter does the saving.
     this.registerObsidianProtocolHandler('a4-today-capture', (params) => {
@@ -1069,14 +1069,14 @@ class A4TodayPlugin extends Plugin {
   openFind() {
     const pj = partOf(this.app, 'a4-projects');
     if (pj && typeof pj.openFind === 'function') { pj.openFind(); return true; }
-    new Notice('Find needs A4 Projects turned on.');
+    new Notice('Find needs the projects and tasks part turned on.');
     return false;
   }
 
   openPlanner() {
     const cmds = this.app.commands;
     if (cmds && cmds.commands && cmds.commands[PLANNER_COMMAND]) { cmds.executeCommandById(PLANNER_COMMAND); return; }
-    new Notice('The A4 Planner is not turned on.');
+    new Notice('The planner is not turned on.');
   }
 
   openMoodCheckin() {
@@ -1117,7 +1117,7 @@ class A4TodayPlugin extends Plugin {
       if (typeof app.updateTheme === 'function') app.updateTheme();
       return true;
     }
-    new Notice('Change the color scheme in Settings › Appearance.');
+    new Notice('Change the color scheme in settings › appearance.');
     return false;
   }
 
@@ -1331,7 +1331,7 @@ class TodaySettingTab extends PluginSettingTab {
       paintPreview();
     };
     new Setting(containerEl)
-      .setName('Open Today when Obsidian starts')
+      .setName('Open the today page when Obsidian starts')
       .setDesc('Turn off to reopen whatever you had open last.')
       .addToggle((t) => {
         t.setValue(this.plugin.openOnStartup);
@@ -1340,7 +1340,7 @@ class TodaySettingTab extends PluginSettingTab {
       .then((s) => s.settingEl.addClass('a4t-startup'));
     new Setting(containerEl)
       .setName('Accent colour')
-      .setDesc('Colour of the underline under the greeting and the handwritten lines. "Follow Obsidian accent" uses the accent from Settings › Appearance, shaded so it stays readable.')
+      .setDesc('Colour of the underline under the greeting and the handwritten lines. Following the Obsidian accent uses the accent from settings › appearance, shaded so it stays readable.')
       .addDropdown((d) => {
         ACCENTS.forEach((a) => d.addOption(a.id, a.name));
         d.setValue(look.accent);
@@ -1401,7 +1401,7 @@ class TodaySettingTab extends PluginSettingTab {
     head.addButton((b) => {
       b.setButtonText(this.refreshing ? 'Refreshing…' : 'Refresh list').setCta();
       b.buttonEl.addClass('a4t-cal-refresh');
-      if (!desktop) { b.setDisabled(true); b.setTooltip('Refresh runs on the Mac'); }
+      if (!desktop) { b.setDisabled(true); b.setTooltip('Refresh runs on macOS'); }
       if (this.refreshing) b.setDisabled(true);
       b.onClick(async () => {
         this.refreshing = true; this.calStatus = ''; this.renderCalendars();
