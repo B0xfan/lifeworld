@@ -87,7 +87,6 @@ const VIEW_TYPE = 'a4-today';
 const USER_NAME = LW_LOCAL_USER_NAME; // from local.json at build time (never committed); '' without it
 const WEATHER_NOTE = '02 Planner/Weather Today.md';
 const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
-const HABITS_FOLDER = '04 Inner World/My Life/Habits';
 const MOOD_FOLDER = '04 Inner World/My Life/Mood';
 // Calendar sync, run from the Mac's Settings › Calendars (same interpreter and
 // script the launchd job com.audrey.a4-calendar-sync uses; its own lock stops
@@ -96,10 +95,6 @@ const SYNC_PYTHON = LW_LOCAL_SYNC_PYTHON; // from local.json at build time; '' =
 const SYNC_SCRIPT = 'Scripts/sync-calendar.py';
 const SYNC_LOG = 'Scripts/logs/calendar-sync.log';
 const SYNC_AFTER_CHANGE_MS = 2500;
-const PROJECTS_FOLDER = '04 Inner World/My Life/Projects';
-const JOURNAL_FOLDER = '04 Inner World/Journal';
-const SCRATCH_FOLDER = '00 Daily Scratchpad';
-const SCRATCH_TEMPLATE = '06 AI Team/AI Team Knowledge/Templates/Daily Scratchpad.md';
 const QUICK_NOTES_HEADING = '## Quick notes';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
 const MOOD_COMMAND = 'a4-health:new-mood-checkin';
@@ -109,7 +104,8 @@ const CALENDAR_DAYS_AHEAD = 7;
 const JOURNAL_EXCERPT_CHARS = 260;
 const CAPTURE_MAX_CHARS = 2000;
 const NARROW_WIDTH = 720;                   // one column + up/down arrows below this
-const WATCHED_PREFIXES = ['02 Planner/', HABITS_FOLDER + '/', MOOD_FOLDER + '/', PROJECTS_FOLDER + '/', JOURNAL_FOLDER + '/'];
+// What Today redraws for: '02 Planner/' holds the weather and calendar notes (settings in section 5).
+const watchedPrefixes = () => ['02 Planner/', vaultFolders.tasks + '/', vaultFolders.archive + '/', vaultFolders.habits + '/', MOOD_FOLDER + '/', vaultFolders.projects + '/', vaultFolders.journal + '/'];
 const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · Undo" line, a few seconds
 
 /* ========================================================================== *
@@ -122,8 +118,9 @@ const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · 
 const { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } = require('../core/dates');
 const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
-const { TASKS_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
+const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
+const { vaultFolders, propNames, dailyNotes, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
 
 /* ---- tasks ---------------------------------------------------------------- */
 
@@ -217,7 +214,7 @@ async function writeWithUndo(app, file, fn) {
   let before = {};
   await app.fileManager.processFrontMatter(file, (fm) => {
     const copy = JSON.parse(JSON.stringify(fm || {}));
-    fn(fm);
+    writable(fm, fn);
     before = {};
     for (const k of new Set([...Object.keys(copy), ...Object.keys(fm)])) {
       if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
@@ -424,8 +421,12 @@ function toggleHabitLog(text, day) {
 
 /* ---- capture --------------------------------------------------------------- */
 
-function scratchPathFor(d) {
-  return `${SCRATCH_FOLDER}/${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${d.getFullYear()}.md`;
+// Today's daily note, as Obsidian's own Daily notes setting names it (folder and date format).
+// `fmt` formats a date the moment way (Obsidian's moment in the plugin, the small one in tests).
+function scratchNameFor(d, dn, fmt) { return (fmt || formatDateTokens)(d, (dn || dailyNotes(null)).format); }
+function scratchPathFor(d, dn, fmt) {
+  const folder = (dn || dailyNotes(null)).folder;
+  return `${folder ? folder + '/' : ''}${scratchNameFor(d, dn, fmt)}.md`;
 }
 function cleanCapture(text) {
   return String(text == null ? '' : text).replace(/\s+/g, ' ').trim().slice(0, CAPTURE_MAX_CHARS);
@@ -451,14 +452,17 @@ function formatDateTokens(d, fmt) {
   const map = { YYYY: String(d.getFullYear()), MM: pad2(d.getMonth() + 1), DD: pad2(d.getDate()), HH: pad2(d.getHours()), mm: pad2(d.getMinutes()) };
   return fmt.replace(/YYYY|MM|DD|HH|mm/g, (t) => map[t]);
 }
-function renderTemplate(tpl, d, fmt) {
+// Obsidian's moment, when there is one (not in the logic tests).
+function momentFormat() { return obsidian.moment ? (d, p) => obsidian.moment(d).format(p) : null; }
+function renderTemplate(tpl, d, fmt, title) {
   const f = fmt || ((date, pattern) => formatDateTokens(date, pattern));
+  const name = title == null ? scratchNameFor(d, null, f) : title;
   return String(tpl)
     .replace(/\{\{\s*date\s*:\s*([^}]+?)\s*\}\}/g, (_, p) => f(d, p))
     .replace(/\{\{\s*time\s*:\s*([^}]+?)\s*\}\}/g, (_, p) => f(d, p))
     .replace(/\{\{\s*date\s*\}\}/g, f(d, 'YYYY-MM-DD'))
     .replace(/\{\{\s*time\s*\}\}/g, f(d, 'HH:mm'))
-    .replace(/\{\{\s*title\s*\}\}/g, `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${d.getFullYear()}`);
+    .replace(/\{\{\s*title\s*\}\}/g, name);
 }
 
 // Insert `line` at the end of the bullet list that follows '## Quick notes'.
@@ -540,11 +544,16 @@ function markerRanges(text) {
   return out;
 }
 
-function isScratchpadPath(p) { return typeof p === 'string' && p.startsWith(`${SCRATCH_FOLDER}/`) && p.endsWith('.md'); }
+// A note in the daily notes folder. shortcut: with the daily notes at the vault's top, every note
+// there counts (the markers it hides only appear in daily notes); upgrade if that ever misfires.
+function isScratchpadPath(p, dn) {
+  const folder = (dn || dailyNotes(null)).folder;
+  return typeof p === 'string' && p.endsWith('.md') && (folder ? p.startsWith(`${folder}/`) : !p.includes('/'));
+}
 
 // The CodeMirror 6 extension. Built lazily: '@codemirror/*' only exist inside
 // Obsidian (the logic tests load this file in plain Node).
-function buildMarkerHider() {
+function buildMarkerHider(app) {
   const { StateField, RangeSetBuilder } = require('@codemirror/state');
   const { Decoration, EditorView } = require('@codemirror/view');
   const { editorInfoField, editorLivePreviewField } = obsidian;
@@ -553,7 +562,7 @@ function buildMarkerHider() {
   const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
   const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch { return false; } };
   const compute = (state) => {
-    if (!isLive(state) || !isScratchpadPath(pathOf(state))) return Decoration.none;
+    if (!isLive(state) || !isScratchpadPath(pathOf(state), dailyNotes(app))) return Decoration.none;
     const text = state.doc.toString();
     if (!text.includes('<!--')) return Decoration.none;
     const sel = state.selection.ranges;
@@ -892,7 +901,7 @@ class A4TodayPlugin extends Plugin {
     this.registerEvent(this.app.workspace.on('css-change', () => this.applyLook()));
 
     // Display-only: hide the Places/stay HTML-comment markers in Live Preview.
-    try { this.registerEditorExtension(buildMarkerHider()); } catch (e) { console.warn('A4 Today: marker hiding unavailable', e); }
+    try { this.registerEditorExtension(buildMarkerHider(this.app)); } catch (e) { console.warn('A4 Today: marker hiding unavailable', e); }
 
     this.registerView(VIEW_TYPE, (leaf) => new TodayView(leaf, this));
     this.addRibbonIcon('sun', 'Open Today', () => this.openToday());
@@ -1164,7 +1173,7 @@ class A4TodayPlugin extends Plugin {
     }
     // Fallback without A4 Projects' engine: the same fields the A4 Daily Planner writes.
     let nowDone = !wasDone;
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => {
       const stamp = new Date().toISOString();
       if (item.recurrenceRaw) {
         const list = asList(fm.complete_instances).map(toDayStr).filter(Boolean);
@@ -1180,7 +1189,7 @@ class A4TodayPlugin extends Plugin {
         fm.completedDate = dayOf(new Date());
       }
       fm.dateModified = stamp;
-    });
+    }));
     return nowDone;
   }
 
@@ -1199,9 +1208,9 @@ class A4TodayPlugin extends Plugin {
       try {
         await this.app.fileManager.processFrontMatter(file, (fm) => {
           const copy = JSON.parse(JSON.stringify(fm || {}));
-          if (!applyOverdueMove(fm, day, step.order, completed)) return;
+          if (!writable(fm, (v) => applyOverdueMove(v, day, step.order, completed))) return;
           before = {};
-          for (const k of ['due', 'planned_order']) {
+          for (const k of [propNames.due, propNames.planned_order]) {
             before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
           }
         });
@@ -1242,13 +1251,14 @@ class A4TodayPlugin extends Plugin {
     const text = cleanCapture(rawText);
     if (!text) return null;
     const now = new Date();
-    const path = scratchPathFor(now);
+    const dn = dailyNotes(this.app);
+    const path = scratchPathFor(now, dn, momentFormat());
     const line = captureLine(now, text);
     let file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) {
-      const content = insertQuickNote(await this.newScratchpadContent(now), line);
+      const content = insertQuickNote(await this.newScratchpadContent(now, dn), line);
       try {
-        if (!this.app.vault.getAbstractFileByPath(SCRATCH_FOLDER)) await this.app.vault.createFolder(SCRATCH_FOLDER);
+        if (dn.folder && !this.app.vault.getAbstractFileByPath(dn.folder)) await this.app.vault.createFolder(dn.folder);
         await this.app.vault.create(path, content);
         return path;
       } catch (e) {
@@ -1260,11 +1270,13 @@ class A4TodayPlugin extends Plugin {
     return path;
   }
 
-  async newScratchpadContent(now) {
-    const tpl = this.app.vault.getAbstractFileByPath(SCRATCH_TEMPLATE);
-    const fmt = obsidian.moment ? (d, p) => obsidian.moment(d).format(p) : null;
+  async newScratchpadContent(now, dn) {
+    const d = dn || dailyNotes(this.app);
+    // Obsidian stores the template without '.md'.
+    const tpl = d.template ? this.app.vault.getAbstractFileByPath(/\.md$/i.test(d.template) ? d.template : `${d.template}.md`) : null;
+    const fmt = momentFormat();
     if (tpl instanceof TFile) {
-      try { return renderTemplate(await this.app.vault.read(tpl), now, fmt); } catch { /* fall through */ }
+      try { return renderTemplate(await this.app.vault.read(tpl), now, fmt, scratchNameFor(now, d, fmt)); } catch { /* fall through */ }
     }
     return `---\ntype: scratchpad\ndate: ${dayOf(now)}\n---\n`;
   }
@@ -1507,7 +1519,7 @@ class TodayView extends ItemView {
     this.panel.hidden = true;
     this.buildShell();
 
-    const onChange = (file) => { if (file && typeof file.path === 'string' && WATCHED_PREFIXES.some((p) => file.path.startsWith(p))) this.scheduleRefresh(); };
+    const onChange = (file) => { if (file && typeof file.path === 'string' && watchedPrefixes().some((p) => file.path.startsWith(p))) this.scheduleRefresh(); };
     this.registerEvent(this.app.metadataCache.on('changed', onChange));
     this.registerEvent(this.app.vault.on('create', onChange));
     this.registerEvent(this.app.vault.on('delete', onChange));
@@ -1560,7 +1572,7 @@ class TodayView extends ItemView {
     // Tasks
     const items = [];
     const seenPaths = new Set();
-    const root = app.vault.getAbstractFileByPath(TASKS_FOLDER);
+    const root = app.vault.getAbstractFileByPath(vaultFolders.tasks);
     const walk = (folder) => {
       for (const c of folder.children || []) {
         if (c instanceof TFolder) walk(c);
@@ -1572,8 +1584,9 @@ class TodayView extends ItemView {
             if (prev) items.push(prev);
             continue;
           }
-          const it = taskFromFrontmatter(cache.frontmatter, c.path, c.basename);
-          if (it) it.projectLink = asList(cache.frontmatter.projects)[0] || null; // the label shows the name; the link finds the page
+          const fm = readable(cache.frontmatter);
+          const it = taskFromFrontmatter(fm, c.path, c.basename);
+          if (it) it.projectLink = asList(fm.projects)[0] || null; // the label shows the name; the link finds the page
           if (it) { items.push(it); this.lastItems.set(c.path, it); } else this.lastItems.delete(c.path);
         }
       }
@@ -1610,7 +1623,7 @@ class TodayView extends ItemView {
     const journalDays = new Set();
     let latest = null;
     for (const f of app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(JOURNAL_FOLDER + '/')) continue;
+      if (!f.path.startsWith(vaultFolders.journal + '/')) continue;
       const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
       if (!fm || fm.type !== 'journal') continue;
       const d = toDayStr(fm.date);
@@ -1630,7 +1643,7 @@ class TodayView extends ItemView {
 
     // Habits: active daily habit notes, same filter as the Planner and A4 Habits
     const habits = [];
-    const hf = app.vault.getAbstractFileByPath(HABITS_FOLDER);
+    const hf = app.vault.getAbstractFileByPath(vaultFolders.habits);
     if (hf instanceof TFolder) {
       for (const f of hf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
@@ -1662,7 +1675,7 @@ class TodayView extends ItemView {
 
     // Active projects
     const projects = [];
-    const pf = app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const pf = app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (pf instanceof TFolder) {
       for (const f of pf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
@@ -2178,7 +2191,7 @@ class TodayView extends ItemView {
         for (let k = 0; k < others.length; k++) {
           if (others[k].plannedOrder === plan.others[k]) continue;
           const f = this.app.vault.getAbstractFileByPath(others[k].path);
-          if (f instanceof TFile) await this.app.fileManager.processFrontMatter(f, (fm) => { fm.planned_order = plan.others[k]; });
+          if (f instanceof TFile) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = plan.others[k]; }));
         }
       }
       const where = target !== this.data.today ? 'Moved to tomorrow' : `Moved to ${half === 'pm' ? 'Afternoon' : 'Morning'}`;

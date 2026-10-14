@@ -91,7 +91,6 @@ const Modal = obsidian.Modal || class {};
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-projects';
-const PROJECTS_FOLDER = '04 Inner World/My Life/Projects';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
 const TODAY_COMMAND = 'a4-today:open';
 const UNDO_MS = 5000;
@@ -119,7 +118,6 @@ const TASK_BOARD_TITLE = { projects: 'What needs doing', activity: 'What changed
  * newest first, at most ACTIVITY_CAP; the Activity tab reads it as is. */
 const ACTIVITY_CAP = 200;
 function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(list) ? list : [])].slice(0, ACTIVITY_CAP); }
-const GOALS_FOLDER = '04 Inner World/My Life/Goals';
 
 /* ========================================================================== *
  * SHARED with a4-today and a4-planner (verbatim copies; do not edit here
@@ -132,8 +130,9 @@ const { pad2, dayOf, isDayStr, toDayStr, addDays, daysBetween, weekdayOf, partsO
 const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
 const { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } = require('../core/quickadd');
-const { TASKS_FOLDER, ARCHIVE_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } = require('../core/tasks');
+const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } = require('../core/tasks');
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
+const { vaultFolders, inTaskFolders, readable, writable, toNote, isRenamed } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: configuration
@@ -163,12 +162,17 @@ const DEFAULT_PRIORITY_LIST = [
   { value: 'normal', label: 'Normal', weight: 2 }, { value: 'high', label: 'High', weight: 3 },
 ];
 
+// The fields Settings › Your vault › Property names covers (core/vault.js PROPS).
+const TRANSLATED_FIELDS = ['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'reminders', 'recurrence', 'completedDate', 'dateCreated', 'dateModified', 'completeInstances', 'skippedInstances', 'blockedBy'];
 // TaskNotes settings (live object or saved copy) -> the engine's config.
 function engineConfig(tn) {
   const s = tn && typeof tn === 'object' ? tn : {};
   const fm = s.fieldMapping && typeof s.fieldMapping === 'object' ? s.fieldMapping : {};
   const F = {};
   for (const k of Object.keys(DEFAULT_FIELDS)) F[k] = typeof fm[k] === 'string' && fm[k].trim() ? fm[k] : DEFAULT_FIELDS[k];
+  // Property names changed in Settings › Your vault: the engine reads and writes task notes through
+  // LifeWorld's own names (core/vault.js puts them back under the note's names), so those win.
+  if (isRenamed()) for (const k of TRANSLATED_FIELDS) F[k] = DEFAULT_FIELDS[k];
   const statuses = Array.isArray(s.customStatuses) && s.customStatuses.length
     ? s.customStatuses.filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), isCompleted: !!x.isCompleted, autoArchive: !!x.autoArchive, autoArchiveDelay: Number(x.autoArchiveDelay) || 0, order: Number(x.order) || 0 }))
     : DEFAULT_STATUS_LIST.map((x) => ({ ...x }));
@@ -178,8 +182,9 @@ function engineConfig(tn) {
   const defaults = s.taskCreationDefaults && typeof s.taskCreationDefaults === 'object' ? s.taskCreationDefaults : {};
   return {
     F, statuses, priorities,
-    tasksFolder: typeof s.tasksFolder === 'string' && s.tasksFolder.trim() ? s.tasksFolder.trim() : TASKS_FOLDER,
-    archiveFolder: typeof s.archiveFolder === 'string' && s.archiveFolder.trim() ? s.archiveFolder.trim() : ARCHIVE_FOLDER,
+    // Settings › Your vault, the folders every part reads (TaskNotes' own folder settings are not used).
+    tasksFolder: vaultFolders.tasks,
+    archiveFolder: vaultFolders.archive,
     moveArchivedTasks: s.moveArchivedTasks !== false,
     taskTag: typeof s.taskTag === 'string' && s.taskTag ? s.taskTag : 'task',
     defaultStatus: typeof s.defaultTaskStatus === 'string' && s.defaultTaskStatus ? s.defaultTaskStatus : 'open',
@@ -564,7 +569,7 @@ function createContent(plan, uniqueName, cfg, stringify) {
   const fm = { ...plan.frontmatter };
   const represented = cfg.storeTitleInFilename && uniqueName === plan.fileTitle && plan.title === plan.fileTitle;
   if (represented) delete fm[cfg.F.title];
-  let content = `---\n${stringify(fm)}---\n\n`;
+  let content = `---\n${stringify(toNote(fm))}---\n\n`;
   if (plan.body.length > 0) content += `${plan.body}\n`;
   return content;
 }
@@ -586,7 +591,7 @@ function readTask(fm, path, basename, cfg, inArchive) {
   if (!tags.includes(cfg.taskTag)) return null;
   const archived = !!inArchive || fm.archived === true || tags.includes(cfg.F.archiveTag);
   const view = archived ? { ...fm, archived: false, tags: tags.filter((t) => t !== cfg.F.archiveTag) } : fm;
-  const it = taskFromFrontmatter(view, archived ? `${TASKS_FOLDER}/${basename}.md` : path, basename);
+  const it = taskFromFrontmatter(view, archived ? `${vaultFolders.tasks}/${basename}.md` : path, basename);
   if (!it) return null;
   it.path = path;
   it.archived = archived;
@@ -1094,7 +1099,8 @@ class TaskEngine {
   today() { return dayOf(this.now()); }
   stamp(d) { return tnTimestamp(d || this.now()); }
   file(path) { const f = this.app.vault.getAbstractFileByPath(path); return f instanceof TFile ? f : null; }
-  fm(file) { const c = this.app.metadataCache.getFileCache(file); return (c && c.frontmatter) || null; }
+  // A note's frontmatter; a task note's under LifeWorld's property names (Settings › Your vault).
+  fm(file) { const c = this.app.metadataCache.getFileCache(file); const fm = (c && c.frontmatter) || null; return file && inTaskFolders(file.path) ? readable(fm) : fm; }
 
   /* ---- reading ---------------------------------------------------------- */
 
@@ -1106,7 +1112,7 @@ class TaskEngine {
         if (c instanceof TFolder) walk(c, inArchive);
         else if (c instanceof TFile && c.extension === 'md') {
           const cache = this.app.metadataCache.getFileCache(c);
-          const t = readTask(cache && cache.frontmatter, c.path, c.basename, cfg, inArchive);
+          const t = readTask(readable(cache && cache.frontmatter), c.path, c.basename, cfg, inArchive);
           if (!t) continue;
           const items = (cache && cache.listItems) || [];
           const steps = items.filter((li) => li.task !== undefined && li.parent < 0);
@@ -1124,7 +1130,7 @@ class TaskEngine {
 
   collectProjects() {
     const out = [];
-    const root = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const root = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (!(root instanceof TFolder)) return out;
     for (const c of root.children || []) {
       if (!(c instanceof TFile) || c.extension !== 'md') continue;
@@ -1239,7 +1245,7 @@ class TaskEngine {
     await this.app.fileManager.processFrontMatter(file, (fm) => {
       const copy = JSON.parse(JSON.stringify(fm));
       order = Object.keys(copy);
-      result = fn(fm);
+      result = writable(fm, fn);
       const keys = new Set([...Object.keys(copy), ...Object.keys(fm)]);
       before = {};
       for (const k of keys) if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
@@ -1465,7 +1471,7 @@ class TaskEngine {
     const cfg = this.cfg();
     const file = this.file(path);
     if (!file) return true;
-    await this.app.fileManager.processFrontMatter(file, (fm) => applyArchive(fm, cfg, true, tnTimestamp(this.now())));
+    await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => applyArchive(fm, cfg, true, tnTimestamp(this.now()))));
     if (!cfg.moveArchivedTasks || !cfg.archiveFolder) return true;
     const target = `${cfg.archiveFolder}/${file.name}`;
     if (!this.app.vault.getAbstractFileByPath(cfg.archiveFolder)) await this.app.vault.createFolder(cfg.archiveFolder);
@@ -2220,7 +2226,7 @@ class A4ProjectsPlugin extends Plugin {
   // Only the place and kind of file; whether it is a project is decided from the note itself.
   projectFile(path) {
     const f = this.engine.file(path);
-    if (f && f.extension === 'md' && f.path.startsWith(`${PROJECTS_FOLDER}/`)) return f;
+    if (f && f.extension === 'md' && f.path.startsWith(`${vaultFolders.projects}/`)) return f;
     this.refused(String(path).split('/').pop().replace(/\.md$/i, ''));
     return null;
   }
@@ -2385,7 +2391,7 @@ class A4ProjectsPlugin extends Plugin {
     const f = this.projectFile(path);
     if (!f) return false;
     const stored = async () => {
-      const fm = f.path.startsWith(`${PROJECTS_FOLDER}/`) && await this.freshFm(f);
+      const fm = f.path.startsWith(`${vaultFolders.projects}/`) && await this.freshFm(f);
       return !!fm && fm.type === 'project' && statusOf(fm) === 'cold-storage';
     };
     if (!(await stored())) return this.refused(f.basename);
@@ -2427,9 +2433,9 @@ class A4ProjectsPlugin extends Plugin {
     const t = String(title || '').replace(/\s+/g, ' ').trim();
     if (!t || !['work', 'personal'].includes(sphere)) return null;
     const name = sanitizeForFilename(t);
-    const path = `${PROJECTS_FOLDER}/${name}.md`;
+    const path = `${vaultFolders.projects}/${name}.md`;
     // Case-blind, like the Mac's disk: "beach cleanup" clashes with "Beach Cleanup".
-    const dir = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const dir = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     const taken = ((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${name}.md`.toLowerCase());
     if (taken) { new Notice(`There is already a project called "${taken.basename}".`); return null; }
     let f;
@@ -2441,7 +2447,7 @@ class A4ProjectsPlugin extends Plugin {
   }
   // Open goals (not achieved), A to Z, for Promote.
   goalFiles() {
-    const root = this.app.vault.getAbstractFileByPath(GOALS_FOLDER);
+    const root = this.app.vault.getAbstractFileByPath(vaultFolders.goals);
     const out = [];
     if (root instanceof TFolder) for (const c of root.children) {
       const fm = c instanceof TFile && c.extension === 'md' ? this.engine.fm(c) : null;
@@ -3047,7 +3053,8 @@ class ProjectsView extends ItemView {
   async onOpen() {
     this.contentEl.empty();
     this.contentEl.addClass('a4pj-root');
-    const relevant = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || p.startsWith(PROJECTS_FOLDER + '/'));
+    // Tasks, projects, and the calendar note's folder (a setting in section 5).
+    const relevant = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/'));
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('rename', (f, old) => { if ((f && relevant(f.path)) || relevant(old)) { if (this.state.project === old) this.state.project = f.path; this.scheduleRender(); } }));
@@ -3964,7 +3971,7 @@ class TaskCardManager {
     p.registerEvent(this.app.workspace.on('active-leaf-change', later));
     p.registerEvent(this.app.workspace.on('resize', later));
     // Another task changing can change this card's Blocked by / Blocks rows.
-    p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (this.shownPaths().has(f.path)) this.schedule(); else if (f.path.startsWith(PROJECTS_FOLDER + '/')) this.schedule(); else if (f.path.startsWith(TASKS_FOLDER + '/') && this.anyTaskShown()) this.schedule(); }));
+    p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (this.shownPaths().has(f.path)) this.schedule(); else if (f.path.startsWith(vaultFolders.projects + '/')) this.schedule(); else if (f.path.startsWith(vaultFolders.tasks + '/') && this.anyTaskShown()) this.schedule(); }));
     p.registerEvent(this.app.vault.on('delete', () => { if (this.anyTaskShown()) this.schedule(); }));
     p.registerEvent(this.app.vault.on('rename', later));
     this.refreshAll();

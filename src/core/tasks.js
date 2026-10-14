@@ -8,9 +8,8 @@
 const { toDayStr, parseRRule, occursOn, halfOfTime } = require('./dates');
 const { asList } = require('./lists');
 const { reminderOf } = require('./reminders');
+const { vaultFolders, readable } = require('./vault');
 
-const TASKS_FOLDER = '02 Planner/TaskNotes/Tasks';
-const ARCHIVE_FOLDER = '02 Planner/TaskNotes/Archive';
 const DEFAULT_COMPLETED_STATUSES = ['done', 'closed'];
 
 function wikilinkTarget(link) {
@@ -92,7 +91,7 @@ function taskFromFrontmatter(fm, path, basename) {
   const tags = asList(fm.tags).map(String);
   if (!tags.includes('task')) return null;
   if (fm.archived === true || tags.includes('archived')) return null;
-  if (path.startsWith(ARCHIVE_FOLDER + '/')) return null;
+  if (path.startsWith(vaultFolders.archive + '/')) return null;
   const due = toDayStr(fm.due);
   const recurrenceRaw = typeof fm.recurrence === 'string' && fm.recurrence.trim() ? fm.recurrence.trim() : null;
   const projectLink = asList(fm.projects)[0];
@@ -211,7 +210,7 @@ function blockerLinks(fm) {
 function blockerHolds(fm, path, completedStatuses) {
   if (!fm || typeof fm !== 'object') return false;
   const tags = asList(fm.tags).map(String);
-  if (fm.archived === true || tags.includes('archived') || String(path).startsWith(ARCHIVE_FOLDER + '/')) return false;
+  if (fm.archived === true || tags.includes('archived') || String(path).startsWith(vaultFolders.archive + '/')) return false;
   const st = fm.status == null || fm.status === '' ? 'open' : String(fm.status);
   return !(completedStatuses || DEFAULT_COMPLETED_STATUSES).includes(st);
 }
@@ -226,9 +225,10 @@ function openBlockersOf(app, item, completedStatuses) {
     const f = mc.getFirstLinkpathDest(link, item.path);
     if (!f || f.path === item.path || out.some((x) => x.path === f.path)) continue;
     const c = mc.getFileCache(f);
-    if (blockerHolds(c && c.frontmatter, f.path, completedStatuses)) out.push({ path: f.path, title: taskTitleOf(c && c.frontmatter, f.basename) });
+    const fm = readable(c && c.frontmatter);
+    if (blockerHolds(fm, f.path, completedStatuses)) out.push({ path: f.path, title: taskTitleOf(fm, f.basename) });
   }
   return out;
 }
 
-module.exports = { TASKS_FOLDER, ARCHIVE_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, blockerLinks, blockerHolds, openBlockersOf };
+module.exports = { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, blockerLinks, blockerHolds, openBlockersOf };

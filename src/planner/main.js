@@ -80,8 +80,6 @@ const { Plugin, ItemView, TFile, TFolder, Notice, setIcon } = require('obsidian'
 
 const VIEW_TYPE = 'a4-planner';
 const CALENDAR_NOTE = '02 Planner/Calendar Events.md';
-const PROJECTS_FOLDER = '04 Inner World/My Life/Projects';
-const GOALS_FOLDER = '04 Inner World/My Life/Goals';
 const DEFAULT_PRIORITIES = [
   { value: 'none', label: 'None', weight: 0 },
   { value: 'low', label: 'Low', weight: 1 },
@@ -103,8 +101,9 @@ const { pad2, dayOf, isDayStr, toDayStr, utcOf, addDays, daysBetween, weekdayOf,
 const { asList } = require('../core/lists');
 const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
 const { understand, parseClock, quickAddChips, quickAddPlan } = require('../core/quickadd');
-const { TASKS_FOLDER, DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
+const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
+const { vaultFolders, inTaskFolders, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
 
 // One frontmatter write that remembers what the keys it changed held before;
 // the returned undo() puts exactly those back (a key that was absent is
@@ -113,7 +112,7 @@ async function writeWithUndo(app, file, fn) {
   let before = {};
   await app.fileManager.processFrontMatter(file, (fm) => {
     const copy = JSON.parse(JSON.stringify(fm || {}));
-    fn(fm);
+    writable(fm, fn);
     before = {};
     for (const k of new Set([...Object.keys(copy), ...Object.keys(fm)])) {
       if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
@@ -451,14 +450,14 @@ class A4PlannerPlugin extends Plugin {
   }
 
   collectItems() {
-    const root = this.app.vault.getAbstractFileByPath(TASKS_FOLDER);
+    const root = this.app.vault.getAbstractFileByPath(vaultFolders.tasks);
     const out = [];
     const walk = (folder) => {
       for (const c of folder.children || []) {
         if (c instanceof TFolder) walk(c);
         else if (c instanceof TFile && c.extension === 'md') {
           const cache = this.app.metadataCache.getFileCache(c);
-          const it = plannerItem(cache && cache.frontmatter, c.path, c.basename);
+          const it = plannerItem(readable(cache && cache.frontmatter), c.path, c.basename);
           if (it) out.push(it);
         }
       }
@@ -476,7 +475,7 @@ class A4PlannerPlugin extends Plugin {
 
   projectNames(items) {
     const names = new Set(items.map((i) => i.projectKey).filter(Boolean));
-    const root = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const root = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (root instanceof TFolder) {
       for (const c of root.children || []) {
         if (!(c instanceof TFile) || c.extension !== 'md') continue;
@@ -508,7 +507,7 @@ class A4PlannerPlugin extends Plugin {
       for (let k = 0; k < others.length; k++) {
         if (others[k].plannedOrder === plan.others[k]) continue;
         const f = this.fileOf(others[k].path);
-        if (f) await this.app.fileManager.processFrontMatter(f, (fm) => { fm.planned_order = plan.others[k]; });
+        if (f) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = plan.others[k]; }));
       }
     }
     return { undo, dropsTime };
@@ -536,14 +535,14 @@ class A4PlannerPlugin extends Plugin {
     if (isSomeday(item)) { // dragged out of Someday onto the list: an open task again, still with no day
       const file = this.fileOf(item.path);
       if (!file) return false;
-      await this.app.fileManager.processFrontMatter(file, (fm) => { if (isSomeday(fm)) fm.status = 'open'; });
+      await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => { if (isSomeday(fm)) fm.status = 'open'; }));
       return true;
     }
     if (item.due) { new Notice('This one has a due date, so it stays on its day.'); return false; }
     if (!item.plannedDay) return false;
     const file = this.fileOf(item.path);
     if (!file) return false;
-    await this.app.fileManager.processFrontMatter(file, (fm) => { if (!fm.due) applyUnschedule(fm); });
+    await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => { if (!fm.due) applyUnschedule(fm); }));
     return true;
   }
 
@@ -557,7 +556,7 @@ class A4PlannerPlugin extends Plugin {
       if (wasDone) await api.tasks.uncomplete(item.path); else await api.tasks.complete(item.path);
       return;
     }
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => {
       if (item.recurrenceRaw) {
         const list = asList(fm.complete_instances).map(toDayStr).filter(Boolean);
         const i = list.indexOf(day);
@@ -565,7 +564,7 @@ class A4PlannerPlugin extends Plugin {
         fm.complete_instances = list;
       } else if (wasDone) { fm.status = 'open'; delete fm.completedDate; } else { fm.status = 'done'; fm.completedDate = dayOf(new Date()); }
       fm.dateModified = new Date().toISOString();
-    });
+    }));
   }
 
   async toggleWeeklyGoal(item) {
@@ -645,10 +644,12 @@ class PlannerView extends ItemView {
     this.contentEl.empty();
     this.contentEl.addClass('a4pl-root');
     this.anchor = dayOf(new Date());
-    const relevant = (f) => f && f.path && f.path.startsWith('02 Planner/');
+    // The task folders, and the calendar note's folder (a setting in section 5).
+    const watched = (p) => typeof p === 'string' && (p.startsWith('02 Planner/') || inTaskFolders(p));
+    const relevant = (f) => f && watched(f.path);
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (relevant(f)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (relevant(f)) this.scheduleRender(); }));
-    this.registerEvent(this.app.vault.on('rename', (f, old) => { if (relevant(f) || String(old).startsWith('02 Planner/')) this.scheduleRender(); }));
+    this.registerEvent(this.app.vault.on('rename', (f, old) => { if (relevant(f) || watched(old)) this.scheduleRender(); }));
     this.registerEvent(this.app.workspace.on('css-change', () => this.scheduleRender()));
     this.registerInterval(window.setInterval(() => { if (this.today() !== this.renderedToday) this.render(); }, 60000));
     this.registerDomEvent(document, 'pointermove', (e) => this.onPointerMove(e));
@@ -971,11 +972,11 @@ class PlannerView extends ItemView {
 
   renderGoals(side, today) {
     const goals = [];
-    const root = this.app.vault.getAbstractFileByPath(GOALS_FOLDER);
+    const root = this.app.vault.getAbstractFileByPath(vaultFolders.goals);
     if (root instanceof TFolder) for (const c of root.children || []) if (c instanceof TFile && c.extension === 'md') goals.push(c);
     goals.sort((a, b) => a.basename.localeCompare(b.basename));
     const projectGoal = {};
-    const proot = this.app.vault.getAbstractFileByPath(PROJECTS_FOLDER);
+    const proot = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (proot instanceof TFolder) {
       for (const c of proot.children || []) {
         if (!(c instanceof TFile) || c.extension !== 'md') continue;

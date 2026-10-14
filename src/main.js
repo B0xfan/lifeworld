@@ -5,8 +5,9 @@
 // part's own settings under its heading. A part switched off is not started at all.
 'use strict';
 
-const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian');
 const { PARTS } = require('./core/parts');
+const vault = require('./core/vault');
 
 // Start order: Projects first (the task engine the others use).
 const PART_LIST = [
@@ -28,6 +29,41 @@ const SWITCHES = [
 const HEADINGS = [['a4-projects', 'Tasks'], ['a4-today', 'Today page'], ['a4-sidebar', 'Sidebar']];
 const HOST = 'lifeworld'; // LifeWorld's own corner of the settings file
 
+// Settings › Your vault, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
+// The mockup's "Found on first run" line under the task notes folder comes with the first-run screen.
+const FOLDER_ROWS = [
+  ['tasks', 'Task notes folder', ''],
+  ['archive', 'Finished tasks folder', 'Archived tasks move here'],
+  ['projects', 'Projects folder', ''],
+  ['goals', 'Goals folder', 'Goals your projects point to'],
+  ['habits', 'Habits folder', 'One note per habit, ticked on the Today page'],
+  ['journal', 'Journal folder', 'The newest note here shows on the Today page'],
+];
+// The Property names dialog: [LifeWorld's name, row label, what it holds]; MORE fold away.
+const PROP_ROWS = [
+  ['title', 'Title', 'The name a task shows, when it differs from the file name'],
+  ['status', 'Status', 'Open, in progress, done...'],
+  ['priority', 'Priority', 'High, normal, low'],
+  ['due', 'Due date', ''],
+  ['scheduled', 'Scheduled date', 'The day you plan to start'],
+  ['projects', 'Projects', 'Links to the projects a task belongs to'],
+  ['reminders', 'Reminders', ''],
+  ['recurrence', 'Repeats', 'How often a task comes back'],
+  ['completedDate', 'Finished on', 'The day a task was done'],
+  ['planned_day', 'Planned day', 'The day the planner puts it on'],
+  ['planned_half', 'Planned half', 'Morning or afternoon'],
+  ['planned_order', 'Planned order', 'Its place in that half'],
+];
+const MORE_PROP_ROWS = [
+  ['dateCreated', 'Created', ''],
+  ['dateModified', 'Last changed', ''],
+  ['complete_instances', 'Repeats done', 'Days a repeating task was done'],
+  ['skipped_instances', 'Repeats skipped', 'Days a repeating task was skipped'],
+  ['blockedBy', 'Waiting on', 'Tasks this one waits for'],
+];
+// The six names the Property names row shows, in the mockup's order.
+const PROP_SUMMARY = ['status', 'due', 'scheduled', 'priority', 'projects', 'reminders'];
+
 // A copy each way, as the old disk read and write gave each part its own object.
 const copy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
 
@@ -41,6 +77,7 @@ class LifeWorldPlugin extends Plugin {
     // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
     this.store = found || { [HOST]: { carriedOver: true } };
     this.ondisk = copy(this.store); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
+    vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
     this.tabs = {};
     // A part with no corner yet takes its old plugin's settings file once (read only, left as it
     // was), so switching over needs no script and works for anyone who had the old plugins.
@@ -132,6 +169,29 @@ class LifeWorldPlugin extends Plugin {
     this.store[HOST] = { ...(this.store[HOST] || {}), parts };
     await this.writeStore();
     await this.applyParts();
+  }
+
+  // Settings › Your vault: change = { folders: {...} } or { names: {...} }, merged into what is saved.
+  // Every part reads the new folders and names from the next time it looks; open views redraw.
+  async setVaultSettings(change) {
+    const h = this.store[HOST] || {};
+    const v = h.vault || {};
+    const next = { ...v };
+    if (change.folders) next.folders = { ...(v.folders || {}), ...change.folders };
+    if (change.names) next.names = change.names;
+    this.store[HOST] = { ...h, vault: next };
+    vault.setVault(next);
+    this.redrawViews();
+    await this.writeStore();
+  }
+
+  // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw).
+  redrawViews() {
+    for (const types of Object.values(this.views || {})) for (const type of types) for (const leaf of this.app.workspace.getLeavesOfType(type)) {
+      const v = leaf.view;
+      if (v && typeof v.scheduleRefresh === 'function') v.scheduleRefresh();
+      else if (v && typeof v.scheduleRender === 'function') v.scheduleRender();
+    }
   }
 
   onunload() {
@@ -237,8 +297,12 @@ class LifeWorldPlugin extends Plugin {
       const tab = this.tabs[m.id];
       if (tab && tab.containerEl && tab.containerEl.isConnected) tab.display();
     }
-    // Parts switched on or off elsewhere (the phone): follow them here too.
-    if (JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST])) await this.applyParts();
+    // Parts switched on or off, or Your vault changed, elsewhere (the phone): follow them here too.
+    if (JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST])) {
+      const h = this.store[HOST];
+      if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) { vault.setVault(h && h.vault); this.redrawViews(); }
+      await this.applyParts();
+    }
   }
 }
 
@@ -261,6 +325,7 @@ class LifeWorldSettingTab extends PluginSettingTab {
         .onChange(async (v) => { await this.plugin.setPart(x.id, v); this.display(); }));
       if (off) row.settingEl.addClass('lw-dim');
     }
+    this.drawVault(el);
     for (const [id, heading] of HEADINGS) {
       const tab = this.plugin.tabs[id];
       if (!tab) continue;
@@ -270,13 +335,87 @@ class LifeWorldSettingTab extends PluginSettingTab {
     }
   }
 
+  // Your vault: the six folders, Daily notes (Obsidian's own setting), Property names.
+  drawVault(el) {
+    new Setting(el).setName('Your vault').setHeading();
+    for (const [key, name, desc] of FOLDER_ROWS) {
+      new Setting(el).setName(name).setDesc(desc).addText((t) => {
+        t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(vault.vaultFolders[key]).onChange((v) => this.plugin.setVaultSettings({ folders: { [key]: v.trim() } }));
+        t.inputEl.setAttr('aria-label', name);
+      });
+    }
+    const dn = vault.dailyNotes(this.app);
+    const where = dn.folder ? `folder "${dn.folder}"` : "the vault's top folder";
+    const tpl = dn.template ? `, template "${dn.template.split('/').pop()}"` : '';
+    new Setting(el).setName('Daily notes').setDesc(`Uses Obsidian's own Daily notes settings (${where}, ${dn.format}${tpl})`)
+      // shortcut: app.setting is Obsidian's undocumented settings window; upgrade if it gets an API.
+      .addButton((b) => b.setButtonText('Open').onClick(() => { const s = this.app.setting; if (s && typeof s.openTabById === 'function') s.openTabById('daily-notes'); }));
+    new Setting(el).setName('Property names').setDesc(PROP_SUMMARY.map((k) => vault.propNames[k]).join(', '))
+      .addButton((b) => b.setButtonText('Change').onClick(() => new PropertyNamesModal(this.app, this.plugin, () => this.display()).open()));
+  }
+
   // Leaving the page: each part's page lets go of what it listens to, as when its own page closed.
   hide() {
     for (const tab of Object.values(this.plugin.tabs)) if (typeof tab.hide === 'function') tab.hide();
   }
 }
 
+// Settings › Your vault › Property names: Change (the approved mockup's dialog). Names are saved
+// only by Done; an empty, repeated or unusable name keeps Done off and says why. Renaming here
+// never renames anything in the notes.
+class PropertyNamesModal extends Modal {
+  constructor(app, plugin, onDone) { super(app); this.plugin = plugin; this.onDone = onDone; }
+
+  onOpen() {
+    const el = this.contentEl;
+    el.empty();
+    el.addClass('lw-names');
+    this.setTitle('Property names');
+    el.createEl('p', { cls: 'lw-names-intro', text: 'The properties LifeWorld reads and writes on your task notes. Change a name only if your notes already use a different one. This does not rename anything in your notes.' });
+    this.inputs = [];
+    const row = (parent, [key, label, desc]) => new Setting(parent).setName(label).setDesc(desc).addText((t) => {
+      t.setValue(vault.propNames[key]).onChange(() => this.check());
+      t.inputEl.setAttr('aria-label', `${label} property name`);
+      t.inputEl.setAttr('spellcheck', 'false');
+      this.inputs.push({ key, label, t });
+    });
+    for (const r of PROP_ROWS) row(el, r);
+    const more = el.createEl('details', { cls: 'lw-names-more' });
+    more.createEl('summary', { text: 'More properties (rarely changed)' });
+    for (const r of MORE_PROP_ROWS) row(more, r);
+    this.err = el.createDiv({ cls: 'lw-names-err', attr: { role: 'alert' } });
+    const foot = new Setting(el)
+      .addButton((b) => b.setButtonText('Reset to defaults').onClick(() => { for (const x of this.inputs) x.t.setValue(x.key); this.check(); }))
+      .addButton((b) => { this.done = b; b.setButtonText('Done').setCta().onClick(() => this.save()); });
+    foot.settingEl.addClass('lw-names-foot');
+    this.check();
+  }
+
+  // The mockup's checks, on every keystroke: the first problem shows, its row is marked, Done is off.
+  check() {
+    const msg = vault.namesProblem(this.inputs.map((x) => [x.label, x.t.getValue()]));
+    const count = {};
+    for (const x of this.inputs) { const v = x.t.getValue().trim(); count[v] = (count[v] || 0) + 1; }
+    for (const x of this.inputs) { const v = x.t.getValue().trim(); x.t.inputEl.toggleClass('lw-bad', !v || count[v] > 1 || vault.BAD_NAME.test(v)); }
+    this.err.setText(msg);
+    this.done.setDisabled(!!msg);
+    return !msg;
+  }
+
+  async save() {
+    if (!this.check()) return;
+    const names = {};
+    for (const x of this.inputs) { const v = x.t.getValue().trim(); if (v !== x.key) names[x.key] = v; }
+    await this.plugin.setVaultSettings({ names });
+    this.close();
+    this.onDone();
+  }
+
+  onClose() { this.contentEl.empty(); }
+}
+
 // The four part classes, for the tests.
 LifeWorldPlugin.parts = Object.fromEntries(PART_LIST.map(([m, P]) => [m.id, P]));
 
 module.exports = LifeWorldPlugin;
+module.exports.PropertyNamesModal = PropertyNamesModal; // for tests (the dialog's checks)

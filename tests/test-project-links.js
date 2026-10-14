@@ -37,7 +37,7 @@ ok([src.today, src.planner].every((s) => fromCore(s, ['wikilinkTarget'], true)('
 ok(/a4t-proj' \}\);[\s\S]{0,200}addEventListener\('click', \(e\) => openProjectPage\(this\.app, p\.path, e, p\.path\)\)/.test(src.today), 'Today: Active projects chip opens the project page');
 ok(!/a4t-proj' \}\);[\s\S]{0,200}openPath\(p\.path/.test(src.today), 'Today: chip no longer opens the note directly');
 ok(/chip\(t\.project, 'is-proj'\);\s*\n\s*pc\.addEventListener\('click', \(e\) => \{\s*\n\s*e\.stopPropagation\(\);\s*\n\s*if \(row\._justDragged\) return;\s*\n\s*openProjectPage\(this\.app, t\.projectLink \|\| t\.project, e, t\.path\)/.test(src.today), 'Today: task project label opens the project page, not the task');
-ok(/it\.projectLink = asList\(cache\.frontmatter\.projects\)\[0\] \|\| null/.test(src.today), 'Today: task keeps its project link');
+ok(/it\.projectLink = asList\(fm\.projects\)\[0\] \|\| null/.test(src.today), 'Today: task keeps its project link');
 ok(/'a4pl-chip a4pl-proj'[^\n]*\);\s*\n\s*pc\.addEventListener\('click', \(e\) => \{ e\.stopPropagation\(\); if \(r\._dragged\) return; openProjectPage\(this\.app, it\.projectLink \|\| it\.projectKey, e, it\.path\)/.test(src.planner), 'Planner: task project label opens the project page');
 ok(/pj\.openProject\(m\.file\.path\)/.test(src.sidebar), 'Sidebar: project rows already open the project page (unchanged)');
 // looks unchanged: no new CSS classes on the chips
