@@ -55,7 +55,7 @@ class Setting {
 class Modal { constructor(app) { this.app = app; this.contentEl = fakeEl('div'); } open() { this.isOpen = true; this.onOpen(); } close() { this.isOpen = false; this.onClose(); } setTitle(t) { this.title = t; return this; } }
 class TFile { constructor(path) { this.path = path; this.basename = path.split('/').pop().replace(/\.md$/, ''); this.name = path.split('/').pop(); this.extension = 'md'; } }
 class TFolder { constructor(path, children) { this.path = path; this.children = children; } }
-const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting, Modal, TFile, TFolder, setIcon() {} }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
+const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting, Modal, TFile, TFolder, setIcon() {}, moment: require('moment') }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
 
@@ -726,6 +726,32 @@ const start = async (data) => {
   tp.app.commands.commands = { 'a4-planner:open': {} };
   TV.renderHeader.call(tv); TV.renderPlannerLink.call(tv, box(), card);
   eq(offNow(), [false, false], 'Planner back on: both come back');
+
+  // ---- Section 6 review fixes ----
+  {
+  // A switch redraws the open task cards too; one view that fails to draw does not stop the rest.
+  const rv = await start({});
+  const drew = [];
+  rv.app.workspace.getLeavesOfType = (t) => (t === 'a4-sidebar-view' ? [{ view: { render: () => drew.push('sidebar') } }] : t === 'a4-projects-view' ? [{ view: { scheduleRender: () => { throw new Error('planted'); } } }] : []);
+  rv.host.running['a4-projects'].cards = { refreshAll: () => drew.push('cards') };
+  const errs = []; const ce = console.error; console.error = (...a) => errs.push(a[0]);
+  try { await rv.host.setPart('a4-planner', false); } finally { console.error = ce; }
+  eq(drew, ['sidebar', 'cards'], 'a part switched: task cards redraw, and a failing tab does not stop the others');
+  eq(errs, ['LifeWorld: a4-projects-view did not redraw'], 'the failing tab is logged');
+  rv.host.unload();
+  // The Sidebar's tab title follows a changed name.
+  const hdr = []; const sv = Object.create(SBL.A4SidebarView.prototype);
+  Object.assign(sv, { titleEl: { setText: (t) => hdr.push(`title ${t}`) }, leaf: { updateHeader: () => hdr.push('header') } });
+  const brand0 = VLT.brand;
+  sv.syncTitle(); eq(hdr, [], 'tab title: nothing to change on the first draw');
+  VLT.brand = 'My Place'; sv.syncTitle(); sv.syncTitle();
+  eq(hdr, ['title My Place', 'header'], 'tab title: a changed Sidebar name updates the tab header once');
+  VLT.brand = brand0;
+  // Daily notes at the vault's top with a nested format: the name must read as that date format.
+  const nest = { folder: '', format: 'YYYY/MM/YYYY-MM-DD' };
+  eq([T.isScratchpadPath('2026/10/2026-10-04.md', nest), T.isScratchpadPath('Work/Clients/Acme.md', nest), T.isScratchpadPath('2026/13/2026-13-04.md', nest), T.isScratchpadPath('Notes.md', { folder: '' }), T.isScratchpadPath('2026-10-04.md', { folder: '' })],
+    [true, false, false, false, true], 'top-level daily notes: as deep as the format and named by it (review p2-s6)');
+  }
 
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

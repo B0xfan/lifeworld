@@ -543,8 +543,12 @@ function markerRanges(text) {
 // there counts (the markers it hides only appear in daily notes); upgrade if that ever misfires.
 function isScratchpadPath(p, dn) {
   const { folder, format } = dn || dailyNotes(null);
-  // Top-level daily notes: as deep as the date format's own folders (YYYY/MM/YYYY-MM-DD), review p2-s5.
-  return typeof p === 'string' && p.endsWith('.md') && (folder ? p.startsWith(`${folder}/`) : p.split('/').length === String(format || '').split('/').length);
+  if (typeof p !== 'string' || !p.endsWith('.md')) return false;
+  if (folder) return p.startsWith(`${folder}/`);
+  // Top-level daily notes: as deep as the date format's own folders (YYYY/MM/YYYY-MM-DD), review p2-s5,
+  // and named by it, read strictly with Obsidian's moment (review p2-s6; the logic tests have no moment).
+  const fmt = format || 'YYYY-MM-DD';
+  return p.split('/').length === fmt.split('/').length && (!obsidian.moment || obsidian.moment(p.slice(0, -3), fmt, true).isValid());
 }
 
 // The CodeMirror 6 extension. Built lazily: '@codemirror/*' only exist inside

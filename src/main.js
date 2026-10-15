@@ -195,14 +195,18 @@ class LifeWorldPlugin extends Plugin {
     for (const p of Object.values(this.running)) if (p && typeof p.onVaultChange === 'function') p.onVaultChange();
   }
 
-  // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw; the Sidebar draws now).
+  // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw; the Sidebar draws now),
+  // and so do Projects' task cards on open task notes (review p2-s6). One that fails is logged; the rest still draw.
   redrawViews() {
+    const draw = (what, fn) => { try { fn(); } catch (e) { console.error(`LifeWorld: ${what} did not redraw`, e); } };
     for (const types of Object.values(this.views || {})) for (const type of types) for (const leaf of this.app.workspace.getLeavesOfType(type)) {
       const v = leaf.view;
-      if (v && typeof v.scheduleRefresh === 'function') v.scheduleRefresh();
-      else if (v && typeof v.scheduleRender === 'function') v.scheduleRender();
-      else if (v && typeof v.render === 'function') v.render(); // the Sidebar
+      if (v && typeof v.scheduleRefresh === 'function') draw(type, () => v.scheduleRefresh());
+      else if (v && typeof v.scheduleRender === 'function') draw(type, () => v.scheduleRender());
+      else if (v && typeof v.render === 'function') draw(type, () => v.render()); // the Sidebar
     }
+    const cards = this.running['a4-projects'] && this.running['a4-projects'].cards;
+    if (cards) draw('task cards', () => cards.refreshAll());
   }
 
   onunload() {

@@ -629,6 +629,15 @@ class A4SidebarView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.dragging = null; this.classify = (p) => this.classifyPath(p); }
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return SBC.brand; }
+  // A changed Sidebar name reaches the tab title too (review p2-s6); Obsidian reads it only when the tab opens.
+  // shortcut: titleEl and leaf.updateHeader are Obsidian internals (1.14.4 app code), section 8 reviews them.
+  syncTitle() {
+    if (this.shownTitle !== undefined && this.shownTitle !== SBC.brand) {
+      if (this.titleEl) this.titleEl.setText(SBC.brand);
+      if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
+    }
+    this.shownTitle = SBC.brand;
+  }
   getIcon() { return 'layout-list'; }
 
   async onOpen() {
@@ -669,6 +678,7 @@ class A4SidebarView extends ItemView {
     const scroller = root.querySelector('.a4sb-scroll');
     const keep = scroller ? scroller.scrollTop : 0;
     root.empty();
+    this.syncTitle();
     const st = this.plugin.state;
     const all = this.app.vault.getAllLoadedFiles();
     const filePaths = all.filter((f) => f instanceof TFile).map((f) => f.path);
@@ -1518,7 +1528,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
 
 module.exports = A4SidebarPlugin;
 module.exports.__logic = {
-  NAV, LANDING, FILE_CAP, SBC,
+  NAV, LANDING, FILE_CAP, SBC, A4SidebarView,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };
