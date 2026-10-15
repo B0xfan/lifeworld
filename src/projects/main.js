@@ -81,9 +81,6 @@
  */
 'use strict';
 
-import { RangeSetBuilder, StateEffect, Prec } from '@codemirror/state';
-import { ViewPlugin, Decoration, WidgetType } from '@codemirror/view';
-import { syntaxTree } from '@codemirror/language';
 import { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform, SuggestModal, Modal, Component, getFrontMatterInfo, Keymap, MarkdownRenderer, Menu, parseYaml, stringifyYaml, editorInfoField, editorLivePreviewField } from 'obsidian';
 
 /* ========================================================================== *
@@ -1751,7 +1748,7 @@ class TaskLinks {
   }
 
   /* ---- live preview ---------------------------------------------------- */
-  editorExtension() {
+  editorExtension({ RangeSetBuilder, StateEffect, Prec, ViewPlugin, Decoration, WidgetType, syntaxTree }) {
     const { views } = this;
     const draw = (t, label, linktext, src) => this.build(t, label, linktext, src);
     const refresh = StateEffect.define();
@@ -1822,7 +1819,12 @@ class TaskLinks {
   start() {
     const p = this.plugin;
     p.registerMarkdownPostProcessor((el, ctx) => this.postProcess(el, ctx));
-    try { p.registerEditorExtension(this.editorExtension()); } catch (e) { console.warn('[a4-projects] task links in Live Preview unavailable', e); }
+    // CodeMirror loads here, so a missing module turns off only Live Preview links, never the plugin (review p2-s8 #3).
+    const ext = [];
+    p.registerEditorExtension(ext);
+    Promise.all([import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language')])
+      .then((ms) => { ext.push(this.editorExtension(Object.assign({}, ...ms))); this.app.workspace.updateOptions(); })
+      .catch((e) => console.warn('[a4-projects] task links in Live Preview unavailable', e));
     // A note in the task folders (Settings › Your vault); by path, so a deleted note (no cache left) counts too.
     const isTask = (f) => f instanceof TFile && f.path.endsWith('.md') && inTaskFolders(f.path);
     p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (isTask(f)) this.refreshSoon(); }));
@@ -3048,10 +3050,9 @@ class ProjectsView extends ItemView {
     // The tab title and the header strip follow the list. shortcut: leaf.updateHeader and the view's
     // titleEl are Obsidian internals (not in obsidian.d.ts 1.14.4, read in its app code); no public call
     // redraws a tab title. A throwing one is logged, the tab still opens. Upgrade if Obsidian adds one.
-    try {
-      if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
-      if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText());
-    } catch (e) { console.error('LifeWorld: the Projects tab title did not update', e); }
+    // Each guarded alone, so one failing still lets the other run (review p2-s8 #5).
+    try { if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader(); } catch (e) { console.error('LifeWorld: the Projects tab title did not update', e); }
+    try { if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText()); } catch (e) { console.error('LifeWorld: the Projects header title did not update', e); }
   }
 
   async onOpen() {

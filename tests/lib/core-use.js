@@ -3,7 +3,9 @@
 // local or a destructured name is seen too. Used by tests/test-core.js.
 const esbuild = require('esbuild');
 
-const IMPORT_RE = /^import \{ ([^}]*) \} from '(?:\.\.\/core|\.)\/(\w+)';.*$/gm;
+// Single- or multi-line `import { a, b } from '../core/x';` (review p2-s8 #8).
+const IMPORT_RE = /^import \{\s*([^}]*?)\s*\} from '(?:\.\.\/core|\.)\/(\w+)';.*$/gm;
+const importNames = (list) => list.split(',').map((x) => x.trim()).filter(Boolean);
 const ws = (code, more) => esbuild.transformSync(code, { loader: 'js', minifyWhitespace: true, ...more }).code;
 const minified = (code) => ws(code, { minifyIdentifiers: true, format: 'cjs' });
 // Identifier-like occurrences: not a property (`.x`), not an object key (`x:`), but a bare
@@ -16,7 +18,7 @@ const count = (s, x, renamed) => {
 // -> { imports: { module: [names] }, own: [names], used: [names] } for the given core names.
 function coreUse(src, names) {
   const imports = {};
-  let stripped = src.replace(IMPORT_RE, (line, list, mod) => { imports[mod] = list.split(', '); return ''; });
+  let stripped = src.replace(IMPORT_RE, (line, list, mod) => { imports[mod] = importNames(list); return ''; });
   // Each name becomes a long token first, so a short name ('h', 'WD') can never be confused with
   // a name the minifier makes up. Strings and properties get the token too, the same in every print.
   const token = (x) => `__cu_${x}`;
@@ -30,7 +32,7 @@ function coreUse(src, names) {
   return { imports, own, used };
 }
 // -> { module: [names] } a source file imports from the shared core.
-function importsOf(src) { const out = {}; for (const m of src.matchAll(IMPORT_RE)) out[m[2]] = m[1].split(', '); return out; }
+function importsOf(src) { const out = {}; for (const m of src.matchAll(IMPORT_RE)) out[m[2]] = importNames(m[1]); return out; }
 // -> (name) => true when the file keeps no copy of `name` and imports it from the core whenever it
 // uses it (a file that never uses a name need not import it, unless `mustUse` is set: then it must
 // use it and import it).

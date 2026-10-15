@@ -494,7 +494,9 @@ class PropertyNamesModal extends Modal {
 }
 
 // The four part classes, for the tests.
-LifeWorldPlugin.vault = vault; // for tests (start on the frozen test vault's settings)
+// For tests only (start on the frozen test vault's settings). Never set inside Obsidian, which always has a
+// window, so no other plugin can reach the vault settings through it (review p2-s8 #2).
+if (typeof window === 'undefined') LifeWorldPlugin.vault = vault;
 LifeWorldPlugin.parts = Object.fromEntries(PART_LIST.map(([m, P]) => [m.id, P]));
 
 export default LifeWorldPlugin;

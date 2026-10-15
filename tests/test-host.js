@@ -652,7 +652,7 @@ const start = async (data) => {
   const tl = await start({});
   const TL = LW.parts['a4-projects'].TaskLinks;
   const evs = {};
-  const tlApp = { metadataCache: { on: (n, f) => { evs[n] = f; } }, vault: { on: (n, f) => { evs[n] = f; } } };
+  const tlApp = { metadataCache: { on: (n, f) => { evs[n] = f; } }, vault: { on: (n, f) => { evs[n] = f; } }, workspace: { updateOptions() {} } };
   const links = new TL({ app: tlApp, engine: { isTaskFile: () => false }, registerMarkdownPostProcessor() {}, registerEditorExtension() {}, registerEvent() {}, register() {} });
   links.editorExtension = () => null;
   let redraws = 0; links.refreshSoon = () => { redraws++; };
@@ -660,6 +660,16 @@ const start = async (data) => {
   evs.delete(new TFile('Tasks/Gone.md')); evs.delete(new TFile('Notes/Other.md'));
   evs.rename(new TFile('Tasks/Renamed.md'));
   eq(redraws, 2, 'deleting or renaming a note in the tasks folder redraws task links; other notes do not');
+  // Review p2-s8 #3: CodeMirror loads when the links start; a missing module turns off only the Live Preview links.
+  for (const missing of [false, true]) {
+    const exts = []; let updated = 0; const Mod = require('module'); const load = Mod._load; const warn = console.warn; const warned = [];
+    if (missing) Mod._load = function (r, ...a) { if (r === '@codemirror/language') throw new Error('planted: no module'); return load.call(this, r, ...a); };
+    console.warn = (m) => warned.push(m);
+    const cmLinks = new TL({ app: { ...tlApp, workspace: { updateOptions: () => updated++ } }, engine: { isTaskFile: () => false }, registerMarkdownPostProcessor() {}, registerEditorExtension: (e) => exts.push(e), registerEvent() {}, register() {} });
+    cmLinks.editorExtension = (cm) => (typeof cm.syntaxTree === 'function' && typeof cm.ViewPlugin === 'function' && typeof cm.StateEffect === 'function' ? 'ext' : null);
+    try { cmLinks.start(); await new Promise((r) => setTimeout(r, 0)); } finally { Mod._load = load; console.warn = warn; }
+    eq([exts.length, exts[0], updated, warned.length], missing ? [1, [], 0, 1] : [1, ['ext'], 1, 0], missing ? 'task links: a missing CodeMirror module is logged and only Live Preview links are off' : 'task links: CodeMirror loads at start and the editors are told');
+  }
   tl.host.unload();
 
   // ---- Section 6: the Sidebar's content is stored data; a part switched off hides its buttons ----
@@ -802,11 +812,12 @@ const start = async (data) => {
     eq(hdr2, ['header', 'title Projects'], 'Projects tab title: updateHeader, then the header strip');
     await pv().setState({ page: 'inbox' }, {});
     ok(true, 'Projects tab title: no titleEl and no updateHeader, no error');
-    const pbad = Object.assign(pv(), { titleEl: { setText() {} }, leaf: { updateHeader() { throw new Error('planted'); } } });
+    const strip = []; const pbad = Object.assign(pv(), { titleEl: { setText: (t) => strip.push(t) }, leaf: { updateHeader() { throw new Error('planted'); } } });
     const perrs = []; console.error = (...a) => perrs.push(a[0]);
     let opened = true;
     try { await pbad.setState({ page: 'inbox' }, {}); } catch { opened = false; } finally { console.error = ce; }
     ok(opened && perrs[0] === 'LifeWorld: the Projects tab title did not update', 'Projects tab title: a throwing updateHeader is logged, the tab still opens');
+    eq(strip, ['Projects'], 'Projects tab title: a throwing updateHeader still lets the header strip update (review p2-s8 #5)');
     // A calendar sync that arrives while Settings is open redraws the Calendars picker.
     const cs = await start({});
     const drawn = [];

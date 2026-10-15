@@ -11,6 +11,8 @@ const common = {
   target: 'es2020',
   // Provided by Obsidian at runtime, never bundled.
   external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', ...builtinModules],
+  // Obsidian runs main.js as a CommonJS script, so import() becomes require() (the CodeMirror modules).
+  supported: { 'dynamic-import': false },
   logLevel: 'warning',
 };
 
@@ -20,6 +22,10 @@ const PARTS = ['projects', 'today', 'planner', 'sidebar'];
 
 // The one plugin Obsidian loads: repo-root main.js, styles.css (LifeWorld's own, then the four
 // parts' styles in start order) and manifest.json.
-await esbuild.build({ ...common, entryPoints: ['src/main.js'], outfile: 'main.js', banner });
+// Today's four bundled fonts are under the SIL Open Font License, which asks for its text to ship with
+// them: it goes at the end of main.js, where the fonts are.
+const fonts = fs.readdirSync('src/today/fonts').sort().map((f) => fs.readFileSync(`src/today/fonts/${f}`, 'utf8').trim());
+const footer = { js: `/*! Font licences (Today's handwriting fonts)\n\n${fonts.join('\n\n')}\n*/` };
+await esbuild.build({ ...common, entryPoints: ['src/main.js'], outfile: 'main.js', banner, footer });
 fs.writeFileSync('styles.css', ['src', ...PARTS.map((p) => `src/${p}`)].map((d) => fs.readFileSync(`${d}/styles.css`, 'utf8')).join('\n'));
 

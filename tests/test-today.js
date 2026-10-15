@@ -619,10 +619,10 @@ async function writeBack() {
 /* ---- Open Today when Obsidian starts (setting, 1.3.1) ---------------------- */
 eq([L.startupOpensToday(undefined), L.startupOpensToday({}), L.startupOpensToday({ openOnStartup: true }), L.startupOpensToday({ openOnStartup: false })], [true, true, true, false], 'startup setting: on unless saved as false');
 eq([L.normalizeOpenOnStartup('false'), L.normalizeOpenOnStartup(0), L.normalizeOpenOnStartup(null)], [true, true, true], 'startup setting: only a real false turns it off (damaged data keeps today\'s behaviour)');
-async function startupRun(saved) {
+async function startupRun(saved, noCM) {
   // Real onload against a stand-in app: count every way Today could be opened,
   // focused or revealed once the layout is ready.
-  const ready = []; const touched = []; let stored = saved;
+  const ready = []; const touched = []; let stored = saved; const cm = { exts: [], updated: 0 };
   const p = Object.create(Plugin.prototype);
   const nop = () => {};
   p.app = {
@@ -630,21 +630,25 @@ async function startupRun(saved) {
       onLayoutReady: (cb) => ready.push(cb), on: () => ({}), getLeavesOfType: () => [],
       getLeaf: () => { touched.push('getLeaf'); return { setViewState: async () => touched.push('setViewState') }; },
       revealLeaf: () => touched.push('revealLeaf'), setActiveLeaf: () => touched.push('setActiveLeaf'),
+      updateOptions: () => cm.updated++,
     },
     metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null },
   };
   Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop,
-    registerEditorExtension: nop, registerView: nop, addRibbonIcon: nop, addCommand: nop, registerObsidianProtocolHandler: nop });
+    registerEditorExtension: (e) => cm.exts.push(e), registerView: nop, addRibbonIcon: nop, addCommand: nop, registerObsidianProtocolHandler: nop });
   const warn = console.warn; console.warn = nop; // the editor-extension fallback warns outside Obsidian
-  try { await p.onload(); } finally { console.warn = warn; }
-  for (const cb of ready) await cb();
-  await new Promise((r) => setTimeout(r, 0));
-  return { p, touched, stored: () => stored };
+  // noCM: Obsidian without @codemirror/view (review p2-s8 #3).
+  const load = Module._load; if (noCM) Module._load = function (r, ...a) { if (r === '@codemirror/view') throw new Error('planted: no module'); return load.call(this, r, ...a); };
+  try { await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0)); } finally { console.warn = warn; Module._load = load; }
+  return { p, touched, stored: () => stored, cm };
 }
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
+  eq([on.cm.exts.length, on.cm.exts[0].length, on.cm.updated], [1, 1, 1], 'startup: the marker hider is added once CodeMirror loads, and the editors are told');
+  const noCM = await startupRun(JSON.parse(JSON.stringify(keep)), true);
+  ok(noCM.touched.includes('setViewState') && noCM.cm.exts[0].length === 0 && noCM.cm.updated === 0, 'startup without a CodeMirror module: Today still starts, only the marker hider is off');
   const off = await startupRun({ ...JSON.parse(JSON.stringify(keep)), openOnStartup: false });
   eq(off.touched, [], 'startup, setting off: Today is not opened, revealed or focused');
   const fresh = await startupRun(null);

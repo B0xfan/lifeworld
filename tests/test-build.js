@@ -27,7 +27,18 @@ for (const k of ['logic', 'TaskEngine', 'TaskLinks', 'ProjectsView', 'IdeaModal'
 for (const id of ['a4-today', 'a4-planner']) assert.ok(LW.parts[id].logic, `${id} exports its helpers`);
 assert.ok(LW.parts['a4-sidebar'].__logic && LW.parts['a4-sidebar'].addExtra, 'Sidebar exports its helpers and addExtra');
 assert.strictEqual(typeof LW.vault.startWith, 'function', 'the tests can start on the frozen test vault');
-assert.strictEqual(fs.readdirSync(path.join(ROOT, 'src', 'today', 'fonts')).length, 4, 'Today keeps its four font licence texts');
+// Inside Obsidian (a window exists) the test hook is never set, so another plugin cannot reach it (review p2-s8 #2).
+delete require.cache[MAIN]; global.window = {};
+assert.strictEqual(require(MAIN).default.vault, undefined, 'no vault test hook when a window exists');
+delete global.window; delete require.cache[MAIN];
+// The shipped main.js carries the four font licence texts (SIL OFL asks for it; review p2-s8 #1).
+const built = fs.readFileSync(MAIN, 'utf8');
+const lic = fs.readdirSync(path.join(ROOT, 'src', 'today', 'fonts'));
+assert.strictEqual(lic.length, 4, 'Today keeps its four font licence texts');
+for (const f of lic) assert.ok(built.includes(fs.readFileSync(path.join(ROOT, 'src', 'today', 'fonts', f), 'utf8').trim()), `main.js ships ${f}`);
+assert.ok(/SIL OPEN FONT LICENSE Version 1\.1/.test(built.slice(-5000)), 'the licence texts sit at the end of main.js');
+// CodeMirror is loaded when the editor add-ons start, never when main.js loads (review p2-s8 #3).
+assert.ok(!/^var import_(state|view|language)\d* = require\("@codemirror/m.test(built) && /Promise\.resolve\(\)\.then\(\(\) => __toESM\(require\("@codemirror\/language"\)\)\)/.test(built), 'CodeMirror loads late, inside a promise');
 // Greeting: the name comes from Settings › Today page (phase 2 section 5), never from the build.
 assert.strictEqual(LW.parts['a4-today'].logic.greetingLine(9), 'Good morning', 'greeting line: no name built in');
 assert.ok(!/LW_LOCAL_|local\.json|LW_START_VAULT|define:/.test(fs.readFileSync(path.join(ROOT, 'esbuild.config.mjs'), 'utf8')), 'the build reads no owner-only or test-only values');
