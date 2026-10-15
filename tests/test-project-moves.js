@@ -6,6 +6,7 @@
 'use strict';
 const path = require('path');
 const Module = require('module');
+const { part } = require('./lib/paths');
 const assert = require('assert');
 class TFile { constructor(p, fm) { this.path = p; this.extension = path.extname(p).slice(1); this.basename = path.basename(p, `.${this.extension}`); this.fm = fm; } }
 class TFolder { constructor(p, children) { this.path = p; this.children = children; } }
@@ -14,7 +15,7 @@ const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Mod
   getFrontMatterInfo: (t) => { const m = /^---\n([\s\S]*?)\n---\n/.exec(t); return { exists: !!m, frontmatter: m ? m[1] : '' }; }, parseYaml: JSON.parse };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
-const Plugin = require(path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js'));
+const Plugin = part('a4-projects');
 const L = Plugin.logic;
 
 const TODAY = '2026-10-13';

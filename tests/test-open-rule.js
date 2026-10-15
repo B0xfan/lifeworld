@@ -7,11 +7,12 @@
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
-const MAIN = path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js');
+const { part } = require('./lib/paths');
+const MAIN = 'a4-projects';
 const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
-const Plugin = require(MAIN);
+const Plugin = part(MAIN);
 const L = Plugin.logic;
 const assert = require('assert');
 

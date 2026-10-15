@@ -7,11 +7,12 @@
 'use strict';
 const path = require('path');
 const Module = require('module');
+const { part } = require('./lib/paths');
 const assert = require('assert');
 const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
-const plugin = require(path.join(__dirname, '..', 'dist', 'a4-projects', 'main.js'));
+const plugin = part('a4-projects');
 const { normalizeSettings } = plugin.logic;
 
 const ui = (raw) => { const u = normalizeSettings(raw).ui; return [u.view, u.kind]; };

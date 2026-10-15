@@ -24,7 +24,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Australia/Lord_Howe', 'America/New_York'];
 
@@ -51,8 +51,8 @@ const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class
   stringifyYaml: (o) => { lastYaml = JSON.parse(JSON.stringify(o)); return `${JSON.stringify(o)}\n`; } };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const PJ = require(built('a4-projects'));
-const L = PJ.logic; const T = require(built('a4-today')).logic; const PL = require(built('a4-planner')).logic;
+const PJ = part('a4-projects');
+const L = PJ.logic; const T = part('a4-today').logic; const PL = part('a4-planner').logic;
 const TaskEngine = PJ.TaskEngine;
 
 let n = 0; let failed = 0;
@@ -92,11 +92,11 @@ const remOf = (fm) => fm.reminders;
 // Updated in section 6: the reminder helpers moved from Projects, Today and Planner (verbatim
 // copies) to src/core/reminders.js; tests/test-core.js checks no plugin keeps a copy.
 {
-  const R = require('../src/core/reminders');
+  const R = require('./lib/paths').fromSrc('core/reminders');
   const names = ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'];
   for (const [i, logic] of [L, T, PL].entries()) for (const x of names) ok(logic[x] !== undefined, `${['Projects', 'Today', 'Planner'][i]} still offers ${x}`);
-  for (const src of srcs) eq(((/^const \{ ([^}]*) \} = require\('\.\.\/core\/reminders'\);$/m.exec(src) || [null, ''])[1]).split(', '), names, 'takes every reminder helper from the shared core');
-  eq(Object.keys(R), names, 'the core offers exactly these');
+  for (const src of srcs) eq(((/^import \{ ([^}]*) \} from '\.\.\/core\/reminders';$/m.exec(src) || [null, ''])[1]).split(', '), names, 'takes every reminder helper from the shared core');
+  eq(Object.keys(R).sort(), [...names].sort(), 'the core offers exactly these');
   // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
   ok(srcs.every((s) => require('./lib/core-use').fromCore(s, ['taskFromFrontmatter'], true)('taskFromFrontmatter')), 'all three use taskFromFrontmatter and take it from the shared core');
 }

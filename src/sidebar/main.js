@@ -40,13 +40,12 @@
  */
 'use strict';
 
-const obsidian = require('obsidian');
-const { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } = obsidian;
-const { dayOf } = require('../core/dates'); // the one shared copy of the date helpers
-const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
+import { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } from 'obsidian';
+import { dayOf } from '../core/dates'; // the one shared copy of the date helpers
+import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
-const { sidebarContent } = require('../core/vault');
+import { sidebarContent } from '../core/vault';
 const SBC = sidebarContent;
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
@@ -652,7 +651,8 @@ class A4SidebarView extends ItemView {
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return SBC.brand; }
   // A changed Sidebar name reaches the tab title too (review p2-s6); Obsidian reads it only when the tab opens.
-  // shortcut: titleEl and leaf.updateHeader are Obsidian internals (1.14.4 app code), section 8 reviews them.
+  // shortcut: titleEl and leaf.updateHeader are Obsidian internals (not in obsidian.d.ts 1.14.4, read in its
+  // app code; reviewed in section 8: no public call redraws a tab title). Upgrade if Obsidian adds one.
   syncTitle() {
     if (this.shownTitle !== undefined && this.shownTitle !== SBC.brand) {
       // An Obsidian update that makes these throw must not blank the Sidebar (review p2-s7).
@@ -1565,9 +1565,9 @@ class A4SidebarSettingTab extends PluginSettingTab {
   }
 }
 
-module.exports = A4SidebarPlugin;
-module.exports.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
-module.exports.__logic = {
+export default A4SidebarPlugin;
+A4SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
+A4SidebarPlugin.__logic = {
   NAV, LANDING, FILE_CAP, SBC, A4SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,

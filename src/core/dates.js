@@ -170,4 +170,4 @@ function timeText(t, short) {
   return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-module.exports = { pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };
+export { pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };

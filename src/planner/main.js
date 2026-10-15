@@ -72,7 +72,7 @@
  */
 'use strict';
 
-const { Plugin, ItemView, TFile, TFolder, Notice, setIcon } = require('obsidian');
+import { Plugin, ItemView, TFile, TFolder, Notice, setIcon, Menu, Keymap } from 'obsidian';
 
 /* ========================================================================== *
  * Constants
@@ -96,13 +96,13 @@ const MADE_KEEP_DAYS = 60;
  * ========================================================================== */
 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
-const { pad2, dayOf, isDayStr, toDayStr, utcOf, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, halfOfTime, timeText } = require('../core/dates');
-const { asList } = require('../core/lists');
-const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
-const { understand, parseClock, quickAddChips, quickAddPlan } = require('../core/quickadd');
-const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
-const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
-const { vaultFolders, feedNotes, inTaskFolders, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
+import { pad2, dayOf, isDayStr, toDayStr, utcOf, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, halfOfTime, timeText } from '../core/dates';
+import { asList } from '../core/lists';
+import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
+import { understand, parseClock, quickAddChips, quickAddPlan } from '../core/quickadd';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } from '../core/tasks';
+import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { vaultFolders, feedNotes, inTaskFolders, readable, writable } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 
 // One frontmatter write that remembers what the keys it changed held before;
 // the returned undo() puts exactly those back (a key that was absent is
@@ -149,7 +149,7 @@ function blockedChip(meta, blockers, open, pre) {
   c.setAttr('aria-label', names); c.setAttr('title', names); c.setAttr('role', 'button'); c.tabIndex = 0;
   const show = (e) => {
     e.preventDefault(); e.stopPropagation();
-    const m = new (require('obsidian').Menu)();
+    const m = new Menu();
     for (const b of blockers) m.addItem((i) => i.setTitle(b.title).setIcon('lock').onClick(() => open(b.path)));
     if (e instanceof MouseEvent && e.clientX) m.showAtMouseEvent(e); else { const r = c.getBoundingClientRect(); m.showAtPosition({ x: r.left, y: r.bottom }); }
   };
@@ -165,8 +165,7 @@ function blockedChip(meta, blockers, open, pre) {
 // project link or name. Resolves 'page', 'note', or false.
 async function openProjectPage(app, ref, e, sourcePath) {
   if (ref == null || ref === '') return false;
-  const ob = require('obsidian');
-  const newTab = !!(e && ob.Keymap && ob.Keymap.isModEvent(e));
+  const newTab = !!(e && Keymap && Keymap.isModEvent(e));
   const pj = partOf(app, 'a4-projects');
   if (pj && typeof pj.openProjectPage === 'function') {
     try { if (await pj.openProjectPage(ref, { newTab })) return 'page'; } catch (err) { console.error('[a4] opening the project page failed', err); }
@@ -1413,6 +1412,6 @@ class SchedulePopover {
   }
 }
 
-module.exports = A4PlannerPlugin;
+export default A4PlannerPlugin;
 // Pure functions for tests/test-planner.js (same convention as a4-today's .logic).
-module.exports.logic = { allUnscheduledFolded, projectMatches, projectToken, pickProjectText, unmatchedProjectWords, PROJECT_HITS_MAX, isSomeday, applySomeday, somedayOf, understand, quickAddChips, quickAddPlan, parseClock, timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo, taskFromFrontmatter, priorityTable, priorityOf, groupUnscheduled, unscheduledOf, overdueOf, weeklyGoalsOf, laneOf, plannerItem, taskTitleOf, projectKeyOf, applyUnschedule, applyMove, orderForInsert, planInsert, insertIndexOf, eventsForDay, eventKey, eventDetails, plannedFields, pruneMade, dueChipOf, monthGrid, shiftMonth, moveLabel, mondayOf, weekOf, taskOnDay, isTaskDone, occursOn, parseRRule, sortByOrder, addDays, openProjectPage, REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };
+A4PlannerPlugin.logic = { allUnscheduledFolded, projectMatches, projectToken, pickProjectText, unmatchedProjectWords, PROJECT_HITS_MAX, isSomeday, applySomeday, somedayOf, understand, quickAddChips, quickAddPlan, parseClock, timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo, taskFromFrontmatter, priorityTable, priorityOf, groupUnscheduled, unscheduledOf, overdueOf, weeklyGoalsOf, laneOf, plannerItem, taskTitleOf, projectKeyOf, applyUnschedule, applyMove, orderForInsert, planInsert, insertIndexOf, eventsForDay, eventKey, eventDetails, plannedFields, pruneMade, dueChipOf, monthGrid, shiftMonth, moveLabel, mondayOf, weekOf, taskOnDay, isTaskDone, occursOn, parseRRule, sortByOrder, addDays, openProjectPage, REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };

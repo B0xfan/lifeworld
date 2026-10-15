@@ -5,15 +5,15 @@
  * daylight-saving edges). Optional: RRULE_JS=<path to the rrule package>
  * adds a cross-check of the recurrence engine against the rrule library
  * (the one TaskNotes bundles) over two years of days for many rules.
- * Moved from the A4 vault: behaviour checks load the built dist/a4-today/main.js,
+ * Moved from the A4 vault: behaviour checks load Today from the built main.js,
  * text checks read src/today/main.js (tests/lib/paths.js). */
 'use strict';
 const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
-const MAIN = built('a4-today');
+const { part, STYLES, source } = require('./lib/paths');
+const MAIN = 'a4-today';
 const SRC = source('a4-today');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
@@ -41,7 +41,7 @@ const notices = [];
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class { constructor(m) { notices.push(m); } }, setIcon() {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const Plugin = require(MAIN);
+const Plugin = part(MAIN);
 const L = Plugin.logic;
 
 let n = 0; let failed = 0;
@@ -312,7 +312,7 @@ eq(L.normalizeLook({ accent: 'orange', font: 'caveat' }), { accent: 'orange', fo
   // Any-theme defaults (mockup-today-any-theme, approved 2026-10-07): every token
   // still reads the INKLINE variable first, so a page with INKLINE is unchanged.
   const fs = require('fs');
-  const css = fs.readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+  const css = fs.readFileSync(STYLES, 'utf8');
   const blocks = [...css.matchAll(/\.a4t-capture-modal \{([^}]*)\}/g)].map((m) => m[1]);
   ok(blocks.length === 2, 'two token blocks (base + dark)', String(blocks.length));
   for (const blk of blocks) for (const m of blk.matchAll(/(--a4t-[\w-]+):\s*([^;]+);/g)) {
@@ -431,8 +431,8 @@ eq(ev.map((e) => e.summary), ['All day', 'Market', 'edge'], 'calendar window tod
   const SRC_DIR = pth.join(__dirname, '..', 'src');
   const builtins = new Set(require('module').builtinModules.flatMap((m) => [m, `node:${m}`]).concat(['electron']));
   const js = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? js(pth.join(d, e.name)) : e.name.endsWith('.js') ? [pth.join(d, e.name)] : []));
-  const used = js(SRC_DIR).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)].filter((m) => builtins.has(m[1])).map((m) => `${pth.relative(SRC_DIR, f)}: ${m[1]}`));
-  eq(used, [], 'no Node or Electron module is required anywhere in src/');
+  const used = js(SRC_DIR).flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/(?:require\(\s*|\bfrom\s+|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)].filter((m) => builtins.has(m[1])).map((m) => `${pth.relative(SRC_DIR, f)}: ${m[1]}`));
+  eq(used, [], 'no Node or Electron module is imported or required anywhere in src/');
   ok(!/SYNC_PYTHON|SYNC_SCRIPT|syncEnv|LW_LOCAL_/.test(fs.readFileSync(SRC, 'utf8')), 'Today has no calendar-sync script, interpreter or build-time owner value left');
 }
 eq(L.eventDayLabel('2026-10-05', '2026-10-03'), 'Mon 5', 'event day label');
@@ -739,11 +739,11 @@ function nop2() {}
   ok(/input\.value = ''; reset\(\);/.test(rc), 'a successful save empties the box and snaps it back to its resting size');
   ok(/catch \(err\)[^\n]*Your text is still in the box/.test(rc) && !/catch \(err\)[^\n]*reset\(\)/.test(rc), 'a failed save keeps the text and the size');
   ok(!/saveData|saveSettings|localStorage/.test(rc), 'the enlarged size is never remembered');
-  ok(/const reset = \(\) => \{ input\.style\.height = ''; box\.removeClass\('is-grown'\); \};/.test(rc), 'snap back clears the dragged height');
+  ok(/const reset = \(\) => \{ input\.style\.removeProperty\('height'\); box\.removeClass\('is-grown'\); \};/.test(rc), 'snap back clears the dragged height');
   const md = src.slice(src.indexOf('class CaptureModal extends Modal {'), src.indexOf('  onClose() { this.contentEl.empty(); }'));
   ok(/captureSendButton\(box\)/.test(md) && /send\.addEventListener\('click', \(e\) => \{ e\.preventDefault\(\); submit\(\); \}\)/.test(md), 'capture window: on-screen Enter saves too');
   ok(/function captureSendButton[^]*?role: 'button', tabindex: '0'/.test(src), 'on-screen Enter is a real, focusable control');
-  const css = require('fs').readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+  const css = require('fs').readFileSync(STYLES, 'utf8');
   const capCss = css.split('\n').filter((l) => /a4t-capture-(grip|send|text)/.test(l)).join('\n');
   ok(capCss.length > 0 && !/#[0-9a-f]{3,8}\b|rgb\(/i.test(capCss), 'handle and Enter styles use theme colours only');
   ok(/textarea\.a4t-capture-text \{[^}]*resize: none/.test(css), 'no native resize corner (it could widen the box)');

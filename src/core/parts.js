@@ -11,4 +11,4 @@ function partOf(app, id) {
   return PARTS[id] || (app && app.plugins && app.plugins.plugins ? app.plugins.plugins[id] : null) || null;
 }
 
-module.exports = { PARTS, partOf };
+export { PARTS, partOf };

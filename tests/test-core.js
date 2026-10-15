@@ -5,7 +5,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { source } = require('./lib/paths');
+const { source, fromSrc } = require('./lib/paths');
 const { coreUse, fromCore } = require('./lib/core-use');
 
 const CORE = path.join(__dirname, '..', 'src', 'core');
@@ -15,15 +15,15 @@ const EXPORTS = {
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['PARTS', 'partOf'],
-  vault: ['BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'setVault', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
+  vault: ['BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
   quickadd: ['DOW_NAMES', 'DOW_CODES', 'MON_NAMES', 'dowIndex', 'nextDow', 'validDay', 'parseDayWord', 'DAY_RE', 'repeatRule', 'REPEAT_RE', 'understand', 'parseClock', 'whenValue', 'firstOccurrence', 'DOW_LONG', 'joinWords', 'ordinal', 'repeatWords', 'shortDay', 'halfWord', 'quickAddChips', 'quickAddPlan'],
 };
 let n = 0;
 const check = (fn) => { fn(); n++; };
 const core = {};
 for (const [mod, names] of Object.entries(EXPORTS)) {
-  core[mod] = require(path.join(CORE, mod));
-  check(() => assert.deepStrictEqual(Object.keys(core[mod]), names, `src/core/${mod}.js exports exactly its helpers`));
+  core[mod] = fromSrc(`core/${mod}`);
+  check(() => assert.deepStrictEqual(Object.keys(core[mod]).sort(), [...names].sort(), `src/core/${mod}.js exports exactly its helpers`));
 }
 check(() => assert.deepStrictEqual(fs.readdirSync(CORE).sort(), Object.keys(EXPORTS).map((m) => `${m}.js`).sort(), 'every core file is listed here'));
 
@@ -43,7 +43,7 @@ for (const [id, file, names] of files) {
 }
 
 // The checks themselves catch what they are for (planted in memory, never on disk).
-const SAMPLE = "const { addDays } = require('../core/dates');\nfunction f() { return addDays('2026-10-05', 1); }\n";
+const SAMPLE = "import { addDays } from '../core/dates';\nfunction f() { return addDays('2026-10-05', 1); }\n";
 check(() => assert.deepStrictEqual(coreUse(SAMPLE, ALL), { imports: { dates: ['addDays'] }, own: [], used: ['addDays'] }));
 for (const copy of ['let pad2 = (n) => n;', 'var pad2 = 1;', '  function pad2(n) { return n; }', 'class pad2 {}', 'function g() { const pad2 = 2; return pad2; }', 'const { pad2 } = obj;']) {
   check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}${copy}\n`, ALL).own, ['pad2'], `own copy seen: ${copy}`));
@@ -56,7 +56,7 @@ for (const use of ['const v = c ? timeText : 0;', 'switch (v) { case timeText: b
 check(() => assert.deepStrictEqual(coreUse(`${SAMPLE}const o = c ? { timeText: 1 } : a?.timeText;\n`, ALL).used, ['addDays'], 'a key inside a ternary and an optional property are not uses'));
 
 // fromCore with mustUse: an import the file never uses fails; a use with the import passes.
-const UNUSED = "const { addDays, timeText } = require('../core/dates');\nfunction f() { return addDays('2026-10-05', 1); }\n";
+const UNUSED = "import { addDays, timeText } from '../core/dates';\nfunction f() { return addDays('2026-10-05', 1); }\n";
 check(() => assert.deepStrictEqual([fromCore(UNUSED, ALL)('timeText'), fromCore(UNUSED, ALL, true)('timeText'), fromCore(UNUSED, ALL, true)('addDays')], [true, false, true], 'mustUse: imported but unused is caught'));
 
 // A few behaviour pins on the one copy (the plugin suites cover it in depth).

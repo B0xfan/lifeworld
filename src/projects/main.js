@@ -81,10 +81,10 @@
  */
 'use strict';
 
-const obsidian = require('obsidian');
-const { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform } = obsidian;
-const SuggestModal = obsidian.SuggestModal || class {}; // the Find window (stand-in when tests load this file)
-const Modal = obsidian.Modal || class {};
+import { RangeSetBuilder, StateEffect, Prec } from '@codemirror/state';
+import { ViewPlugin, Decoration, WidgetType } from '@codemirror/view';
+import { syntaxTree } from '@codemirror/language';
+import { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform, SuggestModal, Modal, Component, getFrontMatterInfo, Keymap, MarkdownRenderer, Menu, parseYaml, stringifyYaml, editorInfoField, editorLivePreviewField } from 'obsidian';
 
 /* ========================================================================== *
  * Constants
@@ -126,13 +126,13 @@ function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(l
  * ========================================================================== */
 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
-const { pad2, dayOf, isDayStr, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } = require('../core/dates');
-const { asList } = require('../core/lists');
-const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
-const { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } = require('../core/quickadd');
-const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } = require('../core/tasks');
-const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
-const { vaultFolders, inTaskFolders, readable, writable, toNote, isRenamed } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
+import { pad2, dayOf, isDayStr, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
+import { asList } from '../core/lists';
+import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
+import { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } from '../core/quickadd';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
+import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { vaultFolders, inTaskFolders, readable, writable, toNote, isRenamed } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: configuration
@@ -1444,7 +1444,7 @@ class TaskEngine {
       if (!name) name = `${plan.base.substring(0, 50)}-${Date.now().toString(36)}`;
     }
     const path = `${folder}/${name}.md`;
-    const content = createContent(plan, name, cfg, obsidian.stringifyYaml);
+    const content = createContent(plan, name, cfg, stringifyYaml);
     const file = await this.app.vault.create(path, content);
     return { result: { path: file.path, title: plan.title }, undo: async () => { const f = this.file(file.path); if (f) await this.app.fileManager.trashFile(f); } };
   }
@@ -1483,8 +1483,7 @@ class TaskEngine {
   /* ---- the TaskNotes-shaped surface A4 Today and A4 Planner call -------- */
 
   makeApi() {
-    const eng = this;
-    const info = (path) => { const f = eng.file(path); const fm = f ? eng.fm(f) : null; const cfg = eng.cfg(); return { path, status: fm ? statusString(fm[cfg.F.status]) : '', complete_instances: fm ? strList(fm[cfg.F.completeInstances]) : [] }; };
+    const info = (path) => { const f = this.file(path); const fm = f ? this.fm(f) : null; const cfg = this.cfg(); return { path, status: fm ? statusString(fm[cfg.F.status]) : '', complete_instances: fm ? strList(fm[cfg.F.completeInstances]) : [] }; };
     // Frontmatter can read stale right after a write; return what we wrote.
     const after = async (path, run) => { await run(); return info(path); };
     return {
@@ -1493,13 +1492,13 @@ class TaskEngine {
       hasCapability: (c) => ['tasks.read', 'tasks.write', 'recurring.write'].includes(c),
       lifecycle: { isReady: () => true },
       tasks: {
-        complete: (path) => after(path, () => eng.complete(path)),
-        uncomplete: (path) => after(path, () => eng.uncomplete(path)),
-        create: async (data) => { const r = await eng.create(data || {}); return { ...info(r.result.path), path: r.result.path, title: r.result.title }; },
+        complete: (path) => after(path, () => this.complete(path)),
+        uncomplete: (path) => after(path, () => this.uncomplete(path)),
+        create: async (data) => { const r = await this.create(data || {}); return { ...info(r.result.path), path: r.result.path, title: r.result.title }; },
       },
       recurring: {
         toggleCompleteInstance: async (path, day) => {
-          const r = await eng.toggleInstance(path, day ? toDayStr(day) : null);
+          const r = await this.toggleInstance(path, day ? toDayStr(day) : null);
           const i = info(path);
           // The cache may lag the write by a moment: report the written list.
           const list = i.complete_instances.slice();
@@ -1656,7 +1655,7 @@ class TaskLinks {
       e.preventDefault(); e.stopPropagation();
       const now = this.taskFor(el.dataset.linktext, el.dataset.source);
       if (e.target.closest('.a4pj-tl-dot')) { if (now) this.toggle(now, el); return; }
-      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, obsidian.Keymap.isModEvent(e));
+      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, Keymap.isModEvent(e));
     });
     el.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
@@ -1753,25 +1752,20 @@ class TaskLinks {
 
   /* ---- live preview ---------------------------------------------------- */
   editorExtension() {
-    const { RangeSetBuilder, StateEffect, Prec } = require('@codemirror/state');
-    const { ViewPlugin, Decoration, WidgetType } = require('@codemirror/view');
-    let syntaxTree = null;
-    try { syntaxTree = require('@codemirror/language').syntaxTree; } catch { syntaxTree = null; }
-    const { editorInfoField, editorLivePreviewField } = obsidian;
-    const links = this;
+    const { views } = this;
+    const draw = (t, label, linktext, src) => this.build(t, label, linktext, src);
     const refresh = StateEffect.define();
     this.refreshEffect = refresh;
     class LinkWidget extends WidgetType {
       constructor(t, label, linktext, src, key) { super(); this.t = t; this.label = label; this.linktext = linktext; this.src = src; this.k = key; }
       eq(o) { return o instanceof LinkWidget && o.k === this.k; }
-      toDOM() { const el = links.build(this.t, this.label, this.linktext, this.src); el.dataset.cm = '1'; return el; }
+      toDOM() { const el = draw(this.t, this.label, this.linktext, this.src); el.dataset.cm = '1'; return el; }
       ignoreEvent() { return true; }
     }
     const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch { return false; } };
     const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
     // A [[link]] the editor itself treats as a link (not in code, not in the properties block).
     const isLinkToken = (state, pos) => {
-      if (!syntaxTree) return true;
       try {
         const n = syntaxTree(state).resolveInner(pos, 1);
         return /hmd-internal-link/.test(n.name) && !/code|frontmatter|comment/.test(n.name);
@@ -1784,7 +1778,7 @@ class TaskLinks {
       const state = view.state;
       if (!isLive(state)) return Decoration.none;
       const src = pathOf(state);
-      if (!src || links.skipSource(src)) return Decoration.none;
+      if (!src || this.skipSource(src)) return Decoration.none;
       const b = new RangeSetBuilder();
       const sel = state.selection.ranges;
       // One pass over the viewport, widened to whole lines (visibleRanges can
@@ -1794,11 +1788,11 @@ class TaskLinks {
         for (const m of wikilinksIn(state.doc.sliceString(from, to), from)) {
           if (sel.some((s) => s.from < m.to && s.to >= m.from)) continue; // cursor in it: show the text
           if (!isLinkToken(state, m.from + 2)) continue;
-          const t = links.taskFor(m.linkpath, src);
+          const t = this.taskFor(m.linkpath, src);
           if (!t) continue;
           const linktext = state.doc.sliceString(m.from + 2, m.to - 2).split('|')[0].trim();
           const label = m.alias || '';
-          b.add(m.from, m.to, Decoration.replace({ widget: new LinkWidget(t, label, linktext, src, links.key(t, label)), inclusive: false }));
+          b.add(m.from, m.to, Decoration.replace({ widget: new LinkWidget(t, label, linktext, src, this.key(t, label)), inclusive: false }));
         }
       }
       return b.finish();
@@ -1806,13 +1800,13 @@ class TaskLinks {
     // Highest precedence: Obsidian hides the [[ ]] marks with its own replace
     // decorations, and on a redraw those could otherwise win over the widget.
     return Prec.highest(ViewPlugin.fromClass(class {
-      constructor(view) { this.view = view; links.views.add(view); this.decorations = build(view); }
+      constructor(view) { this.view = view; views.add(view); this.decorations = build(view); }
       update(u) {
         const changedMode = isLive(u.startState) !== isLive(u.state) || pathOf(u.startState) !== pathOf(u.state);
         const poked = u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh)));
         if (u.docChanged || u.viewportChanged || u.selectionSet || changedMode || poked) this.decorations = build(u.view);
       }
-      destroy() { links.views.delete(this.view); }
+      destroy() { views.delete(this.view); }
     }, { decorations: (v) => v.decorations }));
   }
   refreshEditors() {
@@ -2003,7 +1997,7 @@ class A4ProjectsPlugin extends Plugin {
       if (e.type === 'auxclick' && e.button !== 1) return;
       const card = w.querySelector('[data-task-path]');
       const file = card && this.app.vault.getAbstractFileByPath(card.dataset.taskPath);
-      if (file instanceof TFile) this.app.workspace.getLeaf(e.type === 'auxclick' || obsidian.Keymap.isModEvent(e)).openFile(file);
+      if (file instanceof TFile) this.app.workspace.getLeaf(e.type === 'auxclick' || Keymap.isModEvent(e)).openFile(file);
     };
     for (const type of ['click', 'auxclick', 'dblclick', 'contextmenu']) this.registerDomEvent(document, type, swallow, true);
     // Menu items are added by TaskNotes' own file-menu handler, which may run
@@ -2238,8 +2232,8 @@ class A4ProjectsPlugin extends Plugin {
   // The frontmatter read from disk (not the cache); null when unreadable.
   async freshFm(f) {
     try {
-      const info = obsidian.getFrontMatterInfo(await this.app.vault.read(f));
-      return info.exists ? obsidian.parseYaml(info.frontmatter) : null;
+      const info = getFrontMatterInfo(await this.app.vault.read(f));
+      return info.exists ? parseYaml(info.frontmatter) : null;
     } catch (e) { console.error('[a4-projects] could not read', f.path, e); return null; }
   }
   // The write; returns its Undo, or null when it failed or was refused (not a
@@ -2444,7 +2438,7 @@ class A4ProjectsPlugin extends Plugin {
     const taken = ((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${name}.md`.toLowerCase());
     if (taken) { new Notice(`There is already a project called "${taken.basename}".`); return null; }
     let f;
-    try { f = await this.app.vault.create(path, ideaNote(t, line, why, sphere, this.engine.today(), obsidian.stringifyYaml)); }
+    try { f = await this.app.vault.create(path, ideaNote(t, line, why, sphere, this.engine.today(), stringifyYaml)); }
     catch (e) { console.error('[a4-projects] idea create failed', path, e); new Notice(`Could not add "${name}".`); return null; }
     this.toast.show(`Added the idea "${f.basename}"`);
     this.logActivity(`You added the idea ${f.basename}.`);
@@ -3051,8 +3045,13 @@ class ProjectsView extends ItemView {
     if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; }
     this.render(true, changed);
     await super.setState(state, result);
-    if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader(); // tab title follows the list
-    if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText()); // and the header strip
+    // The tab title and the header strip follow the list. shortcut: leaf.updateHeader and the view's
+    // titleEl are Obsidian internals (not in obsidian.d.ts 1.14.4, read in its app code); no public call
+    // redraws a tab title. A throwing one is logged, the tab still opens. Upgrade if Obsidian adds one.
+    try {
+      if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
+      if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText());
+    } catch (e) { console.error('LifeWorld: the Projects tab title did not update', e); }
   }
 
   async onOpen() {
@@ -3401,7 +3400,7 @@ class ProjectsView extends ItemView {
   }
 
   taskMoveMenu(anchor, t, col) {
-    const m = new obsidian.Menu();
+    const m = new Menu();
     for (const k of taskColumns(this.cfg)) m.addItem((i) => i.setTitle(TASK_COLUMN_LABEL[k] + (k === col ? ' (here now)' : '')).setDisabled(k === col).onClick(() => this.plugin.moveTask(t, k)));
     const r = anchor.getBoundingClientRect();
     m.showAtPosition({ x: r.left, y: r.bottom });
@@ -3531,7 +3530,7 @@ class ProjectsView extends ItemView {
   }
 
   moveMenu(anchor, p) {
-    const m = new obsidian.Menu();
+    const m = new Menu();
     for (const k of BOARD_COLUMNS) m.addItem((i) => i.setTitle(COLUMN_LABEL[k] + (k === p.status ? ' (here now)' : '')).setDisabled(k === p.status).onClick(() => this.plugin.moveProject(p.path, k)));
     const r = anchor.getBoundingClientRect();
     m.showAtPosition({ x: r.left, y: r.bottom });
@@ -3644,13 +3643,13 @@ class ProjectsView extends ItemView {
     const md = el(body, 'div', 'a4pj-md markdown-rendered');
     const file = this.plugin.engine.file(p.path);
     if (file) {
-      this.bodyComp = new obsidian.Component(); this.bodyComp.load();
+      this.bodyComp = new Component(); this.bodyComp.load();
       const comp = this.bodyComp;
       this.app.vault.cachedRead(file).then((text) => {
         if (comp !== this.bodyComp) return;
         const src = projectBodyForPage(text);
         if (!src) { el(md, 'div', 'a4pj-muted', 'The note is empty.'); return; }
-        return obsidian.MarkdownRenderer.render(this.app, src, md, p.path, comp);
+        return MarkdownRenderer.render(this.app, src, md, p.path, comp);
       }).catch((e) => console.warn('[a4-projects] note render failed', e));
     }
     // Side column
@@ -4060,7 +4059,7 @@ class TaskCardManager {
   render(card, view, file) {
     const hold = card.isConnected ? card.offsetHeight : 0;
     if (hold) card.style.minHeight = `${hold}px`;
-    try { this.draw(card, view, file); } finally { card.style.minHeight = ''; }
+    try { this.draw(card, view, file); } finally { card.style.removeProperty('min-height'); }
   }
 
   draw(card, view, file) {
@@ -4448,9 +4447,9 @@ class ProjectsSettingTab extends PluginSettingTab {
 }
 
 A4ProjectsPlugin.logic = logic;
-module.exports = A4ProjectsPlugin;
-module.exports.TaskEngine = TaskEngine;
-module.exports.TaskLinks = TaskLinks; // for tests/test-dependencies.js
-module.exports.ProjectsView = ProjectsView; // for tests (switch clicks)
-module.exports.IdeaModal = IdeaModal; // for tests (Enter in the form)
-module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for tests/test-projects.js (task card colour)
+export default A4ProjectsPlugin;
+A4ProjectsPlugin.TaskEngine = TaskEngine;
+A4ProjectsPlugin.TaskLinks = TaskLinks; // for tests/test-dependencies.js
+A4ProjectsPlugin.ProjectsView = ProjectsView; // for tests (switch clicks)
+A4ProjectsPlugin.IdeaModal = IdeaModal; // for tests (Enter in the form)
+A4ProjectsPlugin.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for tests/test-projects.js (task card colour)

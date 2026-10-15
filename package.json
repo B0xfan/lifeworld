@@ -9,6 +9,9 @@
     "test": "npm run build && eslint --quiet . && node tests/run-all.js"
   },
   "devDependencies": {
+    "@codemirror/language": "6.13.1",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
     "@eslint/js": "9.39.5",
     "@eslint/json": "0.14.0",
     "@tasknotes/model": "0.2.2",

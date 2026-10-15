@@ -5,16 +5,24 @@
 // part's own settings under its heading. A part switched off is not started at all.
 'use strict';
 
-const { Plugin, PluginSettingTab, Setting, Notice, Modal } = require('obsidian');
-const { PARTS } = require('./core/parts');
-const vault = require('./core/vault');
+import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
+import { PARTS } from './core/parts';
+import * as vault from './core/vault';
+import projectsManifest from './projects/manifest.json';
+import Projects from './projects/main';
+import todayManifest from './today/manifest.json';
+import Today from './today/main';
+import plannerManifest from './planner/manifest.json';
+import Planner from './planner/main';
+import sidebarManifest from './sidebar/manifest.json';
+import Sidebar from './sidebar/main';
 
 // Start order: Projects first (the task engine the others use).
 const PART_LIST = [
-  [require('./projects/manifest.json'), require('./projects/main')],
-  [require('./today/manifest.json'), require('./today/main')],
-  [require('./planner/manifest.json'), require('./planner/main')],
-  [require('./sidebar/manifest.json'), require('./sidebar/main')],
+  [projectsManifest, Projects],
+  [todayManifest, Today],
+  [plannerManifest, Planner],
+  [sidebarManifest, Sidebar],
 ];
 const PART_MAIN = Object.fromEntries(PART_LIST.map(([m, P]) => [m.id, P]));
 
@@ -486,7 +494,8 @@ class PropertyNamesModal extends Modal {
 }
 
 // The four part classes, for the tests.
+LifeWorldPlugin.vault = vault; // for tests (start on the frozen test vault's settings)
 LifeWorldPlugin.parts = Object.fromEntries(PART_LIST.map(([m, P]) => [m.id, P]));
 
-module.exports = LifeWorldPlugin;
-module.exports.PropertyNamesModal = PropertyNamesModal; // for tests (the dialog's checks)
+export default LifeWorldPlugin;
+LifeWorldPlugin.PropertyNamesModal = PropertyNamesModal; // for tests (the dialog's checks)

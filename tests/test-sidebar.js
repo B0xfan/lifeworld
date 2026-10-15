@@ -31,10 +31,10 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
-const SB_MAIN = built('a4-sidebar');
-const PJ_MAIN = built('a4-projects');
+const SB_MAIN = 'a4-sidebar';
+const PJ_MAIN = 'a4-projects';
 
 class TFile {}
 class TFolder {}
@@ -43,9 +43,9 @@ const fakeObsidian = new Proxy({ TFile, TFolder, Platform: { isMobile: false }, 
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
 
-const SB = require(SB_MAIN);
+const SB = part(SB_MAIN);
 const S = SB.__logic;
-const PJ = require(PJ_MAIN);
+const PJ = part(PJ_MAIN);
 const L = PJ.logic;
 
 let n = 0; let failed = 0;

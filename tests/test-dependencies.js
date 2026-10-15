@@ -11,17 +11,17 @@
 const path = require('path');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 
 class TFile { constructor(p) { this.path = p; this.name = p.split('/').pop(); this.basename = this.name.replace(/\.md$/, ''); this.extension = 'md'; const i = p.lastIndexOf('/'); this.parent = { path: p.slice(0, i) }; } }
 class TFolder { constructor(p) { this.path = p; this.children = []; } }
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class {}, setIcon() {}, Platform: {}, Component: class {}, Menu: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const P = require(built('a4-projects'));
+const P = part('a4-projects');
 const L = P.logic; const TaskEngine = P.TaskEngine;
-const Today = require(built('a4-today'));
-const Planner = require(built('a4-planner'));
+const Today = part('a4-today');
+const Planner = part('a4-planner');
 
 let n = 0; let failed = 0;
 function ok(c, name, extra) { n++; if (!c) { failed++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`); } }

@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
 
 class TFile { constructor(p) { this.path = p; this.name = p.split('/').pop(); this.basename = this.name.replace(/\.md$/, ''); this.extension = 'md'; const i = p.lastIndexOf('/'); this.parent = { path: p.slice(0, i) }; } }
@@ -25,10 +25,10 @@ class TFolder { constructor(p) { this.path = p; this.children = []; } }
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class {}, setIcon() {}, Platform: {}, Component: class {}, Menu: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const P = require(built('a4-projects'));
+const P = part('a4-projects');
 const J = P.logic; const TaskEngine = P.TaskEngine;
-const T = require(built('a4-today')).logic;
-const L = require(built('a4-planner')).logic;
+const T = part('a4-today').logic;
+const L = part('a4-planner').logic;
 
 let n = 0; let failed = 0;
 function ok(c, name, extra) { n++; if (!c) { failed++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`); } }

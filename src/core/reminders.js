@@ -2,7 +2,7 @@
 // copy each in Today, Planner and Projects).
 'use strict';
 
-const { asList } = require('./lists');
+import { asList } from './lists';
 
 // Reminders (reminder setup mockup, approved 2026-10-05; GL-002
 // "Task reminders"). TaskNotes' own `reminders` list, in its format:
@@ -62,4 +62,4 @@ function reminderWords(before) {
   return `${parts.join(' ')} ${before < 0 ? 'after' : 'before'}`;
 }
 
-module.exports = { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };
+export { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };

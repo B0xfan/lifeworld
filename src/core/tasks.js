@@ -5,10 +5,10 @@
 // do the writing.
 'use strict';
 
-const { toDayStr, parseRRule, occursOn, halfOfTime } = require('./dates');
-const { asList } = require('./lists');
-const { reminderOf } = require('./reminders');
-const { vaultFolders, readable } = require('./vault');
+import { toDayStr, parseRRule, occursOn, halfOfTime } from './dates';
+import { asList } from './lists';
+import { reminderOf } from './reminders';
+import { vaultFolders, readable } from './vault';
 
 const DEFAULT_COMPLETED_STATUSES = ['done', 'closed'];
 
@@ -231,4 +231,4 @@ function openBlockersOf(app, item, completedStatuses) {
   return out;
 }
 
-module.exports = { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, blockerLinks, blockerHolds, openBlockersOf };
+export { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, blockerLinks, blockerHolds, openBlockersOf };

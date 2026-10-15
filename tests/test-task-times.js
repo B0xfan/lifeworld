@@ -21,7 +21,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
 if (!process.env.A4TT_CHILD) {
@@ -46,9 +46,9 @@ class Notice { constructor(m) { notices.push(typeof m === 'string' ? m : '[fragm
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice, setIcon() {}, Platform: {}, Component: class {}, Menu: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const PJ = require(built('a4-projects'));
-const TodayPlugin = require(built('a4-today'));
-const PlannerPlugin = require(built('a4-planner'));
+const PJ = part('a4-projects');
+const TodayPlugin = part('a4-today');
+const PlannerPlugin = part('a4-planner');
 const L = PJ.logic; const T = TodayPlugin.logic; const PL = PlannerPlugin.logic;
 const TaskEngine = PJ.TaskEngine;
 

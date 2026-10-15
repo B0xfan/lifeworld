@@ -326,3 +326,6 @@ html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell-k { font: 600 9.5px var
 
 /* A button or widget for a part that is switched off (phase 2 section 6). */
 html:not(#a4t-guard) .a4t-root .a4t-off { display: none; }
+
+/* Reads Obsidian's accent colour (obsidianAccent), never shown: was set from code (phase 2 section 8). */
+html:not(#a4t-guard) body > .a4t-accent-probe { color: var(--color-accent, var(--interactive-accent)); }

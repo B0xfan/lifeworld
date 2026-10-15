@@ -59,7 +59,8 @@ const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Se
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
 
-const LW = require(path.join(ROOT, 'main.js'));
+const LW = require(path.join(ROOT, 'main.js')).default; // the new-install start (no test vault settings)
+const { fromSrc } = require('./lib/paths');
 const IDS = ['a4-projects', 'a4-today', 'a4-planner', 'a4-sidebar'];
 let n = 0;
 const ok = (v, msg) => { assert.ok(v, msg); n++; };
@@ -579,7 +580,7 @@ const start = async (data) => {
   pn.host.unload();
 
   // core/vault.js on its own: the name translation and the saved-settings guard.
-  const CV = require('../src/core/vault');
+  const CV = fromSrc('core/vault');
   CV.setVault({ names: { due: 'deadline', status: 'state' } });
   eq(CV.readable({ deadline: 'd', state: 's', due: 'stale', x: 1 }), { x: 1, status: 's', due: 'd' }, 'readable: note names to LifeWorld names; a stale default-named key hidden');
   const raw = { a: 1, deadline: 'd', state: 's', due: 'stale' };
@@ -599,16 +600,13 @@ const start = async (data) => {
   CV.setVault(null);
   // Review p2-s5 must-fix 2 and optional 8: with a preset in the build, a saved empty note path means
   // none (it beats the preset), a missing or damaged one takes the preset, a folder-style one is none.
-  global.LW_START_VAULT = { feeds: { calendar: 'P/Cal.md', weather: 'P/W.md' } };
-  delete require.cache[require.resolve('../src/core/vault')];
-  const PV = require('../src/core/vault');
+  const PV = fromSrc('core/vault');
+  PV.startWith({ feeds: { calendar: 'P/Cal.md', weather: 'P/W.md' } });
   eq({ ...PV.feedNotes }, { calendar: 'P/Cal.md', weather: 'P/W.md' }, 'preset: nothing saved, the preset notes');
   PV.setVault({ feeds: { calendar: '', weather: 7 } });
   eq({ ...PV.feedNotes }, { calendar: '', weather: 'P/W.md' }, 'preset: a saved empty path is none; a damaged one takes the preset');
   PV.setVault({ feeds: { calendar: '02 Planner/', weather: ' Feeds/W.md ' } });
   eq({ ...PV.feedNotes }, { calendar: '', weather: 'Feeds/W.md' }, 'a folder-style note path is none; a note path is cleaned');
-  delete global.LW_START_VAULT;
-  delete require.cache[require.resolve('../src/core/vault')];
   // The list comes from the code: every engine field outside the renamable ones is reserved.
   const fieldsSrc = fs.readFileSync(path.join(ROOT, 'src', 'projects', 'main.js'), 'utf8');
   const fixed = [...fieldsSrc.slice(fieldsSrc.indexOf('const DEFAULT_FIELDS'), fieldsSrc.indexOf('};', fieldsSrc.indexOf('const DEFAULT_FIELDS'))).matchAll(/:\s*'([^']+)'/g)].map((m) => m[1]);
@@ -716,7 +714,7 @@ const start = async (data) => {
   tp.app = { commands: { commands: { 'a4-planner:open': {} } } };
   const btn = fakeEl('button'); const card = fakeEl('div');
   const box = () => Object.assign(fakeEl('div'), { createSpan: () => box(), createEl: () => box(), appendText() {} });
-  const tv = { plugin: tp, planBtn: btn, data: { today: '2026-10-14', lists: { total: 0 } }, openCount: () => 0, kickerEl: fakeEl(), titleEl: fakeEl(), plateEl: fakeEl() };
+  const tv = { plugin: tp, planBtn: btn, data: { today: '2026-10-14', lists: { total: 0 } }, openCount: () => 0, kickerEl: fakeEl(), greetEl: fakeEl(), plateEl: fakeEl() };
   const offNow = () => [btn.cls.includes('a4t-off'), card.cls.includes('a4t-off')];
   TV.renderHeader.call(tv); TV.renderPlannerLink.call(tv, box(), card);
   eq(offNow(), [false, false], 'Planner on: Today shows its Planner button and shortcut');
@@ -795,6 +793,20 @@ const start = async (data) => {
     try { bad.syncTitle(); VLT.brand = 'Again'; bad.syncTitle(); } finally { console.error = ce; }
     eq(errs, ['LifeWorld: the Sidebar tab title did not update'], 'tab title: a throwing updateHeader is logged, not thrown');
     VLT.brand = brand0;
+    // Phase 2 section 8: Projects' tab title uses the same two internals, guarded the same way.
+    const PJV = LW.parts['a4-projects'].ProjectsView;
+    Object.getPrototypeOf(PJV.prototype).setState = async () => {};
+    const pv = () => Object.assign(Object.create(PJV.prototype), { state: {}, expanded: new Set(), render() {}, getDisplayText: () => 'Projects' });
+    const hdr2 = []; const good = Object.assign(pv(), { titleEl: { setText: (t) => hdr2.push(`title ${t}`) }, leaf: { updateHeader: () => hdr2.push('header') } });
+    await good.setState({ page: 'inbox' }, {});
+    eq(hdr2, ['header', 'title Projects'], 'Projects tab title: updateHeader, then the header strip');
+    await pv().setState({ page: 'inbox' }, {});
+    ok(true, 'Projects tab title: no titleEl and no updateHeader, no error');
+    const pbad = Object.assign(pv(), { titleEl: { setText() {} }, leaf: { updateHeader() { throw new Error('planted'); } } });
+    const perrs = []; console.error = (...a) => perrs.push(a[0]);
+    let opened = true;
+    try { await pbad.setState({ page: 'inbox' }, {}); } catch { opened = false; } finally { console.error = ce; }
+    ok(opened && perrs[0] === 'LifeWorld: the Projects tab title did not update', 'Projects tab title: a throwing updateHeader is logged, the tab still opens');
     // A calendar sync that arrives while Settings is open redraws the Calendars picker.
     const cs = await start({});
     const drawn = [];

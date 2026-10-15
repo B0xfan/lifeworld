@@ -12,9 +12,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
-const MAIN = built('a4-planner');
-const TODAY_MAIN = built('a4-today');
+const { part, STYLES, source } = require('./lib/paths');
+const MAIN = 'a4-planner';
+const TODAY_MAIN = 'a4-today';
 const SRC = source('a4-planner');
 const TODAY_SRC = source('a4-today');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
@@ -43,8 +43,8 @@ class TFolder {}
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class {}, setIcon() {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const L = require(MAIN).logic;
-const T = require(TODAY_MAIN).logic;
+const L = part(MAIN).logic;
+const T = part(TODAY_MAIN).logic;
 
 let n = 0; let failed = 0;
 const tz = process.env.TZ;
@@ -64,7 +64,7 @@ const srcT = fs.readFileSync(TODAY_SRC, 'utf8');
 const viaCore = [fromCore(srcP, SHARED), fromCore(srcT, SHARED)];
 for (const name of SHARED) ok(viaCore.every((f) => f(name)), `Planner and Today take ${name} from the shared core (no own copy)`);
 // The calendar note both read: the one "from a note" setting in the core (phase 2 section 5), no own constant.
-ok(![srcP, srcT].some((s) => /const CALENDAR_NOTE/.test(s)) && [srcP, srcT].every((s) => /feedNotes\.calendar/.test(s) && /\{[^}]*\bfeedNotes\b[^}]*\} = require\('\.\.\/core\/vault'\)/.test(s)), 'Planner and Today read the calendar note from the core setting');
+ok(![srcP, srcT].some((s) => /const CALENDAR_NOTE/.test(s)) && [srcP, srcT].every((s) => /feedNotes\.calendar/.test(s) && /import \{[^}]*\bfeedNotes\b[^}]*\} from '\.\.\/core\/vault'/.test(s)), 'Planner and Today read the calendar note from the core setting');
 
 /* ---- 2. moves behave exactly like A4 Today's (and the old Daily Planner's) -- */
 const ORDERS = [[], [10], [10, 20], [-5, 0, 7.5, 30], [1, 1, 1]];
@@ -334,7 +334,7 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
 
 /* ---- Find button (mockup approved 2026-10-06) ---- */
 {
-  const P = require(MAIN);
+  const P = part(MAIN);
   const opened = [];
   const withPj = (pj) => Object.assign(Object.create(P.prototype), { app: { plugins: { plugins: pj ? { 'a4-projects': pj } : {} } } });
   ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find', 'Find opens A4 Projects\' Find window');
@@ -435,7 +435,7 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   ok(/fb\.setAttr\('aria-label', folded \? 'Open all' : 'Fold all'\)/.test(side), 'the tooltip says what the click will do');
   ok(/fb\.addEventListener\('click', \(\) => this\.setAll\(!folded\)\)/.test(side), 'one click folds all, or opens all when all are folded');
   ok(side.indexOf('a4pl-fold-all') > side.indexOf("'a4pl-count', String(unscheduledOf"), 'the button sits after the count, at the right end');
-  const css = fs.readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+  const css = fs.readFileSync(STYLES, 'utf8');
   ok(/\.a4pl-uns-title \{[^}]*flex-wrap: nowrap/.test(css), 'the Unscheduled header stays on one line');
   const fcss = (/\.a4pl-fold-all \{([^}]*)\}/.exec(css) || [])[1] || '';
   ok(fcss && !/#[0-9a-f]{3,6}\b|rgb/i.test(fcss), 'the button uses theme colours only');

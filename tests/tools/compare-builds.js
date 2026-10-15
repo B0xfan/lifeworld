@@ -11,7 +11,17 @@ if (!OLD) { console.error('usage: node tests/tools/compare-builds.js <old repo r
 const o = M._load; M._load = function (r, ...a) { return r === 'obsidian' ? new Proxy({}, { get: () => class {} }) : o.call(this, r, ...a); };
 // Projects built alone: repo-root main.js up to phase 1, dist/a4-projects/main.js from phase 2 section 1.
 const pjFile = (root, f) => (f === 'main.js' && fs.existsSync(path.join(root, 'dist', 'a4-projects', 'main.js')) ? 'dist/a4-projects/main.js' : f);
-const load = (root, f) => { const p = path.resolve(root, pjFile(root, f)); delete require.cache[p]; return require(p).logic; };
+// From phase 2 section 8 no part is built alone: each is taken from the one main.js, started on the
+// frozen test vault's settings as the parts built alone were.
+const ID = { 'main.js': 'a4-projects', 'dist/a4-today/main.js': 'a4-today', 'dist/a4-planner/main.js': 'a4-planner' };
+const load = (root, f) => {
+  const alone = path.resolve(root, pjFile(root, f));
+  const p = fs.existsSync(alone) ? alone : path.resolve(root, 'main.js'); delete require.cache[p];
+  const mod = require(p); if (!mod.default) return mod.logic;
+  const fx = (q) => JSON.parse(fs.readFileSync(path.join(root, 'tests', 'fixtures', 'vault', '.obsidian', q), 'utf8'));
+  mod.default.vault.startWith({ ...fx('plugins/lifeworld/data.json').lifeworld.vault, daily: fx('daily-notes.json') });
+  return mod.default.parts[ID[f]].logic;
+};
 const parse = (t) => { const b = (/^---\n([\s\S]*?)\n---/.exec(t) || [])[1]; if (!b) return null; const fm = {}; let k = null; for (const line of b.split('\n')) { let m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line); if (m) { k = m[1]; const v = m[2].trim(); fm[k] = v === '' ? null : v === '[]' ? [] : v === 'true' ? true : v === 'false' ? false : /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v.replace(/^"(.*)"$/, '$1'); continue; } m = /^\s+-\s+(.*)$/.exec(line); if (m && k) { if (!Array.isArray(fm[k])) fm[k] = []; const v = m[1].trim(); const kv = /^(\w+):\s*(.*)$/.exec(v); fm[k].push(kv && k === 'blockedBy' ? { uid: kv[2].replace(/^"(.*)"$/, '$1') } : v.replace(/^"(.*)"$/, '$1')); } } return fm; };
 const notes = [];
 for (const dir of ['02 Planner/TaskNotes/Tasks', '02 Planner/TaskNotes/Archive']) { const d = path.join(VAULT, dir); if (!fs.existsSync(d)) continue; for (const f of fs.readdirSync(d).filter((x) => x.endsWith('.md'))) { const fm = parse(fs.readFileSync(path.join(d, f), 'utf8')); if (fm) notes.push({ fm, path: `${dir}/${f}`, base: f.slice(0, -3) }); } }

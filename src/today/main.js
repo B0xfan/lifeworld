@@ -79,8 +79,9 @@
  */
 'use strict';
 
-const obsidian = require('obsidian');
-const { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting } = obsidian;
+import { StateField, RangeSetBuilder } from '@codemirror/state';
+import { Decoration, EditorView } from '@codemirror/view';
+import { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting, Keymap, Menu, moment, editorInfoField, editorLivePreviewField } from 'obsidian';
 
 /* ========================================================================== *
  * Constants (A4 paths; this build is for one vault, not generalized)
@@ -109,12 +110,12 @@ const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · 
  * ========================================================================== */
 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
-const { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } = require('../core/dates');
-const { asList } = require('../core/lists');
-const { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } = require('../core/reminders');
-const { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } = require('../core/tasks');
-const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
-const { vaultFolders, propNames, feedNotes, dailyNotes, readable, writable } = require('../core/vault'); // Settings › Your vault (phase 2 section 4)
+import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
+import { asList } from '../core/lists';
+import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } from '../core/tasks';
+import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { vaultFolders, propNames, feedNotes, dailyNotes, readable, writable } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 
 /* ---- tasks ---------------------------------------------------------------- */
 
@@ -247,7 +248,7 @@ function blockedChip(meta, blockers, open, pre) {
   c.setAttr('aria-label', names); c.setAttr('title', names); c.setAttr('role', 'button'); c.tabIndex = 0;
   const show = (e) => {
     e.preventDefault(); e.stopPropagation();
-    const m = new (require('obsidian').Menu)();
+    const m = new Menu();
     for (const b of blockers) m.addItem((i) => i.setTitle(b.title).setIcon('lock').onClick(() => open(b.path)));
     if (e instanceof MouseEvent && e.clientX) m.showAtMouseEvent(e); else { const r = c.getBoundingClientRect(); m.showAtPosition({ x: r.left, y: r.bottom }); }
   };
@@ -263,8 +264,7 @@ function blockedChip(meta, blockers, open, pre) {
 // project link or name. Resolves 'page', 'note', or false.
 async function openProjectPage(app, ref, e, sourcePath) {
   if (ref == null || ref === '') return false;
-  const ob = require('obsidian');
-  const newTab = !!(e && ob.Keymap && ob.Keymap.isModEvent(e));
+  const newTab = !!(e && Keymap && Keymap.isModEvent(e));
   const pj = partOf(app, 'a4-projects');
   if (pj && typeof pj.openProjectPage === 'function') {
     try { if (await pj.openProjectPage(ref, { newTab })) return 'page'; } catch (err) { console.error('[a4] opening the project page failed', err); }
@@ -448,7 +448,7 @@ function formatDateTokens(d, fmt) {
   return fmt.replace(/YYYY|MM|DD|HH|mm/g, (t) => map[t]);
 }
 // Obsidian's moment, when there is one (not in the logic tests).
-function momentFormat() { return obsidian.moment ? (d, p) => obsidian.moment(d).format(p) : null; }
+function momentFormat() { return moment ? (d, p) => moment(d).format(p) : null; }
 function renderTemplate(tpl, d, fmt, title) {
   const f = fmt || ((date, pattern) => formatDateTokens(date, pattern));
   const name = title == null ? scratchNameFor(d, null, f) : title;
@@ -549,16 +549,12 @@ function isScratchpadPath(p, dn) {
   // and named by it, read strictly with Obsidian's moment (review p2-s6; the logic tests have no moment).
   // Depth from a formatted date, not the format text: 'L' prints slashes the format does not hold (review p2-s7).
   const fmt = format || 'YYYY-MM-DD';
-  const m = obsidian.moment;
+  const m = moment;
   return p.split('/').length === (m ? m().format(fmt) : fmt).split('/').length && (!m || m(p.slice(0, -3), fmt, true).isValid());
 }
 
-// The CodeMirror 6 extension. Built lazily: '@codemirror/*' only exist inside
-// Obsidian (the logic tests load this file in plain Node).
+// The CodeMirror 6 extension ('@codemirror/*' come from Obsidian; the tests use the dev copies).
 function buildMarkerHider(app) {
-  const { StateField, RangeSetBuilder } = require('@codemirror/state');
-  const { Decoration, EditorView } = require('@codemirror/view');
-  const { editorInfoField, editorLivePreviewField } = obsidian;
   const hideLine = Decoration.replace({ block: true });
   const hideInline = Decoration.replace({});
   const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
@@ -1055,8 +1051,7 @@ class A4TodayPlugin extends Plugin {
   }
 
   obsidianAccent() {
-    const probe = document.body.createDiv();
-    probe.style.setProperty('color', 'var(--color-accent, var(--interactive-accent))');
+    const probe = document.body.createDiv({ cls: 'a4t-accent-probe' });
     const c = getComputedStyle(probe).color;
     probe.remove();
     return c;
@@ -1748,7 +1743,8 @@ class TodayView extends ItemView {
     const head = this.page.createDiv({ cls: 'a4t-head' });
     const left = head.createDiv();
     this.kickerEl = left.createDiv({ cls: 'a4t-kicker' });
-    this.titleEl = left.createEl('h2', { cls: 'a4t-title' });
+    // Not `titleEl`: on a view that name is Obsidian's own header title (an internal it writes to).
+    this.greetEl = left.createEl('h2', { cls: 'a4t-title' });
     this.plateEl = left.createSpan({ cls: 'a4t-hand-note' });
 
     const actions = head.createDiv({ cls: 'a4t-head-actions' });
@@ -1866,7 +1862,7 @@ class TodayView extends ItemView {
     const d = this.data;
     const now = new Date();
     this.kickerEl.setText(longDate(d.today));
-    this.titleEl.setText(greetingLine(now.getHours(), this.plugin.userName));
+    this.greetEl.setText(greetingLine(now.getHours(), this.plugin.userName));
     this.plateEl.setText(plateText(this.openCount(), d.lists.total));
     // The Planner switched off: its button goes, as drawn (phase 2 section 6).
     this.planBtn.toggleClass('a4t-off', !this.plugin.plannerOn());
@@ -2015,7 +2011,7 @@ class TodayView extends ItemView {
     const input = box.createEl('textarea', { cls: 'a4t-capture-text', attr: { rows: '1', placeholder: "Jot a thought for today's scratchpad", autocomplete: 'off', 'data-testid': 'a4t-capture' } });
     const send = captureSendButton(box);
     const grip = box.createDiv({ cls: 'a4t-capture-grip', attr: { title: 'Drag to make the box taller', 'aria-hidden': 'true', 'data-testid': 'a4t-capture-grip' } });
-    const reset = () => { input.style.height = ''; box.removeClass('is-grown'); };
+    const reset = () => { input.style.removeProperty('height'); box.removeClass('is-grown'); };
     const submit = async () => {
       const value = input.value;
       if (!cleanCapture(value) || input.disabled) return;
@@ -2576,7 +2572,7 @@ A4TodayPlugin.logic = logic;
 A4TodayPlugin.addExtraWidget = addExtraWidget; // for LifeWorld's add-on hooks (phase 2 section 7)
 A4TodayPlugin.TodayView = TodayView; // for tests (the Planner button)
 A4TodayPlugin.TodaySettingTab = TodaySettingTab; // for tests (the Calendars picker)
-module.exports = A4TodayPlugin;
+export default A4TodayPlugin;
 
 /* ==== bundled fonts (generated by build-main.js; SIL Open Font License 1.1, see fonts/) ==== */
 /* Caveat: Copyright 2014 The Caveat Project Authors. Patrick Hand: Copyright (c) 2010-2012 Patrick Wagesreiter.

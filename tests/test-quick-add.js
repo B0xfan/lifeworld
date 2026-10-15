@@ -25,7 +25,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'Australia/Lord_Howe'];
 
 if (!process.env.A4QA_CHILD) {
@@ -51,7 +51,7 @@ class Notice { constructor(m) { notices.push(m); } hide() {} }
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice, setIcon() {}, Platform: {}, Component: class {}, Menu: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const PJ = require(built('a4-projects')); const PlannerPlugin = require(built('a4-planner'));
+const PJ = part('a4-projects'); const PlannerPlugin = part('a4-planner');
 const L = PJ.logic; const PL = PlannerPlugin.logic;
 
 let n = 0; let failed = 0;
@@ -68,7 +68,7 @@ async function main() {
   const QA = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'quickadd.js'), 'utf8');
   ok(QA.length > 5000 && !src.pj.includes('end of SHARED quick add') && !src.pl.includes('end of SHARED quick add'), 'one quick add block, in src/core/quickadd.js, none left in Projects or Planner');
   for (const k of ['pj', 'pl']) {
-    const m = /^const \{ ([^}]*) \} = require\('\.\.\/core\/quickadd'\);$/m.exec(src[k]);
+    const m = /^import \{ ([^}]*) \} from '\.\.\/core\/quickadd';$/m.exec(src[k]);
     const names = m ? m[1].split(', ') : [];
     ok(['understand', 'parseClock', 'quickAddChips', 'quickAddPlan'].every((x) => names.includes(x)), `${k}: takes the parser and the "Adds:" line from the shared core`);
   }
@@ -78,7 +78,7 @@ async function main() {
   // Every top-level name the shared block uses is defined there or taken from the dates core (no
   // ReferenceError waiting for a phrase the tests didn't try).
   const used = [...new Set((QA.match(/(?<![\\.\w])[A-Za-z_][A-Za-z0-9_]*(?=\()/g) || []))].filter((x) => !['function', 'if', 'for', 'while', 'return', 'String', 'Number', 'RegExp', 'Array', 'Math', 'Date', 'Set', 'isNaN', 'exec', 'test', 'push', 'slice', 'replace', 'join', 'map', 'filter', 'split', 'trim', 'toLowerCase', 'toUpperCase', 'startsWith', 'includes', 'findIndex', 'indexOf', 'sort', 'cut', 'fn', 'ahead', 'padStart', 'every', 'source', 'flags', 'endsWith', 'require'].includes(x));
-  const fromDates = (/^const \{ ([^}]*) \} = require\('\.\/dates'\);$/m.exec(QA) || [null, ''])[1].split(', ');
+  const fromDates = (/^import \{ ([^}]*) \} from '\.\/dates';$/m.exec(QA) || [null, ''])[1].split(', ');
   eq(used.filter((x) => !new RegExp(`^(?:function ${x}\\(|const ${x} = )`, 'm').test(QA) && !fromDates.includes(x)), [], 'every function the shared block calls is defined');
 
   /* ---- 2. same reading, same orange line ------------------------------------- */

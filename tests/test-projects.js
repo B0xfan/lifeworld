@@ -25,9 +25,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const Module = require('module');
 
-const { built, source, repeats: REPEATS, FROZEN } = require('./lib/paths');
+const { part, STYLES, source, repeats: REPEATS, FROZEN } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
-const MAIN = built('a4-projects');
+const MAIN = 'a4-projects';
 const SRC = source('a4-projects');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
@@ -56,7 +56,7 @@ class TFolder {}
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const L = require(MAIN).logic;
+const L = part(MAIN).logic;
 
 let n = 0; let failed = 0;
 const tz = process.env.TZ;
@@ -407,7 +407,7 @@ if (VAULT) {
   }
   if (FROZEN) eq(tasks.length, 68, 'frozen data: all 68 tasks read (48 + 20 archived)'); else ok(tasks.length > 300, `real tasks read (${tasks.length})`);
   const live = tasks.filter((t) => !t.archived);
-  const P = require(built('a4-planner')).logic;
+  const P = part('a4-planner').logic;
   const plannerOverdue = P.overdueOf(live.map((t) => ({ ...t })), TD, ['done', 'closed']).map((t) => t.path).sort();
   eq(live.filter((t) => L.isOverdueTask(t, TD, cfg)).map((t) => t.path).sort(), plannerOverdue, 'real data: overdue = the Planner\'s overdue list');
   const plannerUns = P.unscheduledOf(live, ['done', 'closed']).filter((t) => !t.projectKey).map((t) => t.path).sort();
@@ -489,7 +489,7 @@ if (VAULT) {
 
 /* ---- Someday through the engine (in-memory notes; the real repeats copied in) ---- */
 {
-  const TaskEngine = require(MAIN).TaskEngine;
+  const TaskEngine = part(MAIN).TaskEngine;
   const notes = new Map(); const files = new Map();
   const put = (p, fm) => { const f = Object.assign(new TFile(), { path: p, name: p.split('/').pop(), basename: p.split('/').pop().replace(/\.md$/, ''), extension: 'md' }); files.set(p, f); notes.set(p, fm); };
   const app = { plugins: { plugins: {} }, vault: { getAbstractFileByPath: (p) => files.get(p) || null },
@@ -641,18 +641,18 @@ if (VAULT) {
   ok(pick.length > 100 && !/\.slice\(0,\s*\d+\)/.test(pick), 'picker: no cut-off on the list');
   ok(/'Other projects'/.test(pick) && /el\(host, 'div', 'a4pj-grp', projName\)/.test(pick), 'picker: project heading, then "Other projects"');
   ok(/is-deps/.test(pick) && /fit: true/.test(pick), 'picker: scrolling list class and fit-to-screen placement');
-  const css = fs.readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+  const css = fs.readFileSync(STYLES, 'utf8');
   ok(/\.a4pj-pop\.is-deps \.a4pj-pop-list \{[^}]*overflow-y: auto/.test(css) && /\.a4pj-pop\.is-deps \.a4pj-pop-list \{[^}]*min-height: 0/.test(css), 'picker: the list itself scrolls');
   ok(/is-wide is-deps/.test(pick) && /is-deps\.is-narrow \{[^}]*width: min\(/.test(css), 'picker: fits a phone-width screen');
   const card = src.slice(src.indexOf('class TaskCardManager'), src.indexOf('  depRow(host, t, mode'));
-  ok(/render\(card, view, file\) \{\s*const hold = card\.isConnected \? card\.offsetHeight : 0;\s*if \(hold\) card\.style\.minHeight = `\$\{hold\}px`;\s*try \{ this\.draw\(card, view, file\); \} finally \{ card\.style\.minHeight = ''; \}/.test(card), 'card redraw holds its height (no jump to the top)');
+  ok(/render\(card, view, file\) \{\s*const hold = card\.isConnected \? card\.offsetHeight : 0;\s*if \(hold\) card\.style\.minHeight = `\$\{hold\}px`;\s*try \{ this\.draw\(card, view, file\); \} finally \{ card\.style\.removeProperty\('min-height'\); \}/.test(card), 'card redraw holds its height (no jump to the top)');
   ok((card.match(/card\.empty\(\)/g) || []).length === 1 && card.indexOf('card.empty()') > card.indexOf('  draw(card, view, file)'), 'card is only emptied inside the held redraw');
   ok(!/'Start or due\?'/.test(src) && !/a4pj-legend/.test(src) && !/a4pj-legend/.test(css), 'project page: "Start or due?" key removed');
 }
 
 /* ---- Planner button: A4 Planner only (old Daily Planner fallback dropped 0.1.9) ---- */
 {
-  const P = require(MAIN);
+  const P = part(MAIN);
   const ran = [];
   const self = (ids) => { const c = { commands: Object.fromEntries(ids.map((i) => [i, {}])), executeCommandById: (i) => ran.push(i) }; return { app: { commands: c }, run: P.prototype.run }; };
   P.prototype.openPlanner.call(self(['a4-planner:open', 'a4-daily-planner:open-board']));
@@ -665,7 +665,7 @@ if (VAULT) {
 
 /* ---- task card colour: sample A "Soft" (approved 2026-10-07) ---- */
 {
-  const CA = require(MAIN).cardAccent;
+  const CA = part(MAIN).cardAccent;
   const appWith = (look) => ({ plugins: { plugins: look === undefined ? {} : { 'a4-today': { look } } } });
   eq(CA.cardAccentId(appWith(undefined)), 'blue', 'card accent: Ink blue when A4 Today is not installed');
   eq(CA.cardAccentId(appWith({ accent: 'orange' })), 'orange', "card accent: follows A4 Today's Orange");
@@ -681,7 +681,7 @@ if (VAULT) {
   CA.setCardAccent(fakeEl, appWith({ accent: 'accent' }));
   ok(!('--pj-acc-l' in props) && !('--pj-acc-d' in props), "card accent: Obsidian's accent leaves the shades unset");
   const src = fs.readFileSync(SRC, 'utf8');
-  const css = fs.readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+  const css = fs.readFileSync(STYLES, 'utf8');
   const draw = src.slice(src.indexOf('  draw(card, view, file)'), src.indexOf('  depRow(host, t, mode'));
   ok(/setCardAccent\(card, plugin\.app\)/.test(draw), 'card colour: accent set on every draw');
   ok(/'a4pj-seg a4pj-stseg'/.test(draw) && /b\.dataset\.st = k;/.test(draw), 'card colour: status buttons carry their value');

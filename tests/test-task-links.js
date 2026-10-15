@@ -9,16 +9,16 @@ const path = require('path');
 const fs = require('fs');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
-const MAIN = built('a4-projects');
+const MAIN = 'a4-projects';
 
 class TFile {}
 class TFolder {}
 const fakeObsidian = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile, TFolder, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const origLoad = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : origLoad.call(this, req, ...a); };
-const L = require(MAIN).logic;
+const L = part(MAIN).logic;
 
 let n = 0; let failed = 0;
 function ok(c, name, extra) { n++; if (!c) { failed++; console.log(`FAIL ${name}${extra ? ' :: ' + extra : ''}`); } }
@@ -78,9 +78,9 @@ eq(L.wikilinksIn('[[a]]\n[[b', 0).length, 1, 'links: an unclosed link is not a l
 const src = fs.readFileSync(source('a4-projects'), 'utf8');
 ok(/this\.taskLinks = new TaskLinks\(this\);\s*this\.taskLinks\.start\(\);/.test(src), 'wiring: task links start on load');
 ok(/await this\.plugin\.completeTask\(t, !wasDone\)/.test(src.slice(src.indexOf('class TaskLinks'))), 'wiring: a circle tick uses the same completeTask as every A4 tick');
-ok(/if \(this\.skipSource\(src\)\) return;/.test(src) && /links\.skipSource\(src\)/.test(src), 'wiring: no widgets on task notes (reading and live preview)');
+ok(/if \(this\.skipSource\(src\)\) return;/.test(src) && /if \(!src \|\| this\.skipSource\(src\)\) return Decoration\.none;/.test(src), 'wiring: no widgets on task notes (reading and live preview)');
 ok(!/processFrontMatter|vault\.modify|vault\.process/.test(src.slice(src.indexOf('class TaskLinks'), src.indexOf("// The Find window"))), 'wiring: task links never write notes themselves');
-const css = fs.readFileSync(path.join(path.dirname(MAIN), 'styles.css'), 'utf8');
+const css = fs.readFileSync(STYLES, 'utf8');
 // Updated when moved: later sections follow it in the file now (projects board), so stop at the next section comment.
 const tlCss = css.slice(css.indexOf('/* Task links (0.6.0)'));
 const next = tlCss.indexOf('\n/* ', 1);

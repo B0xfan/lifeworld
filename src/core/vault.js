@@ -10,9 +10,9 @@ const PROPS = ['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'r
   'dateCreated', 'dateModified', 'complete_instances', 'skipped_instances', 'blockedBy'];
 // Obsidian's own Daily notes defaults, used when its Daily notes plugin is off.
 const DAILY_DEFAULTS = { folder: '', format: 'YYYY-MM-DD', template: '' };
-// The parts built alone for the test suites start on the frozen test vault's settings
-// (esbuild.config.mjs); the one plugin starts on the defaults above.
-const START = typeof LW_START_VAULT !== 'undefined' && LW_START_VAULT ? LW_START_VAULT : {};
+// Start settings under the saved ones: none in the plugin (the defaults above). The test suites
+// start on the frozen test vault's settings through startWith (phase 2 section 8; was a build flag).
+let START = {};
 
 const folders = {};
 const names = {};
@@ -99,6 +99,12 @@ function setVault(saved) {
   }
 }
 setVault(null);
+// Tests only: start on `preset` (the frozen test vault's settings), as if nothing were saved yet.
+function startWith(preset) {
+  START = preset && typeof preset === 'object' ? preset : {};
+  Object.assign(daily, DAILY_DEFAULTS, START.daily || {});
+  setVault(null);
+}
 
 // Obsidian's own Daily notes settings: { folder, format, template } (template without '.md', as
 // Obsidian stores it). shortcut: reads the core plugin's live options, an undocumented internal
@@ -152,4 +158,4 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
-module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, feedNotes: feeds, sidebarContent: sidebar, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+export { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

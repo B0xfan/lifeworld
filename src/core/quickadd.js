@@ -1,6 +1,6 @@
 'use strict';
 
-const { pad2, isDayStr, toDayStr, utcOf, fromUtc, addDays, weekdayOf, partsOf, parseRRule, occursOn, halfOfTime, timeText, MONTHS_SHORT, WEEKDAYS_SHORT } = require('./dates');
+import { pad2, isDayStr, toDayStr, utcOf, fromUtc, addDays, weekdayOf, partsOf, parseRRule, occursOn, halfOfTime, timeText, MONTHS_SHORT, WEEKDAYS_SHORT } from './dates';
 
 /* ========================================================================== *
  * Quick add: one copy for every part of LifeWorld (phase 1 section 6; before, a
@@ -206,4 +206,4 @@ function quickAddPlan(r, today) {
 }
 /* ---- end of SHARED quick add ---------------------------------------------- */
 
-module.exports = { DOW_NAMES, DOW_CODES, MON_NAMES, dowIndex, nextDow, validDay, parseDayWord, DAY_RE, repeatRule, REPEAT_RE, understand, parseClock, whenValue, firstOccurrence, DOW_LONG, joinWords, ordinal, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan };
+export { DOW_NAMES, DOW_CODES, MON_NAMES, dowIndex, nextDow, validDay, parseDayWord, DAY_RE, repeatRule, REPEAT_RE, understand, parseClock, whenValue, firstOccurrence, DOW_LONG, joinWords, ordinal, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan };

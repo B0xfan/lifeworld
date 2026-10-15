@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
-const { built, source } = require('./lib/paths');
+const { part, STYLES, source } = require('./lib/paths');
 const FILES = { today: 'a4-today', planner: 'a4-planner', projects: 'a4-projects', sidebar: 'a4-sidebar' };
 const src = {}; for (const k of Object.keys(FILES)) src[k] = fs.readFileSync(source(FILES[k]), 'utf8');
 
@@ -106,7 +106,7 @@ async function helperCases(label, mod) {
 
 /* ---- 4. A4 Projects' public API ------------------------------------------- */
 async function projectsCases() {
-  const P = require(built(FILES.projects));
+  const P = part(FILES.projects);
   const projects = [
     { path: NOTE, name: 'Garden Plan', key: 'Garden Plan' },
     { path: '04 Inner World/My Life/Projects/ABC Northside.md', name: 'ABC Northside', key: 'ABC Northside' },
@@ -146,8 +146,8 @@ async function projectsCases() {
 }
 
 (async () => {
-  await helperCases('Today', require(built(FILES.today)));
-  await helperCases('Planner', require(built(FILES.planner)));
+  await helperCases('Today', part(FILES.today));
+  await helperCases('Planner', part(FILES.planner));
   await projectsCases();
   console.log(`\nTOTAL ${n} checks, ${failed} failed`);
   process.exit(failed ? 1 : 0);

@@ -4,4 +4,4 @@
 
 function asList(v) { return Array.isArray(v) ? v : (v == null || v === '' ? [] : [v]); }
 
-module.exports = { asList };
+export { asList };

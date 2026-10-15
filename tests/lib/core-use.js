@@ -3,7 +3,7 @@
 // local or a destructured name is seen too. Used by tests/test-core.js.
 const esbuild = require('esbuild');
 
-const IMPORT_RE = /^const \{ ([^}]*) \} = require\('(?:\.\.\/core|\.)\/(\w+)'\);.*$/gm;
+const IMPORT_RE = /^import \{ ([^}]*) \} from '(?:\.\.\/core|\.)\/(\w+)';.*$/gm;
 const ws = (code, more) => esbuild.transformSync(code, { loader: 'js', minifyWhitespace: true, ...more }).code;
 const minified = (code) => ws(code, { minifyIdentifiers: true, format: 'cjs' });
 // Identifier-like occurrences: not a property (`.x`), not an object key (`x:`), but a bare
