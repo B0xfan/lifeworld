@@ -782,5 +782,36 @@ const start = async (data) => {
     ok(picker.length > 500 && !/macOS|Mac\b|Mac’s|10 minutes/.test(picker), 'Calendars picker wording: nothing about a Mac or a 10-minute sync');
   }
 
+  // ---- Section 7 review fixes (p2-s7) ----
+  {
+    const brand0 = VLT.brand;
+    // The tab title: Obsidian's two calls gone, or throwing, never stop the Sidebar drawing.
+    const bare = Object.create(SBL.A4SidebarView.prototype);
+    bare.syncTitle(); VLT.brand = 'Elsewhere'; bare.syncTitle();
+    eq(bare.shownTitle, 'Elsewhere', 'tab title: no titleEl and no updateHeader, no error');
+    const bad = Object.create(SBL.A4SidebarView.prototype);
+    Object.assign(bad, { titleEl: { setText() {} }, leaf: { updateHeader() { throw new Error('planted'); } } });
+    const errs = []; const ce = console.error; console.error = (...a) => errs.push(a[0]);
+    try { bad.syncTitle(); VLT.brand = 'Again'; bad.syncTitle(); } finally { console.error = ce; }
+    eq(errs, ['LifeWorld: the Sidebar tab title did not update'], 'tab title: a throwing updateHeader is logged, not thrown');
+    VLT.brand = brand0;
+    // A calendar sync that arrives while Settings is open redraws the Calendars picker.
+    const cs = await start({});
+    const drawn = [];
+    const tab = { calHost: { isConnected: true }, renderCalendars: () => drawn.push('picker') };
+    cs.host.running['a4-today'].settingTab = tab;
+    const remove = cs.host.setCalendarSync(async () => true);
+    eq(drawn, ['picker'], 'a sync set while Settings is open: the Calendars picker draws again');
+    tab.calHost.isConnected = false; remove();
+    eq(drawn, ['picker'], 'Settings closed: no redraw');
+    cs.host.unload();
+    // Daily-note formats whose date prints a slash ('L' = 10/15/2026): depth counted from the date.
+    eq([T.isScratchpadPath('10/15/2026.md', { folder: '', format: 'L' }), T.isScratchpadPath('2026-10-15.md', { folder: '', format: 'L' }), T.isScratchpadPath('Daily/Notes 2026-10-15.md', { folder: '', format: '[Daily/Notes] YYYY-MM-DD' })],
+      [true, false, true], "top-level daily notes: a date format that prints slashes, and a bracketed folder");
+    // No moment (logic-only use): the depth check alone, never an error.
+    const m0 = fakeObsidian.moment; fakeObsidian.moment = undefined;
+    try { eq([T.isScratchpadPath('2026/10/x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }), T.isScratchpadPath('x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' })], [true, false], 'no moment: depth only'); } finally { fakeObsidian.moment = m0; }
+  }
+
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

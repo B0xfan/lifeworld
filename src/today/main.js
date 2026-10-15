@@ -547,8 +547,10 @@ function isScratchpadPath(p, dn) {
   if (folder) return p.startsWith(`${folder}/`);
   // Top-level daily notes: as deep as the date format's own folders (YYYY/MM/YYYY-MM-DD), review p2-s5,
   // and named by it, read strictly with Obsidian's moment (review p2-s6; the logic tests have no moment).
+  // Depth from a formatted date, not the format text: 'L' prints slashes the format does not hold (review p2-s7).
   const fmt = format || 'YYYY-MM-DD';
-  return p.split('/').length === fmt.split('/').length && (!obsidian.moment || obsidian.moment(p.slice(0, -3), fmt, true).isValid());
+  const m = obsidian.moment;
+  return p.split('/').length === (m ? m().format(fmt) : fmt).split('/').length && (!m || m(p.slice(0, -3), fmt, true).isValid());
 }
 
 // The CodeMirror 6 extension. Built lazily: '@codemirror/*' only exist inside

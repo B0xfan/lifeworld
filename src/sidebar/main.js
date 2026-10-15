@@ -633,8 +633,11 @@ class A4SidebarView extends ItemView {
   // shortcut: titleEl and leaf.updateHeader are Obsidian internals (1.14.4 app code), section 8 reviews them.
   syncTitle() {
     if (this.shownTitle !== undefined && this.shownTitle !== SBC.brand) {
-      if (this.titleEl) this.titleEl.setText(SBC.brand);
-      if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
+      // An Obsidian update that makes these throw must not blank the Sidebar (review p2-s7).
+      try {
+        if (this.titleEl) this.titleEl.setText(SBC.brand);
+        if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
+      } catch (e) { console.error('LifeWorld: the Sidebar tab title did not update', e); }
     }
     this.shownTitle = SBC.brand;
   }

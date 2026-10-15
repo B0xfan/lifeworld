@@ -140,7 +140,8 @@ class LifeWorldPlugin extends Plugin {
     // LifeWorld was turned off while this part was starting: stop it, or it would run on alone.
     if (this.gone) { part.unload(); delete PARTS[id]; return; }
     this.running[id] = part;
-    if (id === 'a4-today') part.calendarSync = this.calendarSync || null; // an add-on's sync, kept across a switch
+    // An add-on's sync, kept across a switch. Set after Today's onload, which runs no sync (review p2-s7).
+    if (id === 'a4-today') part.calendarSync = this.calendarSync || null;
     this.addChild(part);
   }
 
@@ -150,7 +151,16 @@ class LifeWorldPlugin extends Plugin {
   setCalendarSync(fn) {
     this.calendarSync = typeof fn === 'function' ? fn : null;
     if (this.running['a4-today']) this.running['a4-today'].calendarSync = this.calendarSync;
+    this.redrawCalendarPicker();
     return () => { if (this.calendarSync === fn) this.setCalendarSync(null); };
+  }
+
+  // A sync that arrives while Settings is open: the Calendars picker draws again (review p2-s7).
+  redrawCalendarPicker() {
+    const tab = this.running['a4-today'] && this.running['a4-today'].settingTab;
+    if (tab && tab.calHost && tab.calHost.isConnected) {
+      try { tab.renderCalendars(); } catch (e) { console.error('LifeWorld: the Calendars picker did not redraw', e); }
+    }
   }
 
   // Brings the running parts in line with the switches: the ones that use Projects stop first,
