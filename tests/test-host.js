@@ -753,5 +753,34 @@ const start = async (data) => {
     [true, false, false, false, true], 'top-level daily notes: as deep as the format and named by it (review p2-s6)');
   }
 
+  // ---- Section 7: the calendar sync hook an add-on sets, true wording without one ----
+  {
+    const cs = await start({});
+    const today = () => cs.host.running['a4-today'];
+    eq(today().canRunSync(), false, 'no add-on: the Today page has no calendar sync');
+    const sync = async () => true;
+    const remove = cs.host.setCalendarSync(sync);
+    eq([today().calendarSync, today().canRunSync(), await today().runCalendarSync(true)], [sync, true, true], "an add-on's calendar sync reaches the Today page and runs");
+    await cs.host.setPart('a4-today', false); await cs.host.setPart('a4-today', true);
+    eq(today().calendarSync, sync, 'the sync is kept when the Today page is switched off and on');
+    const other = async () => true; const removeOther = cs.host.setCalendarSync(other);
+    remove();
+    eq(today().calendarSync, other, 'an older remover does not take away a newer sync');
+    removeOther();
+    eq([today().calendarSync, cs.host.calendarSync], [null, null], 'removed: no sync again');
+    cs.host.setCalendarSync('not a function');
+    eq(today().canRunSync(), false, 'anything but a function is no sync');
+    cs.host.unload();
+    // No calendar note and no sync (a new install): Settings shows no Calendars picker at all.
+    const TS = LW.parts['a4-today'].TodaySettingTab.prototype;
+    const calHost = fakeEl('div');
+    TS.renderCalendars.call({ calHost, plugin: { calendarList: () => [], calendarFrontmatter: () => null, calSel: null, canRunSync: () => false } });
+    eq(calHost.kids.length, 0, 'no calendar note, no sync: no Calendars picker');
+    // The picker's words hold without the Mac add-on: no Mac, macOS or "every 10 minutes".
+    const tsrc = fs.readFileSync(path.join(ROOT, 'src', 'today', 'main.js'), 'utf8');
+    const picker = tsrc.slice(tsrc.indexOf('  renderCalendars() {'), tsrc.indexOf('accounts.forEach((acc) =>'));
+    ok(picker.length > 500 && !/macOS|Mac\b|Mac’s|10 minutes/.test(picker), 'Calendars picker wording: nothing about a Mac or a 10-minute sync');
+  }
+
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

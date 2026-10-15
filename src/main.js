@@ -140,7 +140,17 @@ class LifeWorldPlugin extends Plugin {
     // LifeWorld was turned off while this part was starting: stop it, or it would run on alone.
     if (this.gone) { part.unload(); delete PARTS[id]; return; }
     this.running[id] = part;
+    if (id === 'a4-today') part.calendarSync = this.calendarSync || null; // an add-on's sync, kept across a switch
     this.addChild(part);
+  }
+
+  // For an add-on (A4 extras, phase 2 section 7): the calendar sync the Today page runs after a calendar
+  // tick and for "Refresh list", (refresh) => Promise<boolean>; anything but a function removes it.
+  // Kept here, so it survives the Today page being switched off and on. -> a function that removes it.
+  setCalendarSync(fn) {
+    this.calendarSync = typeof fn === 'function' ? fn : null;
+    if (this.running['a4-today']) this.running['a4-today'].calendarSync = this.calendarSync;
+    return () => { if (this.calendarSync === fn) this.setCalendarSync(null); };
   }
 
   // Brings the running parts in line with the switches: the ones that use Projects stop first,
