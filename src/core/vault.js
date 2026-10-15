@@ -65,7 +65,10 @@ function setVault(saved) {
   for (const [k, v] of want) names[k] = ok ? v : k;
   renamed = PROPS.some((k) => names[k] !== k);
   const fd = s.feeds && typeof s.feeds === 'object' ? s.feeds : {};
-  for (const k of Object.keys(feeds)) feeds[k] = cleanFolder(fd[k]) || cleanFolder((START.feeds || {})[k]);
+  // A saved path, even empty ("none"), beats the preset; only a missing or damaged one falls back
+  // (review p2-s5). Not a note ('.md'): none, so a folder-style value never reads as a feed.
+  const note = (v) => { const p = cleanFolder(v); return p.endsWith('.md') ? p : ''; };
+  for (const k of Object.keys(feeds)) feeds[k] = note(typeof fd[k] === 'string' ? fd[k] : (START.feeds || {})[k]);
 }
 setVault(null);
 

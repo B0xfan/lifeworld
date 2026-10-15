@@ -670,6 +670,10 @@ const startupChecks = (async () => {
   eq((await startupRun(null)).p.userName, '', 'new install: no name');
   named.p.applyLook = nop2; await named.p.saveData({ userName: 'Lee' }); await named.p.onExternalSettingsChange();
   eq(named.p.userName, 'Lee', 'your name from another device is picked up');
+  const save0 = named.p.saveData; named.p.saveData = async () => { throw new Error('planted disk error'); };
+  let threw = false; try { await named.p.saveUserName('Max'); } catch (e) { threw = true; }
+  named.p.saveData = save0;
+  eq([threw, named.p.userName], [true, 'Lee'], 'your name: a failed save is reported and leaves the name as it was (review p2-s5)');
   const src0 = require('fs').readFileSync(SRC, 'utf8');
   const tab = src0.slice(src0.indexOf('class TodaySettingTab'));
   ok(/\.setName\('Your name'\)\s*\.setDesc\('Shown in the greeting\. Leave empty for none\.'\)\s*\.addText\(\(t\) => \{\s*t\.setPlaceholder\('Optional'\)/.test(tab), 'Your name row: wording and placeholder as drawn');
@@ -683,6 +687,14 @@ const startupChecks = (async () => {
   await new Promise((r) => setTimeout(r, 0)); release(true);
   await new Promise((r) => setTimeout(r, 0)); release(true);
   eq([await first, await second, await third, runs], [true, true, true, [true, false]], "add-on's sync: run with the refresh flag; requests during a run make one more run, not two");
+  // Review p2-s5 must-fix 1: a Refresh list asked for during a plain run is not lost.
+  runs.length = 0;
+  const plain = on.p.runCalendarSync(false);
+  on.p.runCalendarSync(false); const refreshAsk = on.p.runCalendarSync(true);
+  await new Promise((r) => setTimeout(r, 0)); release(true);
+  await new Promise((r) => setTimeout(r, 0)); release(true);
+  await plain; await refreshAsk;
+  eq(runs, [false, true], 'plain run, then plain and Refresh list asked: the one follow-up run refreshes');
   on.p.calendarSync = () => { throw new Error('planted'); };
   const w = console.warn; console.warn = () => {};
   eq(await on.p.runCalendarSync(false), false, "add-on's sync failing: reported as not finished, no crash");

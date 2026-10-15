@@ -516,6 +516,18 @@ const start = async (data) => {
   eq(nfSeen, ['Feeds/Cal.md'], 'a calendar note set on another device is read');
   nf.host.unload();
 
+  // Review p2-s5 must-fix 3: a calendar note path changed (Sync, or a Your vault save) makes Today
+  // adopt the calendar choice at once, not after the note's next rewrite.
+  const ad = await start({});
+  let adopts = 0;
+  ad.parts['a4-today'].adoptCalendarChoice = async () => { adopts++; };
+  disk[ad.dir] = JSON.stringify({ lifeworld: { vault: { feeds: { calendar: 'Feeds/Cal.md' } } } });
+  await ad.host.onExternalSettingsChange();
+  eq(adopts, 1, 'calendar note set on another device: Today adopts the calendar choice at once');
+  await ad.host.setVaultSettings({ folders: {} });
+  eq(adopts, 2, 'Your vault saved here: Today hears it too');
+  ad.host.unload();
+
   // The Property names dialog: rows, the three checks, Reset to defaults, Done.
   const pn = await start({});
   const nameRow = () => vaultRows(pn.host).find((r) => r.name === 'Property names');
@@ -584,6 +596,18 @@ const start = async (data) => {
   CV.setVault({ names: { title: 'tags' } });
   eq([CV.propNames.title, CV.isRenamed()], ['title', false], 'a saved file renaming to a reserved name falls back to the default names');
   CV.setVault(null);
+  // Review p2-s5 must-fix 2 and optional 8: with a preset in the build, a saved empty note path means
+  // none (it beats the preset), a missing or damaged one takes the preset, a folder-style one is none.
+  global.LW_START_VAULT = { feeds: { calendar: 'P/Cal.md', weather: 'P/W.md' } };
+  delete require.cache[require.resolve('../src/core/vault')];
+  const PV = require('../src/core/vault');
+  eq({ ...PV.feedNotes }, { calendar: 'P/Cal.md', weather: 'P/W.md' }, 'preset: nothing saved, the preset notes');
+  PV.setVault({ feeds: { calendar: '', weather: 7 } });
+  eq({ ...PV.feedNotes }, { calendar: '', weather: 'P/W.md' }, 'preset: a saved empty path is none; a damaged one takes the preset');
+  PV.setVault({ feeds: { calendar: '02 Planner/', weather: ' Feeds/W.md ' } });
+  eq({ ...PV.feedNotes }, { calendar: '', weather: 'Feeds/W.md' }, 'a folder-style note path is none; a note path is cleaned');
+  delete global.LW_START_VAULT;
+  delete require.cache[require.resolve('../src/core/vault')];
   // The list comes from the code: every engine field outside the renamable ones is reserved.
   const fieldsSrc = fs.readFileSync(path.join(ROOT, 'src', 'projects', 'main.js'), 'utf8');
   const fixed = [...fieldsSrc.slice(fieldsSrc.indexOf('const DEFAULT_FIELDS'), fieldsSrc.indexOf('};', fieldsSrc.indexOf('const DEFAULT_FIELDS'))).matchAll(/:\s*'([^']+)'/g)].map((m) => m[1]);

@@ -180,9 +180,16 @@ class LifeWorldPlugin extends Plugin {
     if (change.folders) next.folders = { ...(v.folders || {}), ...change.folders };
     if (change.names) next.names = change.names;
     this.store[HOST] = { ...h, vault: next };
-    vault.setVault(next);
-    this.redrawViews();
+    this.applyVault(next);
     await this.writeStore();
+  }
+
+  // New Your vault settings: every part reads them from now on, open views redraw, and a part that
+  // acts on a changed note path hears it (Today adopts the calendar choice, review p2-s5).
+  applyVault(v) {
+    vault.setVault(v);
+    this.redrawViews();
+    for (const p of Object.values(this.running)) if (p && typeof p.onVaultChange === 'function') p.onVaultChange();
   }
 
   // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw).
@@ -305,7 +312,7 @@ class LifeWorldPlugin extends Plugin {
       const h = this.store[HOST];
       // The settings page needs no redraw here: Obsidian 1.14.4 calls the open page's update() after
       // this handler, which draws it again (refreshCurrentPage).
-      if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) { vault.setVault(h && h.vault); this.redrawViews(); }
+      if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) this.applyVault(h && h.vault);
       await this.applyParts();
     }
   }

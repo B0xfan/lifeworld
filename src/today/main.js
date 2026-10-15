@@ -99,7 +99,7 @@ const JOURNAL_EXCERPT_CHARS = 260;
 const CAPTURE_MAX_CHARS = 2000;
 const NARROW_WIDTH = 720;                   // one column + up/down arrows below this
 // What Today redraws for: the weather and calendar notes (when set) and the folders it reads.
-const watchedPrefixes = () => [feedNotes.weather, feedNotes.calendar].filter(Boolean).concat([vaultFolders.tasks + '/', vaultFolders.archive + '/', vaultFolders.habits + '/', MOOD_FOLDER + '/', vaultFolders.projects + '/', vaultFolders.journal + '/']);
+const watches = (p) => p === feedNotes.weather || p === feedNotes.calendar || [vaultFolders.tasks, vaultFolders.archive, vaultFolders.habits, MOOD_FOLDER, vaultFolders.projects, vaultFolders.journal].some((f) => p.startsWith(f + '/'));
 const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · Undo" line, a few seconds
 
 /* ========================================================================== *
@@ -931,10 +931,10 @@ class A4TodayPlugin extends Plugin {
   }
 
   async saveUserName(name) {
-    this.userName = normalizeUserName(name);
     const data = (await this.loadData()) || {};
-    data.userName = this.userName;
+    data.userName = normalizeUserName(name);
     await this.saveData(data);
+    this.userName = data.userName; // only once saved: a failed write leaves the name as it was
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.data && l.view.renderHeader) l.view.renderHeader(); });
   }
 
@@ -975,13 +975,17 @@ class A4TodayPlugin extends Plugin {
     } finally { this.adopting = false; }
   }
 
+  // The calendar note's path changed (Sync, or set later): adopt from that note now, not after
+  // its next rewrite (review p2-s5).
+  onVaultChange() { this.adoptCalendarChoice().catch((e) => console.warn('[a4-today] calendar choice not adopted', e)); }
+
   canRunSync() { return typeof this.calendarSync === 'function'; }
 
   // Runs the add-on's calendar sync now; one run at a time, a request during a run runs once after it.
   // Resolves true on success.
   runCalendarSync(refresh) {
     if (!this.canRunSync()) return Promise.resolve(false);
-    if (this.syncRun) { this.syncAgain = this.syncAgain || !!refresh || 'plain'; return this.syncRun; }
+    if (this.syncRun) { this.syncAgain = refresh ? true : this.syncAgain || 'plain'; return this.syncRun; }
     this.syncRun = Promise.resolve().then(() => this.calendarSync(!!refresh)).then((ok) => ok === true, (e) => {
       console.warn('[a4-today] calendar sync failed', e); return false;
     }).then((ok) => {
@@ -1341,7 +1345,8 @@ class TodaySettingTab extends PluginSettingTab {
         t.inputEl.setAttr('aria-label', 'Your name');
         // Saved when the box is left or Enter is pressed, not on every keystroke.
         t.inputEl.addEventListener('change', async () => {
-          await this.plugin.saveUserName(t.getValue());
+          try { await this.plugin.saveUserName(t.getValue()); } catch (e) { console.error('[a4-today] name not saved', e); new Notice('Your name could not be saved.'); }
+          t.setValue(this.plugin.userName); // the box shows what is saved (trimmed, cut to length, or the old name)
           if (preview && preview.isConnected) preview.querySelector('.a4t-pv-title').setText(greetingLine(new Date().getHours(), this.plugin.userName));
         });
       });
@@ -1522,7 +1527,7 @@ class TodayView extends ItemView {
     this.panel.hidden = true;
     this.buildShell();
 
-    const onChange = (file) => { if (file && typeof file.path === 'string' && watchedPrefixes().some((p) => file.path.startsWith(p))) this.scheduleRefresh(); };
+    const onChange = (file) => { if (file && typeof file.path === 'string' && watches(file.path)) this.scheduleRefresh(); };
     this.registerEvent(this.app.metadataCache.on('changed', onChange));
     this.registerEvent(this.app.vault.on('create', onChange));
     this.registerEvent(this.app.vault.on('delete', onChange));
