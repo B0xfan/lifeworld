@@ -128,7 +128,7 @@ ok(/p\.sphere === sp && isOpenProject\(p\)/.test(pjSrc) && /function closedProje
 eq(S.TOOLS.map((t) => t.id), ['daily', 'unique', 'canvas', 'graph'], 'toolbar: four buttons in the order already known');
 eq(S.TOOLS.map((t) => t.icon), ['calendar-check', 'file-clock', 'layout-dashboard', 'git-fork'], 'toolbar: same icons as before');
 eq(S.TOOLS.map((t) => t.label), ["Open today's daily note", 'New unique note', 'New canvas in the Daily Scratchpad', 'Open graph view'], 'toolbar: same tooltips as before');
-ok(S.TOOLS.every((t) => t.command.startsWith('a4-sidebar:')), 'toolbar: every button runs an Sidebar command');
+ok(S.TOOLS.every((t) => t.command.startsWith('a4-sidebar:')), 'toolbar: every button runs a Sidebar command');
 for (const t of S.TOOLS) { const id = t.command.split(':')[1]; ok(!!S.CORE_TOOLS[id] || new RegExp(`id: '${id}'`).test(src), `toolbar: command ${id} is registered by the sidebar`); }
 eq(Object.values(S.CORE_TOOLS).map((c) => c.core), ['daily-notes', 'zk-prefixer', 'graph:open'], 'toolbar: core commands behind daily, unique, graph');
 ok(!/icor-for-life-connect:|micor-/.test(src), 'sidebar: no ICOR Connect command or class used');

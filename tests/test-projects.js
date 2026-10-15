@@ -18,7 +18,7 @@
  * Moved from the owner's vault: behaviour checks load the built main.js, text checks read
  * src/ (tests/lib/paths.js).  Note checks read the frozen, made-up copy in
  * tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT (its repeats by name with
- * LW_REAL_REPEATS=<task name>,<task name>). */
+ * LIFEWORLD_REAL_REPEATS=<task name>,<task name>). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -36,7 +36,7 @@ if (!process.env.LWPJ_CHILD) {
   // Section 8: @tasknotes/model is a pinned dev dependency, so the oracle runs everywhere (the
   // time-zone children inherit this); TASKNOTES_MODEL can still point at another install.
   process.env.TASKNOTES_MODEL = process.env.TASKNOTES_MODEL || path.join(__dirname, '..');
-  if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; LW_REAL_REPEATS is not set');
+  if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; LIFEWORLD_REAL_REPEATS is not set');
   for (const tz of ZONES) {
     try {
       const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWPJ_CHILD: '1' }, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
@@ -522,7 +522,7 @@ if (VAULT) {
     await eng.setDue(P1, null);
     eq(notes.get(P1).status, 'open', 'removing a date never touches status');
     // The real repeats.
-    // Repeats by name: the frozen copy's, or the owner's from LW_REAL_REPEATS (names stay out of the repo).
+    // Repeats by name: the frozen copy's, or the owner's from LIFEWORLD_REAL_REPEATS (names stay out of the repo).
     for (const name of REPEATS) {
       const real = parseReal(name);
       if (!real) { ok(false, `real repeat present: ${name}`); continue; }

@@ -8,7 +8,7 @@ const PART = { 'a4-projects': 'projects', 'a4-today': 'today', 'a4-planner': 'pl
 exports.MAIN = path.join(ROOT, 'main.js');
 exports.STYLES = path.join(ROOT, 'styles.css');
 // The LifeWorld plugin class from main.js, started on the frozen test vault's settings (its folders
-// are TaskNotes-shaped), as it would be after reading them. Require 'obsidian' stand-ins first.
+// follow the owner's folder layout), as it would be after reading them. Require 'obsidian' stand-ins first.
 // The four parts load together now, so a stand-in written for one part gets an empty class for any
 // base class another part extends at load time.
 const BASES = ['Plugin', 'ItemView', 'Modal', 'PluginSettingTab', 'SuggestModal', 'FuzzySuggestModal'];
@@ -33,10 +33,14 @@ exports.fromSrc = (rel) => {
 // One part's plugin class (its old id), with the helpers it exports for the tests.
 exports.part = (id) => exports.lifeworld().parts[id];
 exports.source = (id) => path.join(ROOT, 'src', PART[id], 'main.js');
+// The settings were renamed in phase 2 section 9; an old name still set would quietly fall back to
+// the frozen copy, so stop loudly instead.
+const oldNames = Object.keys(process.env).filter((k) => /^A\d_(VAULT|REAL_REPEATS|TASKS_JSON)$/.test(k));
+if (oldNames.length) throw new Error(`renamed test settings: use LIFEWORLD_${oldNames[0].slice(3)} instead of ${oldNames[0]}`);
 // Notes the vault-reading checks read: the owner's vault with LIFEWORLD_VAULT, else the frozen,
 // made-up copy in tests/fixtures/vault (so those checks also run on GitHub).
 exports.FROZEN = !process.env.LIFEWORLD_VAULT;
 exports.vault = process.env.LIFEWORLD_VAULT || path.join(ROOT, 'tests', 'fixtures', 'vault');
 // Repeating tasks the Someday round trip runs on, by name (real names stay out of the repo).
-exports.repeats = process.env.LW_REAL_REPEATS ? process.env.LW_REAL_REPEATS.split(',').filter(Boolean)
+exports.repeats = process.env.LIFEWORLD_REAL_REPEATS ? process.env.LIFEWORLD_REAL_REPEATS.split(',').filter(Boolean)
   : exports.FROZEN ? ['Water the plants', 'Log the mood of the day'] : [];
