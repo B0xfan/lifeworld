@@ -29,7 +29,7 @@ function parseDayWord(w, today) {
   if (m) return addDays(today, Number(m[1]) * (m[2].startsWith('week') ? 7 : 1));
   m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(x);
   if (m) return validDay(Number(m[1]), Number(m[2]), Number(m[3]));
-  // Same rule as Scripts/quick-capture-sync.py: a weekday name is its next
+  // Same rule as the menu bar capture: a weekday name is its next
   // one (a week ahead when it is today); "next <weekday>" adds a week.
   m = /^(next |this )?([a-z]+)$/.exec(x);
   if (m && dowIndex(m[2]) >= 0) { const base = nextDow(today, dowIndex(m[2]), true); return m[1] === 'next ' && base !== addDays(today, 7) ? addDays(base, 7) : base; }

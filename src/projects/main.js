@@ -51,7 +51,7 @@
  *    15 min before", a dashed "No reminder", or "add a time to set a
  *    reminder"), and "At the time" for a new task with a time. Stored in
  *    TaskNotes' own `reminders` field and format (GL-002 "Task reminders").
- *    Apple Reminders rings (Scripts/sync-task-reminders.py, launchd); no
+ *    Apple Reminders rings (a separate sync); no
  *    plugin fires its own notification.
  *  - 0.3.0 (2026-10-06, Someday mockup approved; GL-002 task status
  *    `someday`): a "Someday" line in the Schedule box (a task with a due
@@ -72,7 +72,7 @@
  * Writes go through app.fileManager.processFrontMatter; only step
  * checkboxes (body lines) use vault.process, one checked line at a time.
  * Moves use applyMove, the same function A4 Today and A4 Planner use (the
- * SHARED block is a verbatim copy; Scripts/tests/test-a4-projects.js fails
+ * SHARED block is a verbatim copy; tests/test-projects.js fails
  * if it ever differs).
  *
  * Task source (Settings): Built-in (default), TaskNotes, or Obsidian
@@ -2163,7 +2163,11 @@ class A4ProjectsPlugin extends Plugin {
     await this.openProject(path, opts);
     return true;
   }
+  has(id) { const c = this.app.commands; return !!(c && c.commands && c.commands[id]); }
   run(id) { const c = this.app.commands; if (c && c.commands && c.commands[id]) { c.executeCommandById(id); return true; } return false; }
+  // Today or the Planner switched off: no button to it (phase 2 section 6).
+  todayOn() { return this.has(TODAY_COMMAND); }
+  plannerOn() { return this.has(PLANNER_COMMAND); }
   openPlanner(projectKey) {
     if (!this.run(PLANNER_COMMAND)) { new Notice('The planner is not turned on.'); return; }
     if (!projectKey) return;
@@ -3554,8 +3558,8 @@ class ProjectsView extends ItemView {
     if (!p) { this.head(page, [['/ Projects', () => this.go({ page: 'overview' })]], 'Project not found'); el(page, 'div', 'a4pj-empty', 'that project note is gone'); return; }
     const st = projectStats(p, this.tasks, today, cfg);
     this.head(page, [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[p.sphere] || 'Unsorted', p.sphere === 'work' || p.sphere === 'personal' ? () => this.go({ page: 'overview', focus: p.sphere }) : null]], p.name, [
-      { label: 'Open Today', run: () => this.plugin.openToday() },
-      { label: 'Open in Planner', run: () => this.plugin.openPlanner(p.key) },
+      this.plugin.todayOn() && { label: 'Open Today', run: () => this.plugin.openToday() },
+      this.plugin.plannerOn() && { label: 'Open in Planner', run: () => this.plugin.openPlanner(p.key) },
     ]);
     const ph = el(page, 'div', 'a4pj-phead');
     ring(ph, st.done, st.total);
@@ -4091,8 +4095,8 @@ class TaskCardManager {
     else { const b3 = el(cr, 'button', null, 'Inbox'); b3.addEventListener('click', () => plugin.openProjects({ page: 'inbox' })); }
     cr.appendText(inArchive ? ' / Task (archived)' : ' / Task');
     const acts = el(bar, 'div', 'a4pj-actions');
-    const pl = el(acts, 'button', 'a4pj-btn', 'Open in Planner'); pl.addEventListener('click', () => plugin.openPlanner(null));
-    const td = el(acts, 'button', 'a4pj-btn', 'Show on Today'); td.addEventListener('click', () => { if (t.plannedDay !== today && !(t.recurrenceRaw && taskOnDay(t, today))) new Notice('Not on today yet: choose a day to put it there.'); plugin.openToday(); });
+    if (plugin.plannerOn()) el(acts, 'button', 'a4pj-btn', 'Open in Planner').addEventListener('click', () => plugin.openPlanner(null));
+    if (plugin.todayOn()) el(acts, 'button', 'a4pj-btn', 'Show on Today').addEventListener('click', () => { if (t.plannedDay !== today && !(t.recurrenceRaw && taskOnDay(t, today))) new Notice('Not on today yet: choose a day to put it there.'); plugin.openToday(); });
 
     // tick + name
     const top = el(card, 'div', 'a4pj-card-top');
@@ -4446,7 +4450,7 @@ class ProjectsSettingTab extends PluginSettingTab {
 A4ProjectsPlugin.logic = logic;
 module.exports = A4ProjectsPlugin;
 module.exports.TaskEngine = TaskEngine;
-module.exports.TaskLinks = TaskLinks; // for Scripts/tests (dependencies)
+module.exports.TaskLinks = TaskLinks; // for tests/test-dependencies.js
 module.exports.ProjectsView = ProjectsView; // for tests (switch clicks)
 module.exports.IdeaModal = IdeaModal; // for tests (Enter in the form)
-module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for Scripts/tests (task card colour)
+module.exports.cardAccent = { CARD_ACCENTS, cardAccentId, setCardAccent }; // for tests/test-projects.js (task card colour)

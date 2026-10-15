@@ -323,3 +323,6 @@ html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-time { font: 600 11.5px var(
 html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell { display: inline-flex; align-items: flex-start; gap: 1px; margin: 0 6px 0 -3px; color: var(--a4t-marker); vertical-align: baseline; white-space: nowrap; }
 html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell .a4t-ic svg { width: 12px; height: 12px; stroke-width: 2; }
 html:not(#a4t-guard) .a4t-root .a4t-task-title .a4t-bell-k { font: 600 9.5px var(--a4t-f-mono); line-height: 1; position: relative; top: -2px; }
+
+/* A button or widget for a part that is switched off (phase 2 section 6). */
+html:not(#a4t-guard) .a4t-root .a4t-off { display: none; }

@@ -158,6 +158,9 @@ class LifeWorldPlugin extends Plugin {
         if (files) await this.app.workspace.revealLeaf(files);
       }
       for (const entry of PART_LIST) if (this.wanted(entry[0].id) && !this.running[entry[0].id]) await this.startPart(entry);
+      // The tabs still open draw again: a part switched off hides its buttons and links in the
+      // others (phase 2 section 6, as drawn), one switched on shows them.
+      this.redrawViews();
     });
     return this.applying;
   }
@@ -192,12 +195,13 @@ class LifeWorldPlugin extends Plugin {
     for (const p of Object.values(this.running)) if (p && typeof p.onVaultChange === 'function') p.onVaultChange();
   }
 
-  // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw).
+  // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw; the Sidebar draws now).
   redrawViews() {
     for (const types of Object.values(this.views || {})) for (const type of types) for (const leaf of this.app.workspace.getLeavesOfType(type)) {
       const v = leaf.view;
       if (v && typeof v.scheduleRefresh === 'function') v.scheduleRefresh();
       else if (v && typeof v.scheduleRender === 'function') v.scheduleRender();
+      else if (v && typeof v.render === 'function') v.render(); // the Sidebar
     }
   }
 
@@ -298,6 +302,9 @@ class LifeWorldPlugin extends Plugin {
     // result (review p2-s4: no write when nothing changed).
     if (this.writing || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
       this.writeStore().catch((e) => console.error('LifeWorld: the save after a settings change from outside failed', e));
+    } else if (saved) {
+      // No write: the file holds our save, not `now`; else the next Sync change looks local and is dropped (review p2-s5).
+      this.ondisk = ours;
     }
     for (const [m] of PART_LIST) {
       const p = this.running[m.id];

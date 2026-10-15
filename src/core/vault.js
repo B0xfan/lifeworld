@@ -21,6 +21,26 @@ const names = {};
 // owner's preset holds the paths. Stored only in the settings file (no row, build plan section 2).
 const feeds = { calendar: '', weather: '' };
 const daily = { ...DAILY_DEFAULTS, ...(START.daily || {}) }; // fallback when Obsidian's setting cannot be read
+// The Sidebar's own content (phase 2 section 6): its name, the folder whose subfolders it groups
+// ("life"), the groups, item icons and labels, items shown without a count, the rooms (top folders
+// found by their name's start) and bases left out of the Bases list. A new install has none of it
+// and lists its own top folders; an owner's preset holds it. Stored only in the settings file (the
+// groups editor is phase 4).
+const SIDEBAR_DEFAULTS = { brand: 'LifeWorld', life: '', groups: [], icons: {}, labels: {}, noCount: [], rooms: [], basesSkip: [] };
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const strs = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const strMap = (v) => isObj(v) && Object.values(v).every((x) => typeof x === 'string');
+const SIDEBAR_OK = {
+  brand: (v) => typeof v === 'string' && v.trim() !== '',
+  life: (v) => typeof v === 'string',
+  groups: (v) => Array.isArray(v) && v.every((g) => isObj(g) && typeof g.id === 'string' && typeof g.label === 'string' && strs(g.folders)),
+  icons: strMap,
+  labels: strMap,
+  noCount: strs,
+  rooms: (v) => Array.isArray(v) && v.every((r) => isObj(r) && typeof r.prefix === 'string' && r.prefix !== '' && typeof r.name === 'string' && typeof r.icon === 'string'),
+  basesSkip: strs,
+};
+const sidebar = {};
 let renamed = false; // any property name differs from LifeWorld's own
 
 // A character a property name cannot hold (the approved mockup's rule).
@@ -69,6 +89,14 @@ function setVault(saved) {
   // (review p2-s5). Not a note ('.md'): none, so a folder-style value never reads as a feed.
   const note = (v) => { const p = cleanFolder(v); return p.endsWith('.md') ? p : ''; };
   for (const k of Object.keys(feeds)) feeds[k] = note(typeof fd[k] === 'string' ? fd[k] : (START.feeds || {})[k]);
+  // Each Sidebar value: saved, else the start settings, else the new-install default; a damaged value
+  // (wrong type) counts as missing.
+  const sb = isObj(s.sidebar) ? s.sidebar : {};
+  const sbStart = isObj(START.sidebar) ? START.sidebar : {};
+  for (const [k, ok] of Object.entries(SIDEBAR_OK)) {
+    const v = ok(sb[k]) ? sb[k] : ok(sbStart[k]) ? sbStart[k] : SIDEBAR_DEFAULTS[k];
+    sidebar[k] = k === 'life' ? cleanFolder(v) : JSON.parse(JSON.stringify(v));
+  }
 }
 setVault(null);
 
@@ -124,4 +152,4 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
-module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, feedNotes: feeds, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+module.exports = { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, vaultFolders: folders, propNames: names, feedNotes: feeds, sidebarContent: sidebar, setVault, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

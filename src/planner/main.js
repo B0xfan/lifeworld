@@ -16,7 +16,7 @@
  * Writes:
  *  - Moves: app.fileManager.processFrontMatter with applyMove() and
  *    planInsert(), the SAME functions a4-today uses (copied verbatim, see the
- *    SHARED block; the test Scripts/tests/test-a4-planner.js fails if the two
+ *    SHARED block; the test tests/test-planner.js fails if the two
  *    copies ever differ). When a drop lands between two tasks with the same
  *    order (tasks never placed all read 0), the lane is renumbered 10, 20,
  *    30... so the drop sticks (1.0.2).
@@ -50,7 +50,7 @@
  *  - Reminders (Planner 1.1.0, 2026-10-05, reminder setup mockup approved):
  *    a small orange bell after a task's time when it will ring, with
  *    "15m" when it rings earlier (shared reminderOf, TaskNotes' `reminders`).
- *    Apple Reminders does the ringing (Scripts/sync-task-reminders.py); the
+ *    Apple Reminders does the ringing (a separate sync); the
  *    plugin fires no notification of its own.
  *  - Someday (Planner 1.2.0, 2026-10-06, Someday mockup approved;
  *    GL-002 task status `someday`): a "Someday" line in the Schedule box
@@ -231,7 +231,7 @@ function unmatchedProjectWords(text, names) {
 }
 
 /* ========================================================================== *
- * Planner pure logic (unit-tested in Scripts/tests/test-a4-planner.js)
+ * Planner pure logic (unit-tested in tests/test-planner.js)
  * ========================================================================== */
 
 function mondayOf(day) { return addDays(day, -((weekdayOf(day) + 6) % 7)); }
@@ -1414,5 +1414,5 @@ class SchedulePopover {
 }
 
 module.exports = A4PlannerPlugin;
-// Pure functions for Scripts/tests/test-a4-planner.js (same convention as a4-today's .logic).
+// Pure functions for tests/test-planner.js (same convention as a4-today's .logic).
 module.exports.logic = { allUnscheduledFolded, projectMatches, projectToken, pickProjectText, unmatchedProjectWords, PROJECT_HITS_MAX, isSomeday, applySomeday, somedayOf, understand, quickAddChips, quickAddPlan, parseClock, timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo, taskFromFrontmatter, priorityTable, priorityOf, groupUnscheduled, unscheduledOf, overdueOf, weeklyGoalsOf, laneOf, plannerItem, taskTitleOf, projectKeyOf, applyUnschedule, applyMove, orderForInsert, planInsert, insertIndexOf, eventsForDay, eventKey, eventDetails, plannedFields, pruneMade, dueChipOf, monthGrid, shiftMonth, moveLabel, mondayOf, weekOf, taskOnDay, isTaskDone, occursOn, parseRRule, sortByOrder, addDays, openProjectPage, REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };

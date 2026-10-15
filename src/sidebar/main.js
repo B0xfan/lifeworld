@@ -44,6 +44,10 @@ const obsidian = require('obsidian');
 const { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } = obsidian;
 const { dayOf } = require('../core/dates'); // the one shared copy of the date helpers
 const { partOf } = require('../core/parts'); // the other parts, through LifeWorld (phase 2)
+// The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
+// each time the panel draws. A new install has none and lists its top folders.
+const { sidebarContent } = require('../core/vault');
+const SBC = sidebarContent;
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
 // and the drawer closes after something opens, as the Files tab does.
@@ -52,7 +56,6 @@ const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP = 10;
 
 const VIEW_TYPE = 'a4-sidebar';
-const MY_LIFE = '04 Inner World/My Life';
 
 /* ------------------------------------------------------------------ *
  * Lifeworld's own definitions (ui.tsx), copied by value.
@@ -62,24 +65,6 @@ const NAV = [
   { id: 'planner', label: 'Planner', icon: 'board', command: 'a4-planner:open', viewType: 'a4-planner' },
   { id: 'focus', label: 'Focus', icon: 'orbit', command: 'icor-for-life-focus:open-focus', viewType: 'icor-focus-view' },
 ];
-
-const LIFE_GROUPS = [
-  { id: 'direction', label: 'Direction', folders: ['Key Elements', 'Goals', 'Personal projects', 'Unsorted projects', 'Habits', 'Topics'] },
-  { id: 'wellbeing', label: 'Wellbeing', folders: ['Health', 'Mood'] },
-  // Projects split in two (2026-10-04): display only, one real folder.
-  { id: 'money', label: 'Money & work', folders: ['Work projects', 'Finance', 'Client Analytics'] },
-  { id: 'free', label: 'Free time', folders: ['Movies', 'Media', 'Reading', 'Sports', 'Recipes', 'Trips', 'Guide'] },
-  { id: 'notes', label: 'Notes', folders: ['Notes', 'Weather'] },
-];
-const LIFE_ICON = {
-  'Client Analytics': 'chart', Finance: 'wallet', Goals: 'target', Guide: 'map', Habits: 'flame', Health: 'pulse', 'Key Elements': 'diamond',
-  Media: 'music', Mood: 'smile', Movies: 'film', Notes: 'note', Projects: 'kanban', Reading: 'book', Recipes: 'chef', Sports: 'trophy', Topics: 'hash',
-  Trips: 'plane', Weather: 'cloudSun',
-};
-const LIFE_LABEL = { Media: 'Music', Guide: 'Places' };
-LIFE_ICON['Work projects'] = 'kanban';
-LIFE_ICON['Personal projects'] = 'kanban';
-LIFE_ICON['Unsorted projects'] = 'kanban';
 
 // Items that show part of a real folder, split ONLY on the project's GL-002
 // `sphere` property (work / personal; ruling 2026-10-04). No rule, no guess:
@@ -112,7 +97,6 @@ function openRuleFrom(projectsPlugin) {
 // dropped ones stay reachable from the Projects page's Closed section.
 const openProjects = (members) => members.filter((m) => m.open);
 const openProjectCount = (members) => openProjects(members).length;
-const LIFE_NO_COUNT = new Set(['Finance', 'Health', 'Client Analytics', 'Weather', 'Mood', 'Sports']);
 
 // A4's existing dashboards for the Lifeworld items that open one.
 const LANDING = {
@@ -123,16 +107,6 @@ const LANDING = {
   Media: { command: 'a4-media:open-a4-music' },
   Reading: { command: 'reading-vault:open-reading' },
 };
-
-const ROOMS = [
-  { prefix: '00 ', name: 'Daily Scratchpad', icon: 'pen', c: 0 },
-  { prefix: '01 ', name: 'Inbox', icon: 'inbox', c: 1 },
-  { prefix: '02 ', name: 'Planner', icon: 'calendar', c: 2 },
-  { prefix: '03 ', name: 'WiP', icon: 'bench', c: 3 },
-  { prefix: '04 ', name: 'Inner World', icon: 'sparkle', c: 4 },
-  { prefix: '05 ', name: 'Assets', icon: 'box', c: 5 },
-  { prefix: '06 ', name: 'AI Team', icon: 'bot', c: 6 },
-];
 
 // Lifeworld's stroke icons (ui.tsx P), 24x24 viewBox.
 const P = {
@@ -191,11 +165,13 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const nameOf = (p) => p.slice(p.lastIndexOf('/') + 1);
 
-// Lifeworld: rooms are keyed on the numeric prefix; a rename after it is a no-op.
+// Lifeworld: rooms are keyed on the numeric prefix; a rename after it is a no-op. The room's colour
+// is its place in the list. No rooms set (a new install): every top folder, A to Z, plain.
 function findRoomFolders(rootFolderNames) {
-  return ROOMS.map((r) => {
+  if (!SBC.rooms.length) return rootFolderNames.slice().sort(collator.compare).map((path) => ({ name: path, icon: 'folder', path }));
+  return SBC.rooms.map((r, c) => {
     const path = rootFolderNames.filter((n) => n.startsWith(r.prefix)).sort(collator.compare)[0];
-    return path ? { ...r, path } : null;
+    return path ? { ...r, c, path } : null;
   }).filter(Boolean);
 }
 
@@ -204,7 +180,7 @@ function findRoomFolders(rootFolderNames) {
 function buildLifeGroups(myLifeFolderNames) {
   const have = new Set(myLifeFolderNames);
   const used = new Set();
-  const groups = LIFE_GROUPS.map((g) => {
+  const groups = SBC.groups.map((g) => {
     const items = g.folders.filter((n) => have.has(itemFolder(n)));
     items.forEach((n) => used.add(itemFolder(n)));
     return { id: g.id, label: g.label, items };
@@ -214,9 +190,9 @@ function buildLifeGroups(myLifeFolderNames) {
   return groups.filter((g) => g.items.length);
 }
 
-function itemLabel(name) { return LIFE_LABEL[name] || name; }
-function itemIcon(name) { return LIFE_ICON[name] || 'folder'; }
-function itemShowsCount(name) { return !LIFE_NO_COUNT.has(name); }
+function itemLabel(name) { return SBC.labels[name] || name; }
+function itemIcon(name) { return SBC.icons[name] || 'folder'; }
+function itemShowsCount(name) { return !SBC.noCount.includes(name); }
 
 // What clicking a My Life item does, in order: an A4 dashboard command that
 // is actually registered; else a landing note named like the folder; else a
@@ -421,7 +397,7 @@ function planRename(srcPath, newBase, exists) {
 function activeGroupFor(activePath, groups, classify) {
   if (!activePath) return null;
   for (const g of groups) for (const n of g.items) {
-    if (!activePath.startsWith(`${MY_LIFE}/${itemFolder(n)}/`)) continue;
+    if (!activePath.startsWith(`${SBC.life}/${itemFolder(n)}/`)) continue;
     if (!VIRTUAL[n]) return g.id;
     if (classify && classify(activePath) === VIRTUAL[n].kind) return g.id;
   }
@@ -500,8 +476,8 @@ function plusTargetsByPath(targets) {
 function hiddenUnderRooms(groups) {
   const out = new Set();
   if (!groups || !groups.length) return out;
-  out.add(MY_LIFE);
-  for (const g of groups) for (const n of g.items) out.add(`${MY_LIFE}/${itemFolder(n)}`);
+  out.add(SBC.life);
+  for (const g of groups) for (const n of g.items) out.add(`${SBC.life}/${itemFolder(n)}`);
   return out;
 }
 
@@ -540,7 +516,6 @@ const CORE_TOOLS = {
 // upkeep. TaskNotes' starter views are left out (TaskNotes is not used;
 // the files stay where they are).
 const BASES_TOOL = { id: 'bases', icon: 'database', label: 'Open a base' };
-const BASES_SKIP = ['02 Planner/TaskNotes/'];
 // The faint folder name: the folder the base sits in, or the one above when
 // the base is named after its own folder (People.base in Contacts/People
 // reads "Contacts"); a room's number is dropped ("Inner World").
@@ -552,7 +527,7 @@ function baseWhere(path, name) {
 }
 function listBases(paths) {
   return paths
-    .filter((p) => /\.base$/i.test(p) && !BASES_SKIP.some((s) => p.startsWith(s)))
+    .filter((p) => /\.base$/i.test(p) && !SBC.basesSkip.some((s) => p.startsWith(s)))
     .map((p) => { const name = nameOf(p).replace(/\.base$/i, ''); return { path: p, name, where: baseWhere(p, name) }; })
     .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.path, b.path));
 }
@@ -653,7 +628,7 @@ class RenameModal extends Modal {
 class A4SidebarView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.dragging = null; this.classify = (p) => this.classifyPath(p); }
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { return 'A4'; }
+  getDisplayText() { return SBC.brand; }
   getIcon() { return 'layout-list'; }
 
   async onOpen() {
@@ -664,15 +639,15 @@ class A4SidebarView extends ItemView {
     this.registerEvent(this.app.vault.on('delete', later));
     this.registerEvent(this.app.vault.on('rename', later));
     // a project gaining a client or Career moves between the two lists
-    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && file.path.startsWith(`${MY_LIFE}/Projects/`)) later(); }));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (SBC.life && file && file.path.startsWith(`${SBC.life}/Projects/`)) later(); }));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.markActive()));
     this.registerEvent(this.app.workspace.on('file-open', () => this.markActive()));
   }
 
   // 'work' / 'personal' for a project note directly in My Life/Projects, else null.
   classifyPath(path) {
-    const dir = `${MY_LIFE}/Projects/`;
-    if (!path || !path.startsWith(dir) || path.slice(dir.length).includes('/')) return null;
+    const dir = `${SBC.life}/Projects/`;
+    if (!SBC.life || !path || !path.startsWith(dir) || path.slice(dir.length).includes('/')) return null;
     const f = this.app.vault.getAbstractFileByPath(path);
     const fm = f && (this.app.metadataCache.getFileCache(f) || {}).frontmatter;
     if (!fm || fm.type !== 'project') return null;
@@ -699,10 +674,10 @@ class A4SidebarView extends ItemView {
     const filePaths = all.filter((f) => f instanceof TFile).map((f) => f.path);
     const vaultRoot = this.app.vault.getRoot();
     const rooms = findRoomFolders(vaultRoot.children.filter((c) => c instanceof TFolder).map((c) => c.path));
-    const myLife = this.folder(MY_LIFE);
+    const myLife = SBC.life ? this.folder(SBC.life) : null;
     const groups = buildLifeGroups(myLife ? myLife.children.filter((c) => c instanceof TFolder).map((c) => c.name) : []);
     this.groups = groups;
-    const countFolders = rooms.map((r) => r.path).concat(groups.flatMap((g) => g.items.map((n) => `${MY_LIFE}/${itemFolder(n)}`)));
+    const countFolders = rooms.map((r) => r.path).concat(groups.flatMap((g) => g.items.map((n) => `${SBC.life}/${itemFolder(n)}`)));
     this.hideInRooms = hiddenUnderRooms(groups);
     this.counts = Object.assign(
       countNotes(filePaths, countFolders),
@@ -740,7 +715,7 @@ class A4SidebarView extends ItemView {
     const top = root.createDiv({ cls: 'a4sb-top' });
     const brand = top.createDiv({ cls: 'a4sb-brand' });
     brand.createSpan({ cls: 'a4sb-brand-mark' }).createEl('i');
-    brand.createSpan({ cls: 'a4sb-brand-name', text: 'A4' });
+    brand.createSpan({ cls: 'a4sb-brand-name', text: SBC.brand });
     const search = root.createDiv({ cls: 'a4sb-search', attr: { role: 'button', tabindex: '0' } });
     search.appendChild(icon('search', 14));
     search.createSpan({ text: 'Search' });
@@ -767,7 +742,7 @@ class A4SidebarView extends ItemView {
 
     // My Life
     if (groups.length) {
-      const sec = this.section(scroll, 'mylife', 'My Life');
+      const sec = this.section(scroll, 'mylife', nameOf(SBC.life));
       for (const g of groups) {
         const open = isGroupOpen(g.id, st.groups, activeGroup);
         const wrap = sec.createDiv({ cls: 'a4sb-group', attr: { 'data-group': g.id } });
@@ -786,19 +761,19 @@ class A4SidebarView extends ItemView {
       }
     }
 
-    // Rooms
-    const rs = this.section(scroll, 'rooms', 'Rooms');
+    // Rooms; with none set, the top folders under "Folders" (as drawn in the step 0 mockup)
+    const rs = this.section(scroll, 'rooms', SBC.rooms.length ? 'Rooms' : 'Folders');
     for (const r of rooms) {
       const f = this.folder(r.path);
       const box = rs.createDiv();
       this.folderRow(box, f, {
         cls: 'a4sb-room', label: r.name, icon: r.icon, depth: 0, count: this.counts[r.path],
-        style: `--a4sb-room: var(--a4sb-room-${r.c})`, attrs: { 'data-room': r.name },
+        style: r.c == null ? null : `--a4sb-room: var(--a4sb-room-${r.c})`, attrs: { 'data-room': r.name },
       });
     }
 
     const foot = root.createDiv({ cls: 'a4sb-foot' });
-    foot.createSpan({ cls: 'a4sb-hand', text: 'A4' });
+    foot.createSpan({ cls: 'a4sb-hand', text: this.app.vault.getName() }); // the vault's name, as drawn
     foot.createSpan({ cls: 'a4sb-small', text: `${filePaths.filter((p) => p.endsWith('.md')).length.toLocaleString()} notes` });
 
     root.querySelectorAll('[role="button"]').forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }));
@@ -836,7 +811,7 @@ class A4SidebarView extends ItemView {
 
   // Projects folder notes of one kind ('work' / 'personal'), active first.
   projectsOf(kind) {
-    const f = this.folder(`${MY_LIFE}/Projects`);
+    const f = SBC.life ? this.folder(`${SBC.life}/Projects`) : null;
     if (!f) return [];
     const list = [];
     const isOpen = openRuleFrom(partOf(this.app, 'a4-projects'));
@@ -853,7 +828,7 @@ class A4SidebarView extends ItemView {
   lifeItem(parent, name, filePaths) {
     if (VIRTUAL[name]) {
       const v = VIRTUAL[name];
-      const f = this.folder(`${MY_LIFE}/${v.folder}`);
+      const f = this.folder(`${SBC.life}/${v.folder}`);
       if (!f) return;
       const box = parent.createDiv();
       const members = openProjects(this.projectsOf(v.kind));
@@ -884,7 +859,7 @@ class A4SidebarView extends ItemView {
       });
       return;
     }
-    const path = `${MY_LIFE}/${name}`;
+    const path = `${SBC.life}/${name}`;
     const f = this.folder(path);
     if (!f) return;
     const box = parent.createDiv();
@@ -1543,7 +1518,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
 
 module.exports = A4SidebarPlugin;
 module.exports.__logic = {
-  NAV, LIFE_GROUPS, LANDING, ROOMS, FILE_CAP, MY_LIFE,
+  NAV, LANDING, FILE_CAP, SBC,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
-  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, BASES_SKIP, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
+  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

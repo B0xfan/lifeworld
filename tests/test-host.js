@@ -55,7 +55,7 @@ class Setting {
 class Modal { constructor(app) { this.app = app; this.contentEl = fakeEl('div'); } open() { this.isOpen = true; this.onOpen(); } close() { this.isOpen = false; this.onClose(); } setTitle(t) { this.title = t; return this; } }
 class TFile { constructor(path) { this.path = path; this.basename = path.split('/').pop().replace(/\.md$/, ''); this.name = path.split('/').pop(); this.extension = 'md'; } }
 class TFolder { constructor(path, children) { this.path = path; this.children = children; } }
-const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting, Modal, TFile, TFolder }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
+const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting, Modal, TFile, TFolder, setIcon() {} }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
 
@@ -482,6 +482,7 @@ const start = async (data) => {
   eq(T.renderTemplate('# {{title}}', oct3), '# 2026-10-03', 'template title: the daily note name (defaults here)');
   eq(T.renderTemplate('# {{title}}', oct3, null, '10-03-2026'), '# 10-03-2026', 'template title: the name it is given');
   ok(T.isScratchpadPath('00 Daily Scratchpad/10-04-2026.md', jdn) && !T.isScratchpadPath('03 WiP/x.md', jdn) && T.isScratchpadPath('2026-10-04.md', { folder: '' }) && !T.isScratchpadPath('a/2026-10-04.md', { folder: '' }), 'scratchpad notes: in the daily notes folder');
+  ok(T.isScratchpadPath('2026/10/2026-10-04.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }) && !T.isScratchpadPath('2026-10-04.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }) && T.isScratchpadPath('2026-10-04.md', { folder: '', format: 'YYYY-MM-DD' }), 'scratchpad notes at the top with a nested date format: as deep as the format (review p2-s5)');
   await owner.parts['a4-today'].saveData({ layout: ['x'] }); await owner.host.saving;
   eq(JSON.parse(disk[owner.dir]).lifeworld, fixJson('plugins/lifeworld/data.json').lifeworld, 'preset: saving a part leaves the Your vault settings as they were');
   // Phase 2 section 5: the calendar and weather notes the old code had built in come from the preset.
@@ -633,6 +634,21 @@ const start = async (data) => {
   eq(writes, ['begin', 'end'], 'save during the Sync read, nothing new: only that save, no extra write');
   calm.host.unload();
 
+  // Review p2-s5 should-fix 1: after that skipped write, the next Sync change to the same corner is
+  // taken (the record of what is on disk must be our save, not the older file the read returned).
+  const skip = await start({ 'a4-today': { layout: ['a'] } });
+  const readS = skip.host.loadData;
+  skip.host.loadData = async function () { const d = await readS.call(this); await skip.parts['a4-today'].saveData({ layout: ['b'] }); return d; };
+  disk[skip.dir] = JSON.stringify({ 'a4-today': { layout: ['a'] } });
+  await skip.host.onExternalSettingsChange();
+  skip.host.loadData = readS;
+  await skip.host.saving;
+  disk[skip.dir] = JSON.stringify({ 'a4-today': { layout: ['c'] } });
+  await skip.host.onExternalSettingsChange();
+  await skip.host.saving;
+  eq(await skip.parts['a4-today'].loadData(), { layout: ['c'] }, 'skipped write after a Sync read: the next Sync change to that setting is taken');
+  skip.host.unload();
+
   // Review p2-s4 should-fix 2: a task note deleted from the tasks folder (here the default "Tasks", no
   // "TaskNotes" in the path) redraws the task links.
   const tl = await start({});
@@ -647,6 +663,69 @@ const start = async (data) => {
   evs.rename(new TFile('Tasks/Renamed.md'));
   eq(redraws, 2, 'deleting or renaming a note in the tasks folder redraws task links; other notes do not');
   tl.host.unload();
+
+  // ---- Section 6: the Sidebar's content is stored data; a part switched off hides its buttons ----
+  const SBL = LW.parts['a4-sidebar'].__logic;
+  const VLT = SBL.SBC; // the live object the Sidebar reads
+  // The Sidebar exactly as it was written into the A4 Sidebar's code before section 6.
+  const OLD_SB = {
+    groups: [
+      { id: 'direction', label: 'Direction', folders: ['Key Elements', 'Goals', 'Personal projects', 'Unsorted projects', 'Habits', 'Topics'] },
+      { id: 'wellbeing', label: 'Wellbeing', folders: ['Health', 'Mood'] },
+      { id: 'money', label: 'Money & work', folders: ['Work projects', 'Finance', 'Client Analytics'] },
+      { id: 'free', label: 'Free time', folders: ['Movies', 'Media', 'Reading', 'Sports', 'Recipes', 'Trips', 'Guide'] },
+      { id: 'notes', label: 'Notes', folders: ['Notes', 'Weather'] },
+    ],
+    icons: { 'Client Analytics': 'chart', Finance: 'wallet', Goals: 'target', Guide: 'map', Habits: 'flame', Health: 'pulse', 'Key Elements': 'diamond', Media: 'music', Mood: 'smile', Movies: 'film', Notes: 'note', Projects: 'kanban', Reading: 'book', Recipes: 'chef', Sports: 'trophy', Topics: 'hash', Trips: 'plane', Weather: 'cloudSun', 'Work projects': 'kanban', 'Personal projects': 'kanban', 'Unsorted projects': 'kanban' },
+    labels: { Media: 'Music', Guide: 'Places' },
+    noCount: ['Finance', 'Health', 'Client Analytics', 'Weather', 'Mood', 'Sports'],
+    rooms: [['00 ', 'Daily Scratchpad', 'pen'], ['01 ', 'Inbox', 'inbox'], ['02 ', 'Planner', 'calendar'], ['03 ', 'WiP', 'bench'], ['04 ', 'Inner World', 'sparkle'], ['05 ', 'Assets', 'box'], ['06 ', 'AI Team', 'bot']].map(([prefix, name, icon], c) => ({ prefix, name, icon, c })),
+  };
+  // New install: no groups, no rooms; the top folders A to Z under "Folders", plain; named LifeWorld.
+  const sb0 = await start({});
+  eq([VLT.brand, VLT.life, VLT.groups, VLT.rooms, VLT.basesSkip], ['LifeWorld', '', [], [], []], 'new install: no Sidebar groups, rooms or skipped bases; named LifeWorld');
+  eq(SBL.findRoomFolders(['Notes', 'Attachments', 'daily', '03 WiP']), [['03 WiP', 'folder'], ['Attachments', 'folder'], ['daily', 'folder'], ['Notes', 'folder']].map(([name, icon]) => ({ name, icon, path: name })), 'new install: every top folder, A to Z, plain (no room colour)');
+  eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
+  sb0.host.unload();
+  // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
+  // and rooms the old code had, so his Sidebar draws as before.
+  const ownerFile = JSON.parse(fs.readFileSync(path.join(FIX, '.obsidian', 'plugins', 'lifeworld', 'data.json'), 'utf8'));
+  const sb1 = await start(ownerFile);
+  eq([VLT.brand, VLT.life, VLT.groups, VLT.icons, VLT.labels, VLT.noCount, VLT.basesSkip], ['A4', '04 Inner World/My Life', OLD_SB.groups, OLD_SB.icons, OLD_SB.labels, OLD_SB.noCount, ['02 Planner/TaskNotes/']], "owner's preset: brand, My Life folder, groups, icons, names, counts and skipped bases as before");
+  const rootNames = fs.readdirSync(FIX, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name);
+  const oldRooms = OLD_SB.rooms.map((r) => { const p = rootNames.filter((x) => x.startsWith(r.prefix)).sort()[0]; return p ? { ...r, path: p } : null; }).filter(Boolean);
+  eq(SBL.findRoomFolders(rootNames), oldRooms, "owner's preset: the frozen vault's rooms, names, icons and colours as before");
+  ok(oldRooms.length >= 3, 'the frozen vault has rooms to compare');
+  eq(SBL.buildLifeGroups(['Notes', 'Health', 'Goals', 'Projects', 'Odd']).map((g) => [g.label, g.items]), [['Direction', ['Goals', 'Personal projects', 'Unsorted projects']], ['Wellbeing', ['Health']], ['Money & work', ['Work projects']], ['Notes', ['Notes']], ['More', ['Odd']]], "owner's preset: My Life groups as before (Projects split, the rest under More)");
+  eq([SBL.itemLabel('Guide'), SBL.itemIcon('Work projects'), SBL.itemShowsCount('Finance'), SBL.itemShowsCount('Goals')], ['Places', 'kanban', false, true], "owner's preset: a label, an icon and the counts as before");
+  // A damaged value (wrong type, an empty room start) counts as missing; the other values stay.
+  sb1.host.store.lifeworld.vault.sidebar = { ...ownerFile.lifeworld.vault.sidebar, groups: 'x', rooms: [{ prefix: '', name: 'All', icon: 'box' }], brand: ' ' };
+  await sb1.host.setVaultSettings({ folders: {} }); // reads the whole stored block again
+  eq([VLT.groups, VLT.rooms, VLT.brand, VLT.labels], [[], [], 'LifeWorld', OLD_SB.labels], 'a damaged Sidebar value falls back to the new-install default; the others are kept');
+  sb1.host.unload();
+  // Switching a part off or on redraws the tabs still open (the Sidebar draws now, the others schedule it).
+  const sw = await start({});
+  const drawn = [];
+  sw.app.workspace.getLeavesOfType = (t) => (t === 'a4-sidebar-view' ? [{ view: { render: () => drawn.push('sidebar') } }] : t === 'a4-projects-view' ? [{ view: { scheduleRender: () => drawn.push('projects') } }] : []);
+  await sw.host.setPart('a4-planner', false);
+  eq(drawn, ['projects', 'sidebar'], 'a part switched off: the open Projects and Sidebar tabs draw again');
+  sw.host.unload();
+  // Today: the Planner button and the Planner shortcut go while the Planner is off, and come back.
+  const TV = LW.parts['a4-today'].TodayView.prototype;
+  const tp = Object.create(LW.parts['a4-today'].prototype);
+  tp.app = { commands: { commands: { 'a4-planner:open': {} } } };
+  const btn = fakeEl('button'); const card = fakeEl('div');
+  const box = () => Object.assign(fakeEl('div'), { createSpan: () => box(), createEl: () => box(), appendText() {} });
+  const tv = { plugin: tp, planBtn: btn, data: { today: '2026-10-14', lists: { total: 0 } }, openCount: () => 0, kickerEl: fakeEl(), titleEl: fakeEl(), plateEl: fakeEl() };
+  const offNow = () => [btn.cls.includes('a4t-off'), card.cls.includes('a4t-off')];
+  TV.renderHeader.call(tv); TV.renderPlannerLink.call(tv, box(), card);
+  eq(offNow(), [false, false], 'Planner on: Today shows its Planner button and shortcut');
+  tp.app.commands.commands = {};
+  TV.renderHeader.call(tv); TV.renderPlannerLink.call(tv, box(), card);
+  eq(offNow(), [true, true], 'Planner off: Today hides its Planner button and shortcut, as drawn');
+  tp.app.commands.commands = { 'a4-planner:open': {} };
+  TV.renderHeader.call(tv); TV.renderPlannerLink.call(tv, box(), card);
+  eq(offNow(), [false, false], 'Planner back on: both come back');
 
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });

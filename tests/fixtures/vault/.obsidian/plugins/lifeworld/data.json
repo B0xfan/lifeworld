@@ -12,6 +12,137 @@
       "feeds": {
         "calendar": "02 Planner/Calendar Events.md",
         "weather": "02 Planner/Weather Today.md"
+      },
+      "sidebar": {
+        "brand": "A4",
+        "life": "04 Inner World/My Life",
+        "groups": [
+          {
+            "id": "direction",
+            "label": "Direction",
+            "folders": [
+              "Key Elements",
+              "Goals",
+              "Personal projects",
+              "Unsorted projects",
+              "Habits",
+              "Topics"
+            ]
+          },
+          {
+            "id": "wellbeing",
+            "label": "Wellbeing",
+            "folders": [
+              "Health",
+              "Mood"
+            ]
+          },
+          {
+            "id": "money",
+            "label": "Money & work",
+            "folders": [
+              "Work projects",
+              "Finance",
+              "Client Analytics"
+            ]
+          },
+          {
+            "id": "free",
+            "label": "Free time",
+            "folders": [
+              "Movies",
+              "Media",
+              "Reading",
+              "Sports",
+              "Recipes",
+              "Trips",
+              "Guide"
+            ]
+          },
+          {
+            "id": "notes",
+            "label": "Notes",
+            "folders": [
+              "Notes",
+              "Weather"
+            ]
+          }
+        ],
+        "icons": {
+          "Client Analytics": "chart",
+          "Finance": "wallet",
+          "Goals": "target",
+          "Guide": "map",
+          "Habits": "flame",
+          "Health": "pulse",
+          "Key Elements": "diamond",
+          "Media": "music",
+          "Mood": "smile",
+          "Movies": "film",
+          "Notes": "note",
+          "Projects": "kanban",
+          "Reading": "book",
+          "Recipes": "chef",
+          "Sports": "trophy",
+          "Topics": "hash",
+          "Trips": "plane",
+          "Weather": "cloudSun",
+          "Work projects": "kanban",
+          "Personal projects": "kanban",
+          "Unsorted projects": "kanban"
+        },
+        "labels": {
+          "Media": "Music",
+          "Guide": "Places"
+        },
+        "noCount": [
+          "Finance",
+          "Health",
+          "Client Analytics",
+          "Weather",
+          "Mood",
+          "Sports"
+        ],
+        "rooms": [
+          {
+            "prefix": "00 ",
+            "name": "Daily Scratchpad",
+            "icon": "pen"
+          },
+          {
+            "prefix": "01 ",
+            "name": "Inbox",
+            "icon": "inbox"
+          },
+          {
+            "prefix": "02 ",
+            "name": "Planner",
+            "icon": "calendar"
+          },
+          {
+            "prefix": "03 ",
+            "name": "WiP",
+            "icon": "bench"
+          },
+          {
+            "prefix": "04 ",
+            "name": "Inner World",
+            "icon": "sparkle"
+          },
+          {
+            "prefix": "05 ",
+            "name": "Assets",
+            "icon": "box"
+          },
+          {
+            "prefix": "06 ",
+            "name": "AI Team",
+            "icon": "bot"
+          }
+        ],
+        "basesSkip": [
+          "02 Planner/TaskNotes/"
+        ]
       }
     }
   }
