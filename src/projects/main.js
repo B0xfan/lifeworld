@@ -1,5 +1,5 @@
-/* A4 Projects: Projects overview, project pages, the Inbox and the task card,
- * plus A4's own built-in task engine.
+/* Projects: Projects overview, project pages, the Inbox and the task card,
+ * plus its own built-in task engine.
  *
  * Third-party code: the task engine's write plans and recurrence logic are
  * ported from TaskNotes (https://github.com/callumalpass/tasknotes) and
@@ -8,7 +8,7 @@
  *
  * Built 2026-10-04 from an approved mockup.
  * Hand-written CommonJS; esbuild bundles it into the repo-root main.js (npm run build).
- * Will later merge with A4 Today and A4 Planner into the one public
+ * Will later merge with Today and Planner into the one public
  * "Lifeworld" plugin; the engine below is written to be lifted as is.
  *
  * Data (never a parallel model, GL-013 rule 1; fields: GL-002 ruling
@@ -38,12 +38,12 @@
  *    (DTSTART + scheduled). Moves keep the time within its half; into the
  *    other half it comes off, with Undo. Reminders: 0.2.0 below.
  *  - 0.1.5 (2026-10-05): public projectPathFor(ref) and
- *    openProjectPage(ref, { newTab }) so A4 Today and A4 Planner open a
+ *    openProjectPage(ref, { newTab }) so Today and Planner open a
  *    project's page from a project chip or task label (matched by name, as
  *    the page collects its tasks). openProjects/openProject take { newTab }.
  *  - 0.1.8 (2026-10-05): the quick add parser and its "Adds:" line are one
  *    SHARED quick add block (quickAddChips, quickAddPlan), copied verbatim
- *    into A4 Planner 1.0.6 and A4 Menu Bar Capture 1.0.6 so all three read
+ *    into Planner 1.0.6 and the menu bar capture add-on 1.0.6 so all three read
  *    and save the same words the same way. No change in what Projects does.
  *  - 0.2.0 (2026-10-05, reminder setup mockup approved): a Reminder
  *    row in the date-and-time picker (None, At the time, 5/15/30 min, 1 hour,
@@ -71,12 +71,12 @@
  *
  * Writes go through app.fileManager.processFrontMatter; only step
  * checkboxes (body lines) use vault.process, one checked line at a time.
- * Moves use applyMove, the same function A4 Today and A4 Planner use (the
+ * Moves use applyMove, the same function Today and Planner use (the
  * SHARED block is a verbatim copy; tests/test-projects.js fails
  * if it ever differs).
  *
  * Task source (Settings): Built-in (default), TaskNotes, or Obsidian
- * checkboxes (not built yet). A4 Today, A4 Planner ask this plugin first
+ * checkboxes (not built yet). Today, Planner ask this plugin first
  * (plugin.taskApi()) and fall back to TaskNotes' own API.
  */
 'use strict';
@@ -88,7 +88,7 @@ import { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, Plugin
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-projects';
-const PLANNER_COMMAND = 'a4-planner:open'; // the old A4 Daily Planner fallback was dropped 2026-10-05
+const PLANNER_COMMAND = 'a4-planner:open'; // the old daily planner fallback was dropped 2026-10-05
 const TODAY_COMMAND = 'a4-today:open';
 const UNDO_MS = 5000;
 const NARROW_WIDTH = 760;
@@ -104,7 +104,7 @@ const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting',
 const COLUMN_SUB = { backlog: 'Ready to start', active: 'Actively moving', waiting: 'Needs a response', paused: 'Active, but not for now', blocked: 'Waiting on something', done: 'Finished work' };
 // Page title per board tab (mockup).
 const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed' };
-// The tasks board (spec 14): the task statuses A4 already has, plus A4's Someday. No new status.
+// The tasks board (spec 14): the task statuses the vault already has, plus the planner's Someday. No new status.
 const TASK_COLUMNS = ['open', 'in-progress', 'blocked', 'someday', 'done', 'closed'];
 const TASK_COLUMN_LABEL = { open: 'Open', 'in-progress': 'In progress', blocked: 'Blocked', someday: 'Someday', done: 'Done', closed: 'Closed' };
 const TASK_COLUMN_SUB = { open: 'Ready to do', 'in-progress': 'Being worked on', blocked: 'Stuck on something', someday: 'No day, kept for later', done: 'Finished', closed: 'Finished without doing it' };
@@ -133,7 +133,7 @@ import { vaultFolders, inTaskFolders, readable, writable, toNote, isRenamed } fr
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: configuration
- * Everything TaskNotes reads from its settings, with A4's values (checked
+ * Everything TaskNotes reads from its settings, with the owner's values (checked
  * in .obsidian/plugins/tasknotes/data.json on 2026-10-04) as the fallback.
  * ========================================================================== */
 
@@ -688,7 +688,7 @@ function onBoard(p, area, query, extra) {
 // Tasks board column of a task status: none or blank sits in Open; a status the
 // board has no column for shows nowhere (as a project with an unknown status).
 function taskColumn(status) { const s = String(status == null ? '' : status).trim(); return s === '' || s === 'none' ? 'open' : TASK_COLUMNS.includes(s) ? s : null; }
-// The columns this vault's task settings have (Someday is A4's own, always there).
+// The columns this vault's task settings have (Someday is LifeWorld's own, always there).
 function taskColumns(cfg) { return TASK_COLUMNS.filter((k) => k === 'someday' || cfg.statuses.some((x) => x.value === k)); }
 // Tasks board cards: { t, p (its project or null), col }. An archived task that is
 // still open is left out (as the List's task search). Area: the project's; a task
@@ -720,7 +720,7 @@ function firstBodyLine(text) {
   for (const l of s.slice(frontmatterEnd(s)).split('\n')) { const t = l.trim(); if (t && !/^#{1,6}(\s|$)/.test(t) && !t.startsWith('![[')) return t; }
   return '';
 }
-// + Add idea (spec 11): the New Project form's note shape (A4 Quick Create), status
+// + Add idea (spec 11): the New Project form's note shape (the Quick Create add-on), status
 // idea and no goal; the one line is the first body line. `why` (free text) goes
 // through the YAML writer; the other values are fixed or checked by the caller.
 // The one line is kept exactly as typed (spaces included); only line breaks become a
@@ -848,7 +848,7 @@ function applyPromote(fm, goalLink, today) {
   return applyProjectStatus(fm, 'backlog', today);
 }
 
-// A task's project link, written the way A4 Menu Bar Capture writes it.
+// A task's project link, written the way the menu bar capture add-on writes it.
 function projectLinkFor(path) { return `[[${String(path).replace(/\.md$/i, '')}]]`; }
 function applyProjectLink(fm, F, link) {
   const list = asList(fm[F.projects]).slice();
@@ -1297,7 +1297,7 @@ class TaskEngine {
     if (fm0 && !ruleOfTask(tnTaskOf(fm0, cfg.F))) throw new Error("This task's repeat rule can't be read here.");
     return this.write(path, (fm) => applyRecurringToggle(fm, cfg, { day: day || null, today: dayOf(now), stamp: tnTimestamp(now) }));
   }
-  // Same write as A4 Today / A4 Planner moves.
+  // Same write as Today / Planner moves.
   async move(path, day, half, order) {
     return this.write(path, (fm) => applyMove(fm, day, half, order));
   }
@@ -1477,7 +1477,7 @@ class TaskEngine {
     return true;
   }
 
-  /* ---- the TaskNotes-shaped surface A4 Today and A4 Planner call -------- */
+  /* ---- the TaskNotes-shaped surface Today and Planner call -------- */
 
   makeApi() {
     const info = (path) => { const f = this.file(path); const fm = f ? this.fm(f) : null; const cfg = this.cfg(); return { path, status: fm ? statusString(fm[cfg.F.status]) : '', complete_instances: fm ? strList(fm[cfg.F.completeInstances]) : [] }; };
@@ -1512,7 +1512,7 @@ class TaskEngine {
  * ========================================================================== */
 
 const SOURCES = [
-  { id: 'builtin', name: 'Built-in (A4)', desc: 'This plugin reads and writes your task notes itself, exactly the way TaskNotes does.' },
+  { id: 'builtin', name: 'Built-in', desc: 'This plugin reads and writes your task notes itself, exactly the way TaskNotes does.' },
   { id: 'tasknotes', name: 'TaskNotes', desc: 'Ticks, new tasks and repeats go through the TaskNotes plugin (it must be turned on).' },
   { id: 'checkbox', name: 'Obsidian checkboxes (not built yet)', desc: 'Plain - [ ] lines in your notes. Planned for the public version.' },
 ];
@@ -1547,8 +1547,8 @@ function normalizeSettings(raw) {
  * 60%). Reading view: a markdown post-processor puts the widget in front of
  * the link and hides the link. Live Preview: a CodeMirror view plugin
  * replaces [[link]] with the widget unless the cursor is in it (as TaskNotes
- * did). A tick goes through completeTask, the same write as every A4 tick.
- * Not on task notes themselves: there the A4 card is the only task UI and
+ * did). A tick goes through completeTask, the same write as every tick.
+ * Not on task notes themselves: there the task card is the only task UI and
  * links stay plain (2026-10-04).
  * ========================================================================== */
 
@@ -1620,7 +1620,7 @@ class TaskLinks {
     const s = (tn && tn.settings && tn.settings.customStatuses) ? tn.settings : (this.plugin.settings.tnSnapshot || {});
     return { status: colorMap(s.customStatuses, LINK_STATUS_COLORS), priority: colorMap(s.customPriorities, LINK_PRIORITY_COLORS) };
   }
-  // No widgets on a task note itself (the A4 card is the task UI there).
+  // No widgets on a task note itself (the task card is the task UI there).
   skipSource(sourcePath) {
     const f = sourcePath ? this.app.vault.getAbstractFileByPath(sourcePath) : null;
     return f instanceof TFile && this.engine().isTaskFile(f);
@@ -1981,7 +1981,7 @@ class A4ProjectsPlugin extends Plugin {
     this.hideTaskNotesOnTaskNotes();
   }
 
-  /* TaskNotes stays installed as the fallback, but on a task note the A4 card is
+  /* TaskNotes stays installed as the fallback, but on a task note the task card is
    * the only task UI (2026-10-04). TaskNotes' own in-note task card is
    * off in its settings (showTaskCardInNote). What has no per-note setting is
    * hidden here, only on notes the engine recognises as tasks, without touching
@@ -2042,7 +2042,7 @@ class A4ProjectsPlugin extends Plugin {
     await this.save();
   }
 
-  // For A4 Today / A4 Planner: the engine when the task source is Built-in.
+  // For Today / Planner: the engine when the task source is Built-in.
   taskApi() { return this.settings.source === 'builtin' ? this.engine.api : null; }
   usesBuiltIn() { return this.settings.source === 'builtin'; }
 
@@ -2055,7 +2055,7 @@ class A4ProjectsPlugin extends Plugin {
   async completeTask(t, wantDone) {
     if (!this.usesBuiltIn()) {
       const api = this.tnApi();
-      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › A4 Projects.');
+      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › LifeWorld › Tasks.');
       if (t.recurrenceRaw) { await api.recurring.toggleCompleteInstance(t.path); return { undo: null }; }
       if (wantDone) await api.tasks.complete(t.path); else await api.tasks.uncomplete(t.path);
       return { undo: null };
@@ -2066,7 +2066,7 @@ class A4ProjectsPlugin extends Plugin {
   async createTask(input) {
     if (!this.usesBuiltIn()) {
       const api = this.tnApi();
-      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › A4 Projects.');
+      if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › LifeWorld › Tasks.');
       const t = await api.tasks.create(input);
       return { result: { path: t && (t.path || t.id), title: input.title }, undo: null };
     }
@@ -2135,7 +2135,7 @@ class A4ProjectsPlugin extends Plugin {
     return leaf;
   }
   openProject(path, opts) { return this.openProjects({ page: 'project', project: path }, opts); }
-  // Public (A4 Today, A4 Planner): the project note whose page this plugin shows
+  // Public (Today, Planner): the project note whose page this plugin shows
   // for `ref`, a project note's path or a task's project link or name. Matched
   // by name, the same way the project page collects its tasks. Null: no page.
   projectPathFor(ref) {
@@ -2148,7 +2148,7 @@ class A4ProjectsPlugin extends Plugin {
     const hit = key ? list.find((p) => p.key === key) : null;
     return hit ? hit.path : null;
   }
-  // Public (A4 Sidebar's Work / Personal counts): does the overview list this
+  // Public (Sidebar's Work / Personal counts): does the overview list this
   // project note (its frontmatter) as open? Same reading and rule as the page.
   isOpenProjectNote(fm) { return isOpenProject(readProject(fm, '', '')); }
   // Public: open that project's page. Resolves false when there is none, so the
@@ -2173,7 +2173,7 @@ class A4ProjectsPlugin extends Plugin {
       if (v && typeof v.render === 'function' && 'project' in v) { v.project = projectKey; v.render(); }
     }, 150);
   }
-  // Public (A4 Today, A4 Planner, the "Find a task" command): the Find window.
+  // Public (Today, Planner, the "Find a task" command): the Find window.
   openFind() { const m = new FindTaskModal(this); m.open(); return m; }
   openToday() { if (!this.run(TODAY_COMMAND)) new Notice('The today page is not turned on.'); }
   openFile(path, newTab) { const f = this.engine.file(path); if (f) this.app.workspace.getLeaf(newTab === false ? false : 'tab').openFile(f); }
@@ -2417,12 +2417,12 @@ class A4ProjectsPlugin extends Plugin {
     this.toast.show(`Saved why for "${f.basename}"`, undo);
     return true;
   }
-  // "+ Add project" (spec 13): A4 Quick Create's own New Project form, unchanged.
+  // "+ Add project" (spec 13): the Quick Create add-on's own New Project form, unchanged.
   addProject() {
     const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
     if (qc && typeof qc.openCreate === 'function' && qc.openCreate('project')) return true;
     if (Platform.isMobile) { new Notice('Add new projects on your computer: the new project form only works there.'); return false; } // Quick Create is desktop-only
-    new Notice('The new project form needs the A4 Quick Create plugin turned on.');
+    new Notice('The new project form needs the Quick Create add-on turned on.');
     return false;
   }
   // "+ Add idea" (spec 11): a short form, then one new project note with status idea.
@@ -2936,8 +2936,8 @@ function clockWheel(parent, t, onChange, onEnter) {
 /* Task card colour (mockup-task-page-color, sample A "Soft", approved
  * 2026-10-07). On the INKLINE theme the card uses the theme's own marker
  * (the theme's orange) and these inline shades are ignored by the CSS. On any other
- * theme it follows the accent chosen in A4 Today (same shades as Today), and
- * Ink blue when A4 Today is not installed; "Follow Obsidian accent" leaves both
+ * theme it follows the accent chosen in Today (same shades as Today), and
+ * Ink blue when Today is not installed; "Follow Obsidian accent" leaves both
  * unset so the CSS falls back to Obsidian's accent. */
 const CARD_ACCENTS = {
   orange: ['#d43f16', '#ff5a2d'],
@@ -3670,7 +3670,7 @@ class ProjectsView extends ItemView {
 
   quickAdd(parent, o) {
     const qa = el(parent, 'div', 'a4pj-qa');
-    const inp = el(qa, 'input'); inp.type = 'text'; inp.placeholder = this.narrow && o.project ? 'Add a task: "call Ana friday !high"' : o.placeholder; inp.setAttr('aria-label', 'Add a task'); inp.dataset.focus = `qa:${o.project ? o.project.path : 'inbox'}`;
+    const inp = el(qa, 'input'); inp.type = 'text'; inp.placeholder = this.narrow && o.project ? 'Add a task: "call Max friday !high"' : o.placeholder; inp.setAttr('aria-label', 'Add a task'); inp.dataset.focus = `qa:${o.project ? o.project.path : 'inbox'}`;
     const parse = el(qa, 'div', 'a4pj-parse');
     const show = () => {
       parse.empty();

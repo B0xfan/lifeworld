@@ -1,9 +1,9 @@
 {
   "id": "a4-today",
-  "name": "A4 Today",
+  "name": "Today",
   "version": "1.6.0",
   "minAppVersion": "1.5.7",
   "description": "A calm overview of the day: tasks for the morning and afternoon, overdue, habits, mood, weather and tides, calendar, active projects, the latest journal entry, and a quick capture box. Sections can be rearranged.",
-  "author": "A4",
+  "author": "B0xfan",
   "isDesktopOnly": false
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /* Task reminders (reminder setup mockup, approved 2026-10-05) across
- * A4 Projects, A4 Today and A4 Planner. No Obsidian: an in-memory vault.
+ * Projects, Today and Planner. No Obsidian: an in-memory vault.
  * `node tests/test-reminders.js` (re-runs itself in several time zones).
  *
  *  1. The reminder helpers are one copy, in src/core/reminders.js (section 6).
  *  2. The field: TaskNotes' own `reminders` format, offsets both ways
- *     (PT0M, -PT15M, -PT1H, -P1D, Other), which entry A4 reads, the words
+ *     (PT0M, -PT15M, -PT1H, -P1D, Other), which entry LifeWorld reads, the words
  *     and the small "15m" mark, typed "Other" amounts.
  *  3. When it rings: the ring time (also across midnight), the picker's
  *     orange line, the reminder a save leaves.
@@ -17,7 +17,7 @@
  *     a task with no time never rings; a done task shows no bell (source).
  *  6. No plugin fires its own notification (no double ring on the Mac).
  * Built files for behaviour, src/ for text (tests/lib/paths.js); the TaskNotes settings
- * check reads tests/fixtures/vault, or the owner's vault with A4_VAULT. */
+ * check reads tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -25,14 +25,14 @@ const { execFileSync } = require('child_process');
 const Module = require('module');
 
 const { part, STYLES, source } = require('./lib/paths');
-const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Australia/Lord_Howe', 'America/New_York'];
 
-if (!process.env.A4RM_CHILD) {
+if (!process.env.LWRM_CHILD) {
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4RM_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWRM_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -109,7 +109,7 @@ const remOf = (fm) => fm.reminders;
   eq(['', 'P', 'PT', '15m', null, undefined, 'soon', '-PTM', 42].map(L.offsetMinutes), [null, null, null, null, null, null, null, null, null], 'offset: junk reads as no reminder');
   eq([0, 5, 15, 30, 60, 1440, 120, 90, 45, 4320, 2880 + 60, -15].map(L.offsetIso), ['PT0M', '-PT5M', '-PT15M', '-PT30M', '-PT1H', '-P1D', '-PT2H', '-PT1H30M', '-PT45M', '-P3D', '-PT49H', 'PT15M'], 'minutes -> the offset TaskNotes writes');
   for (const m of [0, 1, 5, 15, 59, 60, 61, 90, 120, 1439, 1440, 1500, 4320, 43200]) eq(L.offsetMinutes(L.offsetIso(m)), m, `round trip ${m} min`);
-  // which entry A4 reads
+  // which entry LifeWorld reads
   const e = (relatedTo, offset, extra) => ({ id: 'rem_1', type: 'relative', relatedTo, offset, ...extra });
   eq(L.reminderOf({ due: '2026-10-08T16:30', reminders: [e('due', '-PT15M')] }), 15, 'one-off: the due entry');
   eq(L.reminderOf({ due: '2026-10-08T16:30', reminders: [e('scheduled', '-PT15M')] }), null, 'one-off: a start-relative entry does not ring');
@@ -245,12 +245,12 @@ const remOf = (fm) => fm.reminders;
   const r4 = await e.create({ title: 'Book flights', scheduled: '2026-10-12T09:00' });
   ok(!('reminders' in v.fms.get(r4.result.path)), 'create with only a start time (one-off): no reminder');
   const own = [{ id: 'rem_1', type: 'relative', relatedTo: 'due', offset: '-PT1H' }];
-  const r5 = await e.create({ title: 'Call Ana', due: '2026-10-06T15:00', reminders: own });
+  const r5 = await e.create({ title: 'Call Max', due: '2026-10-06T15:00', reminders: own });
   eq(v.fms.get(r5.result.path).reminders, own, 'create: a choice that came with the task is kept');
   const r6 = await e.create({ title: 'No ring', due: '2026-10-06T15:00', reminders: [] });
   ok(!('reminders' in v.fms.get(r6.result.path)), 'create: an empty choice writes nothing');
   // quick add through the engine (the same input the Planner and Menu Bar Capture send)
-  const qa = L.quickAddPlan(L.understand('call Ana friday 3pm', '2026-10-05'), '2026-10-05').input;
+  const qa = L.quickAddPlan(L.understand('call Max friday 3pm', '2026-10-05'), '2026-10-05').input;
   const r7 = await e.create(qa);
   eq(L.taskFromFrontmatter(v.fms.get(r7.result.path), r7.result.path, 'x').reminder, 0, 'quick add with a time: rings at the time (quick add itself unchanged)');
 }

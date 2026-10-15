@@ -65,6 +65,6 @@ check(() => assert.strictEqual(D.addDays('2026-03-07', 1), '2026-03-08'));
 check(() => assert.strictEqual(D.daysBetween('2026-10-01', '2026-11-01'), 31));
 check(() => assert.ok(D.occursOn(D.parseRRule('DTSTART:20260905;FREQ=DAILY;INTERVAL=2'), '2026-09-07')));
 check(() => assert.ok(!D.occursOn(D.parseRRule('DTSTART:20260905;FREQ=DAILY;INTERVAL=2'), '2026-09-06')));
-check(() => assert.deepStrictEqual(Q.quickAddChips(Q.understand('call Ana friday 3pm', '2026-10-05'), '2026-10-05', null, 'normal'), ['Call Ana', 'Due Fri, Oct 9, 3:00 PM']));
+check(() => assert.deepStrictEqual(Q.quickAddChips(Q.understand('call Max friday 3pm', '2026-10-05'), '2026-10-05', null, 'normal'), ['Call Max', 'Due Fri, Oct 9, 3:00 PM']));
 check(() => assert.strictEqual(R.reminderOf({ due: '2026-10-08T16:30', reminders: { type: 'relative', relatedTo: 'due', offset: '-PT15M' } }), 15));
 console.log(`core self-check: OK (${n} checks)`);

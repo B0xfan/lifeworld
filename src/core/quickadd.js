@@ -5,9 +5,9 @@ import { pad2, isDayStr, toDayStr, utcOf, fromUtc, addDays, weekdayOf, partsOf, 
 /* ========================================================================== *
  * Quick add: one copy for every part of LifeWorld (phase 1 section 6; before, a
  * verbatim copy each in Projects and Planner). The Menu Bar Capture companion
- * keeps its own copy of this block; the A4 vault's tests must be pointed at
+ * keeps its own copy of this block; the owner's vault tests must be pointed at
  * this file before these builds are installed there (phase 3). Plain words ->
- * a new task: "call Ana friday 3pm !high".
+ * a new task: "call Max friday 3pm !high".
  * ========================================================================== */
 
 const DOW_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -186,7 +186,7 @@ function quickAddChips(r, today, project, defaultPriority) {
 }
 
 // What a quick add saves: TaskNotes' own fields (a time written as TaskNotes
-// writes it, 'YYYY-MM-DDTHH:MM') plus A4's planned_* fields. `lane` is the
+// writes it, 'YYYY-MM-DDTHH:MM') plus the planner's planned_* fields. `lane` is the
 // day and half the task joins ({ day, half }, or null): the caller adds
 // planned_order at the end of that lane. -> { input, lane }
 function quickAddPlan(r, today) {

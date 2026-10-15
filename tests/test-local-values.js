@@ -5,7 +5,7 @@
 //    addresses, a local interpreter). Checked on every word, word pair and joined word pair
 //    ("FirstLast", also with up to 4 characters attached), so it also guards GitHub, where there is no local.json.
 // 3. When local.json exists here, none of its values appear either.
-// Scans tracked files and new files git does not ignore.
+// Scans tracked files, new files git does not ignore, and the built main.js and styles.css.
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -48,7 +48,8 @@ let local = [];
 const file = path.join(ROOT, 'local.json');
 if (fs.existsSync(file)) local = Object.values(JSON.parse(fs.readFileSync(file, 'utf8'))).filter((v) => typeof v === 'string' && v);
 
-const files = [...git('ls-files').split('\n'), ...git('ls-files', '--others', '--exclude-standard').split('\n')].filter(Boolean);
+// The built main.js and styles.css too (ignored by git, but they are what a release ships).
+const files = [...git('ls-files').split('\n'), ...git('ls-files', '--others', '--exclude-standard').split('\n'), 'main.js', 'styles.css'].filter((f, i, all) => f && all.indexOf(f) === i);
 const hits = [];
 for (const f of files) {
   const p = path.join(ROOT, f);

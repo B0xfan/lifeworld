@@ -1,4 +1,4 @@
-/* A4 Projects. Same look as A4 Today and A4 Planner: the INKLINE theme's
+/* Projects. Same look as Today and Planner: the INKLINE theme's
  * tokens with Obsidian fallbacks, one neutral project colour, no Kanban.
  * Every selector carries html:not(#a4pj-guard) so the theme cannot outrank it. */
 html:not(#a4pj-guard) .a4pj-root, html:not(#a4pj-guard) .a4pj-card, html:not(#a4pj-guard) .a4pj-pop, html:not(#a4pj-guard) .a4pj-toast {
@@ -433,7 +433,7 @@ html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-go { display: block; width: 100%; marg
  * colour behind words in a deeper shade of it. Everything else stays neutral;
  * unpicked choices are plain grey at full strength (they used to be faded to
  * 38%, which made High look switched off). INKLINE's own tokens win, so on
- * the INKLINE theme the accent is his Orange; elsewhere the A4 Today accent
+ * the INKLINE theme the accent is the theme's orange; elsewhere the Today accent
  * (Ink blue by default), set inline on the card by setCardAccent(). */
 html:not(#a4pj-guard) .a4pj-card {
   --pj-acc: var(--ink-marker, var(--pj-acc-l, var(--interactive-accent)));

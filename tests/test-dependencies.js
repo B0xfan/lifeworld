@@ -1,7 +1,7 @@
 'use strict';
 /* Task dependencies ("Blocked by" / "Blocks", Projects mockup round 4, 2026-10-04).
  * Logic checks for the shared readers (a4-projects, a4-today, a4-planner) and
- * the A4 Projects engine's writes, on an in-memory vault (no Obsidian):
+ * the Projects engine's writes, on an in-memory vault (no Obsidian):
  *  - TaskNotes' blockedBy shapes, what counts as an open blocker
  *  - writes in TaskNotes' exact format, no duplicates, Undo restores
  *  - circles refused (self, 2-step, long chain), loops already in the files end

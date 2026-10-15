@@ -1,5 +1,5 @@
-/* A4 Planner. Every selector carries the html:not(#a4pl-guard) prefix so the
- * INKLINE theme cannot outrank it (Dex journal 2026-09-28). Colors come from
+/* Planner. Every selector carries the html:not(#a4pl-guard) prefix so the
+ * INKLINE theme cannot outrank it (checked 2026-09-28). Colors come from
  * the theme's tokens with Obsidian fallbacks; no per-project colors. */
 html:not(#a4pl-guard) .a4pl-root, html:not(#a4pl-guard) .a4pl-pop, html:not(#a4pl-guard) .a4pl-ghost {
   --pl-bg: var(--ink, var(--background-primary));
@@ -259,7 +259,7 @@ html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell { display: inline-f
 html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell .a4pl-ic svg { width: 12px; height: 12px; stroke-width: 2; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell-k { font: 600 9.5px var(--pl-f-mono); line-height: 1; position: relative; top: -2px; }
 
-/* Find button (mockup approved 2026-10-06): opens A4 Projects' Find window. */
+/* Find button (mockup approved 2026-10-06): opens Projects' Find window. */
 html:not(#a4pl-guard) .a4pl-root .a4pl-find-btn { display: inline-flex; align-items: center; gap: 6px; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-find-ic { display: inline-flex; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-find-ic svg { width: 14px; height: 14px; }

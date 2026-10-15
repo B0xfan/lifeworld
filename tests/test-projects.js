@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-/* Logic tests for the A4 Projects plugin and its built-in task engine
+/* Logic tests for the Projects plugin and its built-in task engine
  * `node tests/test-projects.js`.
  * Re-runs itself in several time zones (each with a timeout).
  *
- * 1. The code shared with A4 Today and A4 Planner is a character-for-character copy.
+ * 1. The code shared with Today and Planner is a character-for-character copy.
  * 2. Repeats: the engine's "tick an occurrence" write is compared with
  *    TaskNotes' own algorithm, run on TaskNotes' own recurrence package
  *    (@tasknotes/model, which uses the rrule library) for thousands of rules,
@@ -15,10 +15,10 @@
  *    zones and midnight / daylight-saving edges.
  * 5. Quick-add words, repeat words, steps, Inbox/overdue/later rules, and the
  *    overview on a copy of the real task and project notes (read-only).
- * Moved from the A4 vault: behaviour checks load the built main.js, text checks read
+ * Moved from the owner's vault: behaviour checks load the built main.js, text checks read
  * src/ (tests/lib/paths.js).  Note checks read the frozen, made-up copy in
- * tests/fixtures/vault, or the owner's vault with A4_VAULT (its repeats by name with
- * A4_REAL_REPEATS=<task name>,<task name>). */
+ * tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT (its repeats by name with
+ * LW_REAL_REPEATS=<task name>,<task name>). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -26,20 +26,20 @@ const { execFileSync } = require('child_process');
 const Module = require('module');
 
 const { part, STYLES, source, repeats: REPEATS, FROZEN } = require('./lib/paths');
-const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
 const MAIN = 'a4-projects';
 const SRC = source('a4-projects');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
-if (!process.env.A4PJ_CHILD) {
+if (!process.env.LWPJ_CHILD) {
   let fails = 0; let total = 0;
   // Section 8: @tasknotes/model is a pinned dev dependency, so the oracle runs everywhere (the
   // time-zone children inherit this); TASKNOTES_MODEL can still point at another install.
   process.env.TASKNOTES_MODEL = process.env.TASKNOTES_MODEL || path.join(__dirname, '..');
-  if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; A4_REAL_REPEATS is not set');
+  if (!REPEATS.length) console.log('skipped: the Someday round trip on real repeats; LW_REAL_REPEATS is not set');
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4PJ_CHILD: '1' }, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWPJ_CHILD: '1' }, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -76,7 +76,7 @@ for (const id of ['a4-projects', 'a4-planner', 'a4-today']) {
   for (const name of SHARED) ok(viaCore(name), `${id} takes ${name} from the shared core (no own copy)`);
 }
 
-/* ---- config from A4's real TaskNotes settings ------------------------------- */
+/* ---- config from the owner's real TaskNotes settings ------------------------------- */
 let tnSettings = null;
 try { tnSettings = JSON.parse(fs.readFileSync(path.join(VAULT || '', '.obsidian/plugins/tasknotes/data.json'), 'utf8')); } catch (e) { /* none */ }
 const cfg = L.engineConfig(tnSettings);
@@ -84,8 +84,8 @@ eq(cfg.F.completeInstances, 'complete_instances', 'config: field names from Task
 eq(cfg.tasksFolder, '02 Planner/TaskNotes/Tasks', 'config: tasks folder');
 eq(L.completedStatusesOf(cfg), ['done', 'closed'], 'config: finished statuses');
 const cfgDefault = L.engineConfig(null);
-eq(JSON.stringify(cfgDefault.F), JSON.stringify(cfg.F), 'config: built-in defaults match A4 TaskNotes');
-eq(cfgDefault.statuses.map((s) => [s.value, s.isCompleted, s.autoArchive]), cfg.statuses.map((s) => [s.value, s.isCompleted, s.autoArchive]), 'config: built-in statuses match A4 TaskNotes');
+eq(JSON.stringify(cfgDefault.F), JSON.stringify(cfg.F), 'config: built-in defaults match the owner TaskNotes settings');
+eq(cfgDefault.statuses.map((s) => [s.value, s.isCompleted, s.autoArchive]), cfg.statuses.map((s) => [s.value, s.isCompleted, s.autoArchive]), 'config: built-in statuses match the owner TaskNotes settings');
 const snap = L.snapshotTaskNotes(tnSettings || {});
 eq(JSON.stringify(L.engineConfig(snap)), JSON.stringify(cfg), 'config: saved copy gives the same config');
 ok(!/token|auth|apiKey/i.test(JSON.stringify(snap)), 'config: saved copy holds no secrets');
@@ -249,7 +249,7 @@ if (oracle) {
 const STAMP = '2026-10-04T08:15:30.123-06:00';
 const cases = [
   { title: 'Buy compost' },
-  { title: '  Call  Ana about the van  ', priority: 'high', projects: ['[[04 Inner World/My Life/Projects/Miscellaneous]]'] },
+  { title: '  Call  Max about the van  ', priority: 'high', projects: ['[[04 Inner World/My Life/Projects/Miscellaneous]]'] },
   { title: 'Water the seedlings', recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH', scheduled: '2026-10-05', customFrontmatter: { planned_half: 'am' } },
   { title: 'Fix the drip line', due: '2026-10-06', customFrontmatter: { planned_half: 'pm', planned_order: 10 } },
   { title: 'Plan winter crops', scheduled: '2026-10-19', details: 'Garlic in the corner bed.\n\n- [ ] list seeds\n' },
@@ -321,7 +321,7 @@ for (const ms of [Date.UTC(2026, 9, 4, 5, 59, 59, 999), Date.UTC(2026, 9, 4, 6, 
 /* ---- 5. words, steps, rules, real data ------------------------------------------ */
 const TD = '2026-10-04'; // a Sunday
 const U = (s) => L.understand(s, TD);
-eq(U('call Ana tomorrow afternoon !high'), { priority: 'high', plannedHalf: 'pm', plannedDay: '2026-10-05', title: 'Call Ana' }, 'words: tomorrow afternoon !high');
+eq(U('call Max tomorrow afternoon !high'), { priority: 'high', plannedHalf: 'pm', plannedDay: '2026-10-05', title: 'Call Max' }, 'words: tomorrow afternoon !high');
 eq(U('water plants every Monday').recurrence, 'FREQ=WEEKLY;BYDAY=MO', 'words: every Monday');
 eq(U('water plants every monday and thursday morning'), { priority: null, recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH', repeatText: 'monday and thursday', plannedHalf: 'am', title: 'Water plants' }, 'words: two weekdays + morning');
 eq(U('pay rent every month').recurrence, 'FREQ=MONTHLY', 'words: every month');
@@ -337,8 +337,8 @@ eq(U('fix the van sunday').plannedDay, '2026-10-11', 'words: today\'s weekday = 
 eq(U('afternoon nap').plannedDay, TD, 'words: a half alone means today');
 eq(U('plan on 2026-11-02 !low'), { priority: 'low', plannedDay: '2026-11-02', title: 'Plan' }, 'words: ISO day');
 eq(U('meet in 3 days').plannedDay, '2026-10-07', 'words: in 3 days');
-eq(U('due tomorrow call Ana tomorrow').due, '2026-10-05', 'words: due wins over a plain day');
-ok(!('plannedDay' in U('due tomorrow call Ana tomorrow')), 'words: due wins (no planned day)');
+eq(U('due tomorrow call Max tomorrow').due, '2026-10-05', 'words: due wins over a plain day');
+ok(!('plannedDay' in U('due tomorrow call Max tomorrow')), 'words: due wins (no planned day)');
 eq(L.parseDayWord('feb 30', TD), null, 'day words: impossible date refused');
 eq(L.parseDayWord('next week', TD), '2026-10-05', 'day words: next week = next Monday');
 eq(L.repeatWords('DTSTART:20260905;FREQ=DAILY;INTERVAL=2'), 'Every 2 days', 'repeat words: every 2 days');
@@ -384,7 +384,7 @@ eq(L.applyProjectLink({ projects: ['[[A]]', '[[B]]'] }, cfg.F, '[[C]]'), { proje
 eq(L.applyProjectLink({ projects: ['[[A]]'] }, cfg.F, null), {}, 'project link: removed');
 eq(L.projectBodyForPage('---\na: 1\n---\n## Tasks\n\n![[02 Planner/TaskNotes/Views/project-tasks.base]]\n\n## Notes\n\nNote: hi\n'), '## Notes\n\nNote: hi', 'project note: task-list embed left out');
 
-// real data (read-only; the frozen copy unless A4_VAULT): every task and project note parses; overview agrees with the Planner's overdue rule
+// real data (read-only; the frozen copy unless LIFEWORLD_VAULT): every task and project note parses; overview agrees with the Planner's overdue rule
 if (VAULT) {
   const parseFm = (text) => {
     const block = /^---\n([\s\S]*?)\n---/.exec(text); if (!block) return null;
@@ -522,7 +522,7 @@ if (VAULT) {
     await eng.setDue(P1, null);
     eq(notes.get(P1).status, 'open', 'removing a date never touches status');
     // The real repeats.
-    // Repeats by name: the frozen copy's, or the owner's from A4_REAL_REPEATS (names stay out of the repo).
+    // Repeats by name: the frozen copy's, or the owner's from LW_REAL_REPEATS (names stay out of the repo).
     for (const name of REPEATS) {
       const real = parseReal(name);
       if (!real) { ok(false, `real repeat present: ${name}`); continue; }
@@ -581,7 +581,7 @@ if (VAULT) {
   ok(/id: 'open-work'[^\n]*focus: 'work'/.test(src), "command open-work asks for the work list");
   ok(/overviewGroups\(this\.projects, this\.filter, this\.query, sp\)/.test(src) && /closedProjects\(this\.projects, this\.query, sp\)/.test(src), 'the overview filters by the chosen list');
   ok(!/this\.state\.focus = null/.test(src), 'the chosen list is not dropped after the first draw');
-  // Real data (the frozen copy unless A4_VAULT): the two lists split the projects exactly, with no overlap.
+  // Real data (the frozen copy unless LIFEWORLD_VAULT): the two lists split the projects exactly, with no overlap.
   if (VAULT) {
   const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const fm = {}; if (m) for (const l of m[1].split('\n')) { const x = /^([\w-]+):\s*(.*)$/.exec(l); if (x) fm[x[1]] = x[2].trim().replace(/^"(.*)"$/, '$1'); } return fm; };
   const PD = path.join(VAULT, '04 Inner World/My Life/Projects');
@@ -621,7 +621,7 @@ if (VAULT) {
   const gm = L.depPickGroups(many, 'A', '');
   eq(gm.mine.length + gm.others.length, 150, 'picker: no cap (150 of 150 listed)');
   eq(L.depPickGroups(many, 'A', 'Task 14').others.map((c) => c.title), ['Task 140', 'Task 142', 'Task 143', 'Task 145', 'Task 146', 'Task 148', 'Task 149'], 'picker search: finds tasks far down the list');
-  // Real data (read-only; the frozen copy unless A4_VAULT): every open task is reachable from every open task's picker.
+  // Real data (read-only; the frozen copy unless LIFEWORLD_VAULT): every open task is reachable from every open task's picker.
   if (VAULT) {
   const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const fm = {}; let key = null; if (m) for (const line of m[1].split('\n')) { let x = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line); if (x) { key = x[1]; const v = x[2].trim(); fm[key] = v === '' ? null : v.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1'); continue; } x = /^\s+-\s+(.*)$/.exec(line); if (x && key) { if (!Array.isArray(fm[key])) fm[key] = []; fm[key].push(x[1].trim().replace(/^"(.*)"$/, '$1')); } } return fm; };
   const TD2 = path.join(VAULT, '02 Planner/TaskNotes/Tasks');
@@ -650,13 +650,13 @@ if (VAULT) {
   ok(!/'Start or due\?'/.test(src) && !/a4pj-legend/.test(src) && !/a4pj-legend/.test(css), 'project page: "Start or due?" key removed');
 }
 
-/* ---- Planner button: A4 Planner only (old Daily Planner fallback dropped 0.1.9) ---- */
+/* ---- Planner button: Planner only (old Daily Planner fallback dropped 0.1.9) ---- */
 {
   const P = part(MAIN);
   const ran = [];
   const self = (ids) => { const c = { commands: Object.fromEntries(ids.map((i) => [i, {}])), executeCommandById: (i) => ran.push(i) }; return { app: { commands: c }, run: P.prototype.run }; };
   P.prototype.openPlanner.call(self(['a4-planner:open', 'a4-daily-planner:open-board']));
-  eq(ran, ['a4-planner:open'], 'planner button opens the A4 Planner');
+  eq(ran, ['a4-planner:open'], 'planner button opens the Planner');
   ran.length = 0;
   P.prototype.openPlanner.call(self(['a4-daily-planner:open-board']));
   eq(ran, [], 'old Daily Planner is never a fallback');
@@ -667,14 +667,14 @@ if (VAULT) {
 {
   const CA = part(MAIN).cardAccent;
   const appWith = (look) => ({ plugins: { plugins: look === undefined ? {} : { 'a4-today': { look } } } });
-  eq(CA.cardAccentId(appWith(undefined)), 'blue', 'card accent: Ink blue when A4 Today is not installed');
-  eq(CA.cardAccentId(appWith({ accent: 'orange' })), 'orange', "card accent: follows A4 Today's Orange");
-  eq(CA.cardAccentId(appWith({ accent: 'plum' })), 'plum', "card accent: follows A4 Today's Plum");
+  eq(CA.cardAccentId(appWith(undefined)), 'blue', 'card accent: Ink blue when Today is not installed');
+  eq(CA.cardAccentId(appWith({ accent: 'orange' })), 'orange', "card accent: follows Today's Orange");
+  eq(CA.cardAccentId(appWith({ accent: 'plum' })), 'plum', "card accent: follows Today's Plum");
   eq(CA.cardAccentId(appWith({ accent: 'accent' })), 'accent', 'card accent: "Follow Obsidian accent" passes through');
   eq(CA.cardAccentId(appWith({ accent: 'nonsense' })), 'blue', 'card accent: an unknown value falls back to Ink blue');
   eq(CA.cardAccentId(null), 'blue', 'card accent: no app at all is safe');
   eq(CA.CARD_ACCENTS.orange, ['#d43f16', '#ff5a2d'], 'card accent: Orange is the INKLINE marker pair');
-  eq(CA.CARD_ACCENTS.blue, ['#1d4ed8', '#86aefc'], 'card accent: Ink blue shades match A4 Today');
+  eq(CA.CARD_ACCENTS.blue, ['#1d4ed8', '#86aefc'], 'card accent: Ink blue shades match Today');
   const props = {}; const fakeEl = { style: { setProperty: (k, v) => { props[k] = v; }, removeProperty: (k) => { delete props[k]; } } };
   CA.setCardAccent(fakeEl, appWith(undefined));
   eq([props['--pj-acc-l'], props['--pj-acc-d']], ['#1d4ed8', '#86aefc'], 'card accent: light and dark shades set on the card');
@@ -689,7 +689,7 @@ if (VAULT) {
   ok(/const dueToday = k === 'due' && val === today && open && !t\.recurrenceRaw;/.test(draw) && /dueToday \? ' is-today' : ''/.test(draw), 'card colour: Due today is marked (open, one-off tasks only)');
   ok(!/\.a4pj-prisel button \{ opacity: \.38; \}/.test(css) && !/prisel button[^{]*\{[^}]*opacity/.test(css), 'card colour: unpicked priorities are no longer faded');
   ok(/\.a4pj-prisel button \.a4pj-chip \{ color: var\(--pj-choice\)/.test(css), 'card colour: unpicked priorities are plain grey');
-  ok(/--pj-acc: var\(--ink-marker, var\(--pj-acc-l, var\(--interactive-accent\)\)\)/.test(css) && /body\.theme-dark \.a4pj-card \{\s*--pj-acc: var\(--ink-marker, var\(--pj-acc-d/.test(css), "card colour: INKLINE's marker wins, then the A4 accent, light and dark");
+  ok(/--pj-acc: var\(--ink-marker, var\(--pj-acc-l, var\(--interactive-accent\)\)\)/.test(css) && /body\.theme-dark \.a4pj-card \{\s*--pj-acc: var\(--ink-marker, var\(--pj-acc-d/.test(css), "card colour: INKLINE's marker wins, then Today's accent, light and dark");
   for (const [sel, name] of [['data-st="in-progress"', 'In progress'], ['data-st="blocked"', 'Waiting'], ['data-half="am"', 'Morning'], ['.a4pj-chip.is-top', 'High'], ['.a4pj-pick.is-today', 'Due today'], ['.a4pj-pick.is-late', 'overdue']]) ok(css.includes(sel), `card colour: ${name} has a colour rule`);
   ok(/\.a4pj-card \.a4pj-bigtick \{ border-color: var\(--pj-acc\)/.test(css), 'card colour: the tick circle is outlined in the accent');
 }

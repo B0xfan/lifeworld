@@ -107,8 +107,8 @@ const FIXTURES = {
   repeatSomeday: { ...BASE, status: 'someday', recurrence: 'FREQ=WEEKLY;BYDAY=MO', scheduled: '2026-10-12' },
 };
 
-// A4_TASKS_JSON=<file>: a JSON list of real task frontmatter (a copy, read in memory) to run every move on too.
-if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env.A4_TASKS_JSON, 'utf8')).forEach((fm, i) => { FIXTURES[`real ${i}`] = fm; });
+// LW_TASKS_JSON=<file>: a JSON list of real task frontmatter (a copy, read in memory) to run every move on too.
+if (process.env.LW_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env.LW_TASKS_JSON, 'utf8')).forEach((fm, i) => { FIXTURES[`real ${i}`] = fm; });
 
 (async () => {
   let compared = 0;
@@ -131,7 +131,7 @@ if (process.env.A4_TASKS_JSON) JSON.parse(require('fs').readFileSync(process.env
     }
   }
   assert.ok(compared >= 40, `compared ${compared} moves`);
-  if (process.env.A4_TASKS_JSON) console.log(`compared ${compared} moves`);
+  if (process.env.LW_TASKS_JSON) console.log(`compared ${compared} moves`);
 
   { // spot checks of what that means
     const w = world(FIXTURES.open); await w.p.moveTask(w.task(), 'someday');

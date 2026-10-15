@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/* Logic tests for the A4 Today plugin.
+/* Logic tests for the Today plugin.
  * No Obsidian and no dependencies: `node tests/test-today.js`.
  * The whole suite re-runs itself under several time zones (midnight and
  * daylight-saving edges). Optional: RRULE_JS=<path to the rrule package>
  * adds a cross-check of the recurrence engine against the rrule library
  * (the one TaskNotes bundles) over two years of days for many rules.
- * Moved from the A4 vault: behaviour checks load Today from the built main.js,
+ * Moved from the owner's vault: behaviour checks load Today from the built main.js,
  * text checks read src/today/main.js (tests/lib/paths.js). */
 'use strict';
 const path = require('path');
@@ -17,11 +17,11 @@ const MAIN = 'a4-today';
 const SRC = source('a4-today');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
-if (!process.env.A4T_CHILD) {
+if (!process.env.LWT_CHILD) {
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4T_CHILD: '1' }, encoding: 'utf8', timeout: 60000 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWT_CHILD: '1' }, encoding: 'utf8', timeout: 60000 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -602,13 +602,13 @@ async function writeBack() {
   }
 }
 
-/* ---- Planner button: A4 Planner only (old Daily Planner fallback dropped 1.2.7) ---- */
+/* ---- Planner button: Planner only (old Daily Planner fallback dropped 1.2.7) ---- */
 {
   const ran = [];
   const withCmds = (ids) => ({ app: { commands: { commands: Object.fromEntries(ids.map((i) => [i, {}])), executeCommandById: (i) => ran.push(i) } } });
   notices.length = 0;
   Plugin.prototype.openPlanner.call(withCmds(['a4-planner:open', 'a4-daily-planner:open-board']));
-  eq(ran, ['a4-planner:open'], 'planner button opens the A4 Planner');
+  eq(ran, ['a4-planner:open'], 'planner button opens the Planner');
   ran.length = 0;
   Plugin.prototype.openPlanner.call(withCmds(['a4-daily-planner:open-board']));
   eq([ran, notices], [[], ['The planner is not turned on.']], 'old Daily Planner is never a fallback');
@@ -715,8 +715,8 @@ function nop2() {}
   const opened = [];
   const withPj = (pj) => Object.assign(Object.create(Plugin.prototype), { app: { plugins: { plugins: pj ? { 'a4-projects': pj } : {} } } });
   notices.length = 0;
-  ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find' && notices.length === 0, 'Find opens A4 Projects\' Find window');
-  ok(withPj(null).openFind() === false && notices[0] === 'Find needs the projects and tasks part turned on.', 'Find without A4 Projects: a plain notice, no error');
+  ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find' && notices.length === 0, 'Find opens Projects\' Find window');
+  ok(withPj(null).openFind() === false && notices[0] === 'Find needs the projects and tasks part turned on.', 'Find without Projects: a plain notice, no error');
   const src = require('fs').readFileSync(SRC, 'utf8');
   const head = src.slice(src.indexOf('  buildShell() {'), src.indexOf("    const edit = head.createDiv({ cls: 'a4t-edit-actions' });"));
   ok(head.indexOf("findBtn.appendText('Find')") > 0 && head.indexOf("findBtn.appendText('Find')") < head.indexOf("editBtn.appendText('Edit layout')"), 'Find button sits just before Edit layout');

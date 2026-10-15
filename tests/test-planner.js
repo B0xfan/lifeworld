@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/* Logic tests for the A4 Planner plugin.
+/* Logic tests for the Planner plugin.
  * No Obsidian and no dependencies: `node tests/test-planner.js`.
  * Re-runs itself under several time zones. Also checks that the code the
- * Planner shares with A4 Today (task reading, repeats, moves) is still a
+ * Planner shares with Today (task reading, repeats, moves) is still a
  * character-for-character copy, so the two can never disagree.
- * Moved from the A4 vault: behaviour checks load the built files, text checks read
- * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with A4_VAULT. */
+ * Moved from the owner's vault: behaviour checks load the built files, text checks read
+ * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -19,11 +19,11 @@ const SRC = source('a4-planner');
 const TODAY_SRC = source('a4-today');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
-if (!process.env.A4PL_CHILD) {
+if (!process.env.LWPL_CHILD) {
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4PL_CHILD: '1' }, encoding: 'utf8', timeout: 60000 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWPL_CHILD: '1' }, encoding: 'utf8', timeout: 60000 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -51,7 +51,7 @@ const tz = process.env.TZ;
 function ok(cond, name, extra) { n++; if (!cond) { failed++; console.log(`FAIL [${tz}] ${name}${extra ? ' :: ' + extra : ''}`); } }
 function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(b); ok(x === y, name, `got ${x} want ${y}`); }
 
-/* ---- 1. shared code is a verbatim copy of A4 Today's ---------------------- */
+/* ---- 1. shared code is a verbatim copy of Today's ---------------------- */
 // Updated in section 5: the date and repeat-rule helpers moved to src/core/dates.js (tests/test-core.js).
 // Updated in section 6: asList, halfOfTime, timeText and the reminder helpers moved to src/core/ too.
 // Updated in section 7: the task-reading helpers and the task folder constants moved to src/core/tasks.js
@@ -66,7 +66,7 @@ for (const name of SHARED) ok(viaCore.every((f) => f(name)), `Planner and Today 
 // The calendar note both read: the one "from a note" setting in the core (phase 2 section 5), no own constant.
 ok(![srcP, srcT].some((s) => /const CALENDAR_NOTE/.test(s)) && [srcP, srcT].every((s) => /feedNotes\.calendar/.test(s) && /import \{[^}]*\bfeedNotes\b[^}]*\} from '\.\.\/core\/vault'/.test(s)), 'Planner and Today read the calendar note from the core setting');
 
-/* ---- 2. moves behave exactly like A4 Today's (and the old Daily Planner's) -- */
+/* ---- 2. moves behave exactly like Today's (and the old Daily Planner's) -- */
 const ORDERS = [[], [10], [10, 20], [-5, 0, 7.5, 30], [1, 1, 1]];
 for (const o of ORDERS) for (let i = -1; i <= o.length + 1; i++) eq(L.orderForInsert(o, i), T.orderForInsert(o, i), `orderForInsert ${JSON.stringify(o)} @${i}`);
 for (const fm0 of [{ due: '2026-10-01', planned_half: 'am' }, { planned_day: '2026-10-01' }, {}, { due: '2026-10-09', planned_day: '2026-10-01', planned_order: 3 }]) {
@@ -92,10 +92,10 @@ eq(mk('a', {}).projectKey, null, 'no project');
 eq(mk('a', { weekly_goal: true }).weeklyGoal, true, 'weekly goal read');
 eq(mk('a', { due: '2026-10-05', planned_day: '2026-10-01' }).plannedDay, '2026-10-05', 'due always wins');
 
-/* ---- 4. priorities (A4's TaskNotes settings) ------------------------------ */
+/* ---- 4. priorities (the owner's TaskNotes settings) ------------------------------ */
 const A4P = [{ id: 'none', value: 'none', label: 'None', weight: 0 }, { id: 'low', value: 'low', label: 'Low', weight: 1 }, { id: 'normal', value: 'normal', label: 'Normal', weight: 2 }, { id: 'high', value: 'high', label: 'High', weight: 3 }];
 const PT = L.priorityTable(A4P);
-eq(PT.map((p) => [p.value, p.bars, p.top]), [['none', 0, false], ['low', 1, false], ['normal', 2, false], ['high', 3, true]], 'A4 priorities -> bars');
+eq(PT.map((p) => [p.value, p.bars, p.top]), [['none', 0, false], ['low', 1, false], ['normal', 2, false], ['high', 3, true]], 'priorities -> bars');
 eq(L.priorityTable(null).map((p) => p.value), ['none', 'low', 'normal', 'high'], 'defaults when TaskNotes is off');
 eq(L.priorityOf('high', PT).label, 'High', 'label from TaskNotes');
 eq(L.priorityOf('', PT).value, 'none', 'empty -> None');
@@ -242,7 +242,7 @@ for (let i = 0; i < 400; i++) { const d = L.addDays('2026-01-01', i); const w = 
 
 /* ---- 10. wiring to other plugins ----------------------------------------- */
 ok(/id: 'open'/.test(srcP), "planner registers command 'open' (a4-planner:open)");
-ok(/'a4-planner:open'/.test(srcT), 'A4 Today points its Planner buttons at a4-planner:open');
+ok(/'a4-planner:open'/.test(srcT), 'Today points its Planner buttons at a4-planner:open');
 ok(!/localStorage/.test(srcP), 'folding is kept in plugin data, not localStorage');
 ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
 
@@ -278,7 +278,7 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   const back = L.applyMove(SD(one), '2026-10-12', 'am', 10);
   eq([back.status, back.planned_day, back.planned_half, back.due], ['open', '2026-10-12', 'am', undefined], 'round trip: Someday then a day = open on that day');
   eq(L.applyMove({ status: 'in-progress', due: '2026-10-01' }, '2026-10-02', null, 5).status, 'in-progress', 'a move leaves other statuses alone');
-  // A4 Today shows none of it and its "move all to today" skips it.
+  // Today shows none of it and its "move all to today" skips it.
   const TL = T.buildTaskLists(all, TODAY, DONE);
   ok(![...TL.morning, ...TL.afternoon, ...TL.overdue].some((x) => L.isSomeday(x)), 'Today: someday tasks in no lane and not in Overdue');
   const fmOd = { status: 'someday', due: '2026-10-01' };
@@ -289,9 +289,9 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   ok(/somedayOpen: false/.test(srcP) && /a4pl-grp is-someday/.test(srcP), 'Someday group: folded until opened');
 }
 
-/* ---- 12. Someday on a copy of the task notes (read-only; the frozen copy unless A4_VAULT) */
+/* ---- 12. Someday on a copy of the task notes (read-only; the frozen copy unless LIFEWORLD_VAULT) */
 {
-  const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+  const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
   const parseFm = (text) => {
     const block = /^---\n([\s\S]*?)\n---/.exec(text); if (!block) return null;
     const fm = {}; let key = null;
@@ -337,8 +337,8 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   const P = part(MAIN);
   const opened = [];
   const withPj = (pj) => Object.assign(Object.create(P.prototype), { app: { plugins: { plugins: pj ? { 'a4-projects': pj } : {} } } });
-  ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find', 'Find opens A4 Projects\' Find window');
-  ok(withPj(null).openFind() === false, 'Find without A4 Projects: no error');
+  ok(withPj({ openFind: () => opened.push('find') }).openFind() === true && opened.join() === 'find', 'Find opens Projects\' Find window');
+  ok(withPj(null).openFind() === false, 'Find without Projects: no error');
   const src = fs.readFileSync(SRC, 'utf8');
   const head = src.slice(src.indexOf('  renderHead(page, mode, days, today) {'), src.indexOf("    const nav = h(act, 'div', 'a4pl-nav');"));
   ok(head.indexOf("'Find')") > 0 && head.indexOf("'Find')") < head.indexOf("'a4pl-select dropdown'") && head.indexOf("'Find')") < head.indexOf('if (!this.narrow)'), 'Find button comes before the project chooser, and shows on the phone too');
@@ -349,15 +349,15 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
 {
   const N = ['A1 Kitchen Ideas', 'A2 Kitchen Ideas', "Rosa's Restaurant", 'ABC Northside', 'Lake Sunsets',
     'Build a Plant Map', 'Client Prospects', 'Cabin Retreat', 'Evening Drills', 'Hilltop Language Lab', 'Mill and Barn',
-    'Miscellaneous', 'Personal', 'Pine Farm', 'Purple Lake Bike Hire', 'Ram Grove Day', 'Sam November US Trip'];
+    'Miscellaneous', 'Personal', 'Pine Farm', 'Purple Lake Bike Hire', 'Elm Grove Day', 'Sea November US Trip'];
   const names = (q) => L.projectMatches(q, N).map((m) => m.name);
   // The mockup's lists, in its order: name starts first, then later words.
   eq(names('p'), ['Personal', 'Pine Farm', 'Purple Lake Bike Hire', 'Build a Plant Map', 'Client Prospects'], '+p: the mockup list, in order');
-  eq(names('ram'), ['Ram Grove Day'], '+ram: only Ram Grove Day');
-  eq(names('RAM'), ['Ram Grove Day'], 'matching ignores capitals');
+  eq(names('elm'), ['Elm Grove Day'], '+elm: only Elm Grove Day');
+  eq(names('ELM'), ['Elm Grove Day'], 'matching ignores capitals');
   eq(names('xyz'), [], '+xyz: nothing');
   eq(names(''), [], 'a bare + lists nothing');
-  eq(names('s'), ['Sam November US Trip', 'Lake Sunsets'], "+s: Sam first, then Lake Sunsets; Rosa's apostrophe is not a word start");
+  eq(names('s'), ['Sea November US Trip', 'Lake Sunsets'], "+s: Sea first, then Lake Sunsets; Rosa's apostrophe is not a word start");
   eq(names('purple lake'), ['Purple Lake Bike Hire'], 'a multi-word query fits a multi-word name');
   eq(names('purple  lake'), ['Purple Lake Bike Hire'], 'extra spaces in the query are ignored');
   eq(names('lake bike'), ['Purple Lake Bike Hire'], 'a later-word query can span words');
@@ -366,37 +366,37 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   eq([hit.at, hit.len], [7, 3], 'the matched part is marked where it is (Client [Pro]spects)');
   eq(L.PROJECT_HITS_MAX, 8, 'the list shows at most 8');
   // The token at the caret.
-  const T = 'call Ana friday 3pm +ram';
-  eq(L.projectToken(T, T.length, N), { start: 20, end: 24, query: 'ram' }, 'token: "+ram" at the end');
-  eq(L.projectToken(T, undefined, N), { start: 20, end: 24, query: 'ram' }, 'token: no caret given = the end');
-  eq(L.projectToken('+ram', 4, N), { start: 0, end: 4, query: 'ram' }, 'token: "+" at the start of the box');
+  const T = 'call Max friday 3pm +elm';
+  eq(L.projectToken(T, T.length, N), { start: 20, end: 24, query: 'elm' }, 'token: "+elm" at the end');
+  eq(L.projectToken(T, undefined, N), { start: 20, end: 24, query: 'elm' }, 'token: no caret given = the end');
+  eq(L.projectToken('+elm', 4, N), { start: 0, end: 4, query: 'elm' }, 'token: "+" at the start of the box');
   eq(L.projectToken('call +', 6, N), null, 'token: a bare "+" opens nothing');
   eq(L.projectToken('2+2', 3, N), null, 'token: "+" inside a word is not a project ("2+2")');
   eq(L.projectToken('C++ notes', 3, N), null, 'token: "C++" is not a project');
-  eq(L.projectToken('call + ram', 10, N), null, 'token: "+ ram" (space after +) is not a project');
+  eq(L.projectToken('call + elm', 10, N), null, 'token: "+ elm" (space after +) is not a project');
   eq(L.projectToken('x +purple lake', 14, N), { start: 2, end: 14, query: 'purple lake' }, 'token: spaces allowed while the name still fits');
-  eq(L.projectToken('x +ram call', 11, N), null, 'token: a following word that breaks the fit ends it');
-  eq(L.projectToken('x +ram call', 6, N), { start: 2, end: 6, query: 'ram' }, 'token: caret back on the "+ram" word');
-  eq(L.projectToken('x +ramxx y', 5, N), { start: 2, end: 8, query: 'ra' }, 'token: caret mid-word; the pick takes the whole word');
-  eq(L.projectToken('call Ana', 8, N), null, 'token: no "+" at all');
-  eq(L.projectToken('+ram call +', 11, N), null, 'token: the nearest "+" counts, bare = nothing');
+  eq(L.projectToken('x +elm call', 11, N), null, 'token: a following word that breaks the fit ends it');
+  eq(L.projectToken('x +elm call', 6, N), { start: 2, end: 6, query: 'elm' }, 'token: caret back on the "+elm" word');
+  eq(L.projectToken('x +elmxx y', 5, N), { start: 2, end: 8, query: 'el' }, 'token: caret mid-word; the pick takes the whole word');
+  eq(L.projectToken('call Max', 8, N), null, 'token: no "+" at all');
+  eq(L.projectToken('+elm call +', 11, N), null, 'token: the nearest "+" counts, bare = nothing');
   // A pick takes the "+text" out of the name.
   const pk = (t, c) => L.pickProjectText(t, L.projectToken(t, c, N));
-  eq(pk(T), { text: 'call Ana friday 3pm ', caret: 20 }, 'pick at the end: "+ram" gone, caret ready for more');
-  eq(pk('call +ram friday', 9), { text: 'call friday', caret: 5 }, 'pick in the middle: one space left');
-  eq(pk('+ram call', 4), { text: 'call', caret: 0 }, 'pick at the start: no leading space');
+  eq(pk(T), { text: 'call Max friday 3pm ', caret: 20 }, 'pick at the end: "+elm" gone, caret ready for more');
+  eq(pk('call +elm friday', 9), { text: 'call friday', caret: 5 }, 'pick in the middle: one space left');
+  eq(pk('+elm call', 4), { text: 'call', caret: 0 }, 'pick at the start: no leading space');
   eq(pk('x +purple lake tomorrow', 14), { text: 'x tomorrow', caret: 2 }, 'pick of a multi-word query removes all of it');
-  eq(pk('x +ramxx y', 5), { text: 'x y', caret: 2 }, 'pick mid-word removes the whole word');
+  eq(pk('x +elmxx y', 5), { text: 'x y', caret: 2 }, 'pick mid-word removes the whole word');
   // After the pick, the shared parser still reads the rest exactly as before.
   const D = '2026-10-07';
   const after = L.understand(pk(T).text + '!high', D);
-  const plain = L.understand('call Ana friday 3pm !high', D);
-  eq(after, plain, 'after a pick: the date, time and priority read exactly as without the "+ram"');
-  eq(L.quickAddChips(after, D, 'Ram Grove Day', 'normal'), ['Call Ana', 'Ram Grove Day', 'Due Fri, Oct 9, 3:00 PM', 'High'], 'the orange line after the pick (mockup state 4)');
+  const plain = L.understand('call Max friday 3pm !high', D);
+  eq(after, plain, 'after a pick: the date, time and priority read exactly as without the "+elm"');
+  eq(L.quickAddChips(after, D, 'Elm Grove Day', 'normal'), ['Call Max', 'Elm Grove Day', 'Due Fri, Oct 9, 3:00 PM', 'High'], 'the orange line after the pick (mockup state 4)');
   // No match: stays in the name, quietly noted.
-  eq(L.unmatchedProjectWords('call Ana friday 3pm +xyz', N), ['+xyz'], 'no match: "+xyz" is noted');
-  eq(L.understand('call Ana friday 3pm +xyz', D).title, 'Call Ana +xyz', 'no match: "+xyz" stays in the name (mockup state 5)');
-  eq(L.unmatchedProjectWords('call +ram +purple', N), [], 'matching "+words" are not noted');
+  eq(L.unmatchedProjectWords('call Max friday 3pm +xyz', N), ['+xyz'], 'no match: "+xyz" is noted');
+  eq(L.understand('call Max friday 3pm +xyz', D).title, 'Call Max +xyz', 'no match: "+xyz" stays in the name (mockup state 5)');
+  eq(L.unmatchedProjectWords('call +elm +purple', N), [], 'matching "+words" are not noted');
   eq(L.unmatchedProjectWords('2+2 is c++', N), [], '"+" inside words is not noted');
   eq(L.unmatchedProjectWords('', N), [], 'empty box: nothing noted');
   // The box: Enter picks while the list is open, else saves as before.
@@ -407,7 +407,7 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   ok(/if \(e\.key === 'Enter' \|\| \(e\.key === 'Tab' && !e\.shiftKey\)\) \{ e\.preventDefault\(\); pick\(shown\.hits\[sel\]\.name\); return; \}/.test(kd), 'Enter and Tab pick, and stop there');
   ok(/this\.plugin\.createTyped\(text, ps\.value \|\| null, this\.items, this\.today\(\)\)/.test(kd), 'save still goes through createTyped with the dropdown project');
   ok(/const names = this\.plugin\.projectNames\(this\.items\);/.test(qa) && /\.\.\.names\.map\(\(p\) => \[p, p\]\)/.test(qa), 'the list and the dropdown use the same project names');
-  ok(qa.includes("repeats (every monday), priority (") && qa.includes("'!high'") && qa.includes("'!low'") && qa.includes(") and projects (") && qa.includes("'+ram'"), 'the help line shows how to type a repeat, a priority and a project');
+  ok(qa.includes("repeats (every monday), priority (") && qa.includes("'!high'") && qa.includes("'!low'") && qa.includes(") and projects (") && qa.includes("'+Project Name'"), 'the help line shows how to type a repeat, a priority and a project');
   ok(!/\u2014/.test(qa.slice(qa.indexOf("'a4pl-hint', 'Dates"), qa.indexOf('are picked up as you type'))), 'the help line has no em dash');
   ok(L.understand('x !high', '2026-10-07').priority === 'high' && L.understand('x !low', '2026-10-07').priority === 'low' && !!L.understand('x every monday', '2026-10-07').recurrence, 'the help line examples are real syntax the parser accepts');
   ok(/b\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\)/.test(qa), 'clicking a project keeps the focus in the box');

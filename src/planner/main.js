@@ -1,9 +1,8 @@
-/* A4 Planner: the week/day planning board, Lifeworld-style, for A4's TaskNotes tasks.
+/* Planner: the week/day planning board, Lifeworld-style, for TaskNotes-format tasks.
  *
- * Built 2026-10-04 (Dex) from the approved mockup
- * (mockup-planner.html, round 5).
- * Hand-written CommonJS, no build step. Replaces the A4 Daily Planner
- * (a4-daily-planner) once confirmed; until then both stay installed.
+ * Built 2026-10-04 from the approved mockup
+ * (the planner mockup, round 5).
+ * Replaces the old daily planner.
  *
  * Reads (never a parallel data model):
  *  - TaskNotes task notes in the tasks folder (Settings › Your vault; tag `task`), with the
@@ -22,10 +21,10 @@
  *    30... so the drop sticks (1.0.2).
  *  - Unschedule: removes planned_day / planned_half / planned_order from an
  *    undated task. A dated task keeps its due date.
- *  - Ticks: A4 Projects' task engine, with the a4-today fallback when that
+ *  - Ticks: Projects' task engine, with the a4-today fallback when that
  *    engine is not on. TaskNotes itself is never used (2026-10-13).
  *  - New tasks (quick add, "+ add", a calendar event dropped on the board):
- *    A4 Projects' api.tasks.create, so ids, dates, tags and filename follow
+ *    Projects' api.tasks.create, so ids, dates, tags and filename follow
  *    its settings; planned_* go in through customFrontmatter.
  *  - Task names (1.2.4 / Planner 1.0.3 / Projects 0.1.2, 2026-10-05): a task
  *    shows its stored `title` when it has one, else its file name
@@ -37,11 +36,11 @@
  *    while the task stays in its half; into the other half (or Any time) it
  *    comes off, with Undo.
  *  - Project links (Planner 1.0.5, 2026-10-05): a task's project label
- *    opens that project's page in A4 Projects (Cmd/Ctrl-click: a new tab);
- *    with A4 Projects off, the project note. Shared openProjectPage.
+ *    opens that project's page in Projects (Cmd/Ctrl-click: a new tab);
+ *    with Projects off, the project note. Shared openProjectPage.
  *  - Quick add understands dates and times (Planner 1.0.6, 2026-10-05, task
- *    times v3): "call Ana friday 3pm" is Due Fri 3:00 PM. The SAME parser as
- *    A4 Projects' quick add (the SHARED quick add block, verbatim) and the
+ *    times v3): "call Max friday 3pm" is Due Fri 3:00 PM. The SAME parser as
+ *    Projects' quick add (the SHARED quick add block, verbatim) and the
  *    same orange "Adds:" line before Enter. A calendar event dropped into the
  *    half of the day its start time is in keeps that time on Due; dropped
  *    elsewhere it comes off (the move rule, movedDate).
@@ -159,8 +158,8 @@ function blockedChip(meta, blockers, open, pre) {
   return c;
 }
 
-// A project chip or label (2026-10-05): its page in A4 Projects, in a new
-// tab on Cmd/Ctrl-click; the note itself (a new tab, as before) when A4 Projects
+// A project chip or label (2026-10-05): its page in Projects, in a new
+// tab on Cmd/Ctrl-click; the note itself (a new tab, as before) when Projects
 // is off or has no page for it. `ref`: a project note's path, or a task's
 // project link or name. Resolves 'page', 'note', or false.
 async function openProjectPage(app, ref, e, sourcePath) {
@@ -168,7 +167,7 @@ async function openProjectPage(app, ref, e, sourcePath) {
   const newTab = !!(e && Keymap && Keymap.isModEvent(e));
   const pj = partOf(app, 'a4-projects');
   if (pj && typeof pj.openProjectPage === 'function') {
-    try { if (await pj.openProjectPage(ref, { newTab })) return 'page'; } catch (err) { console.error('[a4] opening the project page failed', err); }
+    try { if (await pj.openProjectPage(ref, { newTab })) return 'page'; } catch (err) { console.error('LifeWorld: opening the project page failed', err); }
   }
   const s = String(ref);
   let f = app.vault.getAbstractFileByPath(s);
@@ -237,7 +236,7 @@ function mondayOf(day) { return addDays(day, -((weekdayOf(day) + 6) % 7)); }
 function weekOf(day) { const m = mondayOf(day); return [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(m, i)); }
 
 // Project grouping key = the project note's basename, so [[Name]] and
-// [[full/path/Name]] land in one group (Dex journal 2026-09-07).
+// [[full/path/Name]] land in one group (checked 2026-09-07).
 function projectKeyOf(link) {
   const t = wikilinkTarget(link);
   return t ? (t.split('#')[0].split('/').pop().replace(/\.md$/i, '').trim() || null) : null;
@@ -399,7 +398,7 @@ class A4PlannerPlugin extends Plugin {
 
   async save() { await this.saveData(this.data); }
 
-  // The Find window lives in A4 Projects (its search, its engine): one window for Today, the Planner and the command.
+  // The Find window lives in Projects (its search, its engine): one window for Today, the Planner and the command.
   openFind() {
     const pj = partOf(this.app, 'a4-projects');
     if (pj && typeof pj.openFind === 'function') { pj.openFind(); return true; }
@@ -418,13 +417,13 @@ class A4PlannerPlugin extends Plugin {
 
   projectsPlugin() { return partOf(this.app, 'a4-projects'); }
 
-  // A4 Projects' task engine, when it is the chosen task source (Settings › A4 Projects).
+  // Projects' task engine, when it is the chosen task source (Settings › LifeWorld › Tasks).
   tasksApi() {
     const own = this.projectsPlugin();
     return own && typeof own.taskApi === 'function' ? own.taskApi() : null;
   }
 
-  // A4 Projects' task settings (statuses, priorities, defaults), or null.
+  // Projects' task settings (statuses, priorities, defaults), or null.
   engineCfg() {
     const own = this.projectsPlugin();
     try { return own && own.engine ? own.engine.cfg() : null; } catch { return null; }
@@ -518,7 +517,7 @@ class A4PlannerPlugin extends Plugin {
     else new Notice(text);
   }
 
-  // Someday (mockup approved 2026-10-06): through A4 Projects' engine
+  // Someday (mockup approved 2026-10-06): through Projects' engine
   // when it is on (it stamps dateModified, as a status change in TaskNotes
   // does), else the frontmatter API. -> { undo }
   async somedayTask(item) {
@@ -571,7 +570,7 @@ class A4PlannerPlugin extends Plugin {
     await this.app.fileManager.processFrontMatter(file, (fm) => { fm.weekly_goal = fm.weekly_goal !== true; });
   }
 
-  // New task through A4 Projects' engine (its folder, filename, id, dates and defaults).
+  // New task through Projects' engine (its folder, filename, id, dates and defaults).
   // `time` (a calendar event's start, 'HH:MM') goes on Due as the engine writes
   // it when the task lands in that time's half of the day (the move rule).
   async createTask({ title, project, day, half, details, time }, items) {
@@ -588,7 +587,7 @@ class A4PlannerPlugin extends Plugin {
     return t;
   }
 
-  // Quick add: plain words through the shared parser, saved the way A4
+  // Quick add: plain words through the shared parser, saved the way
   // Projects' quick add saves them (quickAddPlan; planned_order at the end of
   // the lane's untimed tasks, as Projects' laneOrders).
   async createTyped(text, project, items, today) {
@@ -864,10 +863,10 @@ class PlannerView extends ItemView {
     h(qa, 'div', 'a4pl-kicker', 'New task');
     const names = this.plugin.projectNames(this.items);
     const anchor = h(qa, 'div', 'a4pl-qa-anchor');
-    const inp = h(anchor, 'input', 'a4pl-input'); inp.type = 'text'; inp.placeholder = 'What needs doing? "call Ana friday 3pm"'; inp.dataset.focus = 'quick-add';
+    const inp = h(anchor, 'input', 'a4pl-input'); inp.type = 'text'; inp.placeholder = 'What needs doing? "call Max friday 3pm"'; inp.dataset.focus = 'quick-add';
     // "+project" (1.4.0): a quiet note when a "+word" fits no project.
     const note = h(qa, 'div', 'a4pl-nomatch'); note.hidden = true;
-    // The orange line: what Enter will save (same chips as A4 Projects' quick add).
+    // The orange line: what Enter will save (same chips as Projects' quick add).
     const parse = h(qa, 'div', 'a4pl-parse');
     const show = () => {
       parse.empty();
@@ -880,7 +879,7 @@ class PlannerView extends ItemView {
         const bit = (t) => hint.appendChild(document.createTextNode(t));
         h(hint, 'span', 'a4pl-hint-key', '!high'); bit(', ');
         h(hint, 'span', 'a4pl-hint-key', '!low'); bit(') and projects (');
-        h(hint, 'span', 'a4pl-hint-key', '+ram'); bit(') are picked up as you type.');
+        h(hint, 'span', 'a4pl-hint-key', '+Project Name'); bit(') are picked up as you type.');
         return;
       }
       const today = this.today();
@@ -1119,7 +1118,7 @@ class PlannerView extends ItemView {
     for (let i = 1; i <= 3; i++) h(bars, 'i', i <= pr.bars ? 'is-on' : '');
     pc.appendText(pr.label);
     if (it.projectKey && !o.hideProject) {
-      // The project label opens the project's page in A4 Projects (as in A4 Today).
+      // The project label opens the project's page in Projects (as in Today).
       const pc = h(meta, 'span', 'a4pl-chip a4pl-proj', it.project || it.projectKey);
       pc.addEventListener('click', (e) => { e.stopPropagation(); if (r._dragged) return; openProjectPage(this.app, it.projectLink || it.projectKey, e, it.path); });
     }

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /* Task names in the built-in engine (2026-10-05): a task shows its stored
- * `title` when it has one, else its file name. Covers A4 Today 1.2.4,
- * A4 Planner 1.0.3 and A4 Projects 0.1.2 (the shared reader is one verbatim
+ * `title` when it has one, else its file name. Covers Today 1.2.4,
+ * Planner 1.0.3 and Projects 0.1.2 (the shared reader is one verbatim
  * copy in all three):
  *  - the reading rule (TaskNotes 4.12.5 mapFromFrontmatter: string, list,
  *    number/yes-no, blank falls back to the file name)
@@ -11,14 +11,14 @@
  *    Blocks)
  *  - renaming when name and file name differ, and Undo
  *  - names are only ever shown as text (no HTML sink in the three plugins)
- *  - The task notes, read only: tests/fixtures/vault, or the owner's vault with A4_VAULT.
+ *  - The task notes, read only: tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT.
  * `node tests/test-task-titles.js` */
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
 const { part, STYLES, source } = require('./lib/paths');
-const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
 
 class TFile { constructor(p) { this.path = p; this.name = p.split('/').pop(); this.basename = this.name.replace(/\.md$/, ''); this.extension = 'md'; const i = p.lastIndexOf('/'); this.parent = { path: p.slice(0, i) }; } }
 class TFolder { constructor(p) { this.path = p; this.children = []; } }
@@ -76,10 +76,10 @@ const TODAY = '2026-10-05';
   eq(it.path, TP(URL_F), 'Today: the path still points at the file');
   const it2 = T.taskFromFrontmatter(task({ due: TODAY }), TP('Buy rice'), 'Buy rice');
   eq(it2.title, 'Buy rice', 'Today: no title -> file name');
-  const late = T.taskFromFrontmatter(task({ title: 'Call Ana: van', due: '2026-10-01' }), TP('Call Ana van'), 'Call Ana van');
+  const late = T.taskFromFrontmatter(task({ title: 'Call Max: van', due: '2026-10-01' }), TP('Call Max van'), 'Call Max van');
   const lists = T.buildTaskLists([it, it2, late], TODAY);
   eq(lists.morning.map((x) => x.title).sort(), ['Buy rice', URL_T].sort(), 'Today: morning lane names');
-  eq(lists.overdue.map((x) => x.title), ['Call Ana: van'], 'Today: overdue card name');
+  eq(lists.overdue.map((x) => x.title), ['Call Max: van'], 'Today: overdue card name');
 }
 
 /* ---- 4. Planner ------------------------------------------------------------- */
@@ -214,11 +214,11 @@ function engineFor(v, snap) { const e = new TaskEngine({ app: v.app, settings: {
     eq(JSON.stringify(v.fms.get(TP('Renew passport-2'))), snap, '"-2" note untouched');
     threw = null; let w0; try { w0 = await e.rename(TP('Renew passport-2'), ' Renew  passport '); } catch (err) { threw = err.message; }
     ok(threw === null && w0 === null, 'extra spaces only: no-op');
-    const w = await e.rename(TP('Renew passport-2'), 'Renew passport (Ana)');
-    ok(v.files.has(TP('Renew passport (Ana)')) && v.fms.get(TP('Renew passport (Ana)')).title === undefined, '"-2" note renamed to a free name: file + title in step');
+    const w = await e.rename(TP('Renew passport-2'), 'Renew passport (Max)');
+    ok(v.files.has(TP('Renew passport (Max)')) && v.fms.get(TP('Renew passport (Max)')).title === undefined, '"-2" note renamed to a free name: file + title in step');
     await w.undo();
     eq(v.fms.get(TP('Renew passport-2')).title, 'Renew passport', 'undo: "-2" title back');
-    threw = null; try { await e.rename(TP('Renew passport (Ana)'), 'x'); } catch (err) { threw = err.message; } ok(threw && /gone/.test(threw), 'renaming a missing note: clear error');
+    threw = null; try { await e.rename(TP('Renew passport (Max)'), 'x'); } catch (err) { threw = err.message; } ok(threw && /gone/.test(threw), 'renaming a missing note: clear error');
     const fresh = makeVault({ [TP('A')]: task({}), [TP('B')]: task({}) });
     threw = null; try { await engineFor(fresh).rename(TP('B'), 'A'); } catch (err) { threw = err.message; }
     ok(threw && /already has that name/.test(threw), 'rename onto another task: refused');
@@ -245,7 +245,7 @@ function engineFor(v, snap) { const e = new TaskEngine({ app: v.app, settings: {
   ok(/const tl = h\(main, 'div', 'a4pl-task-title'\);[\s\S]{0,1200}?tl\.appendText\(it\.title\);/.test(srcs[2]), 'Planner task row: name added as text (after the time)');
   ok(/createDiv\(\{ cls: 'a4pl-ghost', text: [^}]*d\.item\.title \}\)/.test(srcs[2]), 'Planner drag preview: text option');
 
-  /* ---- 8. The task notes, read only (the frozen copy unless A4_VAULT) ------- */
+  /* ---- 8. The task notes, read only (the frozen copy unless LIFEWORLD_VAULT) ------- */
   const real = [];
   for (const [dir, inArch] of VAULT ? [[TASKS, false], [ARCH, true]] : []) {
     const abs = path.join(VAULT, dir);

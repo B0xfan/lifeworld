@@ -180,7 +180,7 @@ const start = async (data) => {
   const second = await start();
   console.error = ce; failing = null;
   eq(log.filter((x) => x.startsWith('started')), ['started a4-projects', 'started a4-planner', 'started a4-sidebar'], 'the others still start');
-  ok(errs.length === 1 && /A4 Today did not start/.test(errs[0]), 'the failure is logged once, naming the part');
+  ok(errs.length === 1 && /Today did not start/.test(errs[0]), 'the failure is logged once, naming the part');
   eq(second.host._children.map((p) => p.manifest.id), ['a4-projects', 'a4-planner', 'a4-sidebar'], 'the failed part is left out');
   ok(log.includes('stop a4-today') && second.parts['a4-planner'].projectsPlugin() === second.parts['a4-projects'], 'the failed part is stopped at once; the others still find each other');
   ok(!Object.keys(second.app.commands).some((c) => c.startsWith('a4-today:')), 'the failed part leaves no command behind');
@@ -425,7 +425,7 @@ const start = async (data) => {
   // ---- Section 4: Settings › Your vault (lifeworld-your-vault-mockup.html, approved 2026-10-14) ----
   const FIX = path.join(ROOT, 'tests', 'fixtures', 'vault');
   const fixJson = (p) => JSON.parse(fs.readFileSync(path.join(FIX, '.obsidian', p), 'utf8'));
-  // The folders and scratchpad the four A4 plugins had written into their code before section 4.
+  // The folders and scratchpad the four old plugins had written into their code before section 4.
   const OLDF = { tasks: '02 Planner/TaskNotes/Tasks', archive: '02 Planner/TaskNotes/Archive', projects: '04 Inner World/My Life/Projects', goals: '04 Inner World/My Life/Goals', habits: '04 Inner World/My Life/Habits', journal: '04 Inner World/Journal' };
   const OLD_SP = (d) => `00 Daily Scratchpad/${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${d.getFullYear()}.md`;
   const OLD_TPL = '06 AI Team/AI Team Knowledge/Templates/Daily Scratchpad.md';
@@ -495,7 +495,7 @@ const start = async (data) => {
   LW.parts['a4-today'].prototype.calendarFrontmatter.call({ app: calApp });
   eq(notesSeen, ['02 Planner/Calendar Events.md', '02 Planner/Calendar Events.md'], 'preset: the Planner and Today read the old calendar note');
 
-  // The owner's own settings, read only (A4_VAULT; else the frozen copy): Obsidian's Daily notes setting gives
+  // The owner's own settings, read only (LIFEWORLD_VAULT; else the frozen copy): Obsidian's Daily notes setting gives
   // the old scratchpad path and template, TaskNotes' folders and names are the preset's.
   const V = require('./lib/paths').vault;
   const readOnly = (p) => JSON.parse(fs.readFileSync(path.join(V, '.obsidian', p), 'utf8'));
@@ -676,7 +676,7 @@ const start = async (data) => {
   // ---- Section 6: the Sidebar's content is stored data; a part switched off hides its buttons ----
   const SBL = LW.parts['a4-sidebar'].__logic;
   const VLT = SBL.SBC; // the live object the Sidebar reads
-  // The Sidebar exactly as it was written into the A4 Sidebar's code before section 6.
+  // The Sidebar exactly as it was written into the Sidebar's code before section 6.
   const OLD_SB = {
     groups: [
       { id: 'direction', label: 'Direction', folders: ['Key Elements', 'Goals', 'Personal projects', 'Unsorted projects', 'Habits', 'Topics'] },
@@ -697,10 +697,10 @@ const start = async (data) => {
   eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
-  // and rooms the old code had, so his Sidebar draws as before.
+  // and rooms the old code had, so the owner's Sidebar draws as before.
   const ownerFile = JSON.parse(fs.readFileSync(path.join(FIX, '.obsidian', 'plugins', 'lifeworld', 'data.json'), 'utf8'));
   const sb1 = await start(ownerFile);
-  eq([VLT.brand, VLT.life, VLT.groups, VLT.icons, VLT.labels, VLT.noCount, VLT.basesSkip], ['A4', '04 Inner World/My Life', OLD_SB.groups, OLD_SB.icons, OLD_SB.labels, OLD_SB.noCount, ['02 Planner/TaskNotes/']], "owner's preset: brand, My Life folder, groups, icons, names, counts and skipped bases as before");
+  eq([VLT.brand, VLT.life, VLT.groups, VLT.icons, VLT.labels, VLT.noCount, VLT.basesSkip], ['Home', '04 Inner World/My Life', OLD_SB.groups, OLD_SB.icons, OLD_SB.labels, OLD_SB.noCount, ['02 Planner/TaskNotes/']], "owner's preset: brand, My Life folder, groups, icons, names, counts and skipped bases as before");
   const rootNames = fs.readdirSync(FIX, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name);
   const oldRooms = OLD_SB.rooms.map((r) => { const p = rootNames.filter((x) => x.startsWith(r.prefix)).sort()[0]; return p ? { ...r, path: p } : null; }).filter(Boolean);
   eq(SBL.findRoomFolders(rootNames), oldRooms, "owner's preset: the frozen vault's rooms, names, icons and colours as before");

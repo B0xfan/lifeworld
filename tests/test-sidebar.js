@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-/* Logic tests for the A4 Sidebar.
+/* Logic tests for the Sidebar.
  * `node tests/test-sidebar.js`. No Obsidian needed; the rendered checks are the
  * hidden-sandbox run (session scratch).
  *
  * 1. Work / Personal / Unsorted project counts (0.6.1, bug 2026-10-05: the
  *    sidebar said 16 work projects, the Projects page listed 14; the 2 failed
- *    ones were counted). The count must equal what A4 Projects lists as open,
- *    using A4 Projects' own rule, never a copy.
+ *    ones were counted). The count must equal what Projects lists as open,
+ *    using Projects' own rule, never a copy.
  * 2. (0.6.2, ruling 2026-10-05) the list that folds out shows only those open
  *    projects; closed ones stay on the Projects page's Closed section.
  * 3. (0.6.2) a drop refused because the folder already has that name says so
  *    in a notice. The row must ACCEPT dragover for that case, or the browser
  *    never delivers the drop and the notice is dead code (it was in 0.6.1).
- * 4. (0.7.0, plugin overhaul step 3) the toolbar buttons are A4 Sidebar's own
+ * 4. (0.7.0, plugin overhaul step 3) the toolbar buttons are Sidebar's own
  *    commands, so they work with ICOR Connect off; the canvas name; the Audrey
  *    badge opens the roster note; nothing calls ICOR Connect any more.
  * 5. (0.7.1, 2026-10-07) Scheduled Jobs/Reports lists newest first, like
@@ -24,15 +24,15 @@
  * 7. (0.9.0, mockup approved 2026-10-08) the Bases button: a database icon
  *    in both rows, a drop-down of every base A to Z with its folder, read
  *    fresh on every click; TaskNotes' starter views left out (files kept).
- * Moved from the A4 vault: behaviour checks load the built files, text checks read
- * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with A4_VAULT. */
+ * Moved from the owner's vault: behaviour checks load the built files, text checks read
+ * src/ (tests/lib/paths.js). Vault checks read tests/fixtures/vault, or the owner's vault with LIFEWORLD_VAULT. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
 const { part, STYLES, source } = require('./lib/paths');
-const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
 const SB_MAIN = 'a4-sidebar';
 const PJ_MAIN = 'a4-projects';
 
@@ -53,23 +53,23 @@ function ok(cond, name, extra) { n++; if (!cond) { failed++; console.log(`FAIL $
 function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(b); ok(x === y, name, `got ${x} want ${y}`); }
 
 /* ---- 1. project counts ------------------------------------------------------ */
-// A real A4 Projects plugin object (its prototype, no Obsidian), as the sidebar sees it.
+// A real Projects plugin object (its prototype, no Obsidian), as the sidebar sees it.
 const pj = Object.create(PJ.prototype);
-ok(typeof pj.isOpenProjectNote === 'function', 'A4 Projects offers isOpenProjectNote');
+ok(typeof pj.isOpenProjectNote === 'function', 'Projects offers isOpenProjectNote');
 const rule = S.openRuleFrom(pj);
 const fm = (status, extra) => Object.assign({ type: 'project', sphere: 'work', status }, extra);
 for (const s of ['active', 'backlog', 'paused', 'Active', ' paused ', '', undefined]) ok(rule(fm(s)) === true, `open: status ${JSON.stringify(s)}`);
 for (const s of ['done', 'failed', 'dropped', 'Failed', ' DONE ']) ok(rule(fm(s)) === false, `closed: status ${JSON.stringify(s)}`);
 ok(rule({ status: 'active' }) === false, 'not a project note: not counted');
-// Without A4 Projects there is no open list; every project counts (old behaviour).
+// Without Projects there is no open list; every project counts (old behaviour).
 const none = S.openRuleFrom(null);
-ok(none(fm('failed')) === true && S.openRuleFrom({}).call(null, fm('done')) === true, 'A4 Projects off: every project counts');
+ok(none(fm('failed')) === true && S.openRuleFrom({}).call(null, fm('done')) === true, 'Projects off: every project counts');
 // The count itself.
 const members = ['active', 'paused', 'failed', 'backlog', 'done'].map((s, i) => ({ name: `P${i}`, status: s, open: rule(fm(s)) }));
 eq(S.openProjectCount(members), 3, 'count leaves out failed and done');
 eq(S.openProjectCount([]), 0, 'count of none is 0');
 
-// Real data (read-only; the frozen copy unless A4_VAULT): for each list, the sidebar's count = the page's open list.
+// Real data (read-only; the frozen copy unless LIFEWORLD_VAULT): for each list, the sidebar's count = the page's open list.
 const parse = (t) => { const m = /^---\n([\s\S]*?)\n---/.exec(t); const o = {}; if (m) for (const l of m[1].split('\n')) { const x = /^([\w-]+):\s*(.*)$/.exec(l); if (x) o[x[1]] = x[2].trim().replace(/^"(.*)"$/, '$1'); } return o; };
 const PD = path.join(VAULT || '', '04 Inner World/My Life/Projects');
 const notes = !VAULT ? [] : fs.readdirSync(PD).filter((f) => f.endsWith('.md')).map((f) => ({ name: f.replace(/\.md$/, ''), fm: parse(fs.readFileSync(path.join(PD, f), 'utf8')) })).filter((x) => x.fm.type === 'project');
@@ -109,26 +109,26 @@ eq(S.nameTakenMessage('Plan.md', '01 Inbox'), 'A note called Plan is already in 
 eq(S.nameTakenMessage('photo.png', 'Images'), 'A note called photo.png is already in Images.', 'message: other file keeps extension');
 ok(!/\u2014/.test(S.nameTakenMessage('a.md', 'b')), 'message: no em dash');
 
-// Static: the sidebar uses the count and A4 Projects' rule, and keeps no copy of the closed statuses.
+// Static: the sidebar uses the count and Projects' rule, and keeps no copy of the closed statuses.
 const src = fs.readFileSync(source('a4-sidebar'), 'utf8');
 ok(/count: openProjectCount\(members\)/.test(src) && !/count: members\.length/.test(src), 'sidebar: the Work / Personal item shows the open count');
 // Updated in phase 2 section 1: the parts find each other through LifeWorld (core/parts.js).
-ok(/openRuleFrom\(partOf\(this\.app, 'a4-projects'\)\)/.test(src), "sidebar: the rule comes from A4 Projects");
+ok(/openRuleFrom\(partOf\(this\.app, 'a4-projects'\)\)/.test(src), "sidebar: the rule comes from Projects");
 ok(!/'failed'|'dropped'|CLOSED_STATUSES/.test(src), 'sidebar: no copy of the closed statuses');
 ok(/const members = openProjects\(this\.projectsOf\(v\.kind\)\)/.test(src), 'sidebar: the folded-out list uses openProjects');
 ok(/if \(!x \|\| !dropAccepts\(x\.p\)\) return;/.test(src) && /if \(x\.p\.ok\) row\.addClass\('is-drop'\)/.test(src), 'sidebar: dragover uses dropAccepts, highlights only a real move');
 ok(/new Notice\(nameTakenMessage\(x\.f\.name, folder\.name\)\)/.test(src), 'sidebar: drop shows the name-taken notice');
 const pjSrc = fs.readFileSync(source('a4-projects'), 'utf8');
-ok(/isOpenProjectNote\(fm\) \{ return isOpenProject\(readProject\(fm, '', ''\)\); \}/.test(pjSrc), 'A4 Projects: the public method uses the page rule');
+ok(/isOpenProjectNote\(fm\) \{ return isOpenProject\(readProject\(fm, '', ''\)\); \}/.test(pjSrc), 'Projects: the public method uses the page rule');
 // Updated when moved: on the projects board branch the Closed list holds the closed statuses only
 // (ideas and cold storage are neither open nor closed), so it no longer negates the open rule.
-ok(/p\.sphere === sp && isOpenProject\(p\)/.test(pjSrc) && /function closedProjects[^\n]*\n[^\n]*\n\s*return projects\.filter\(\(p\) => CLOSED_STATUSES\.includes\(p\.status\)/.test(pjSrc), 'A4 Projects: overview uses the open rule, Closed lists the closed statuses');
+ok(/p\.sphere === sp && isOpenProject\(p\)/.test(pjSrc) && /function closedProjects[^\n]*\n[^\n]*\n\s*return projects\.filter\(\(p\) => CLOSED_STATUSES\.includes\(p\.status\)/.test(pjSrc), 'Projects: overview uses the open rule, Closed lists the closed statuses');
 
 /* ---- 4. toolbar and Files tab chrome without ICOR Connect (0.7.0) ---------- */
 eq(S.TOOLS.map((t) => t.id), ['daily', 'unique', 'canvas', 'graph'], 'toolbar: four buttons in the order already known');
 eq(S.TOOLS.map((t) => t.icon), ['calendar-check', 'file-clock', 'layout-dashboard', 'git-fork'], 'toolbar: same icons as before');
 eq(S.TOOLS.map((t) => t.label), ["Open today's daily note", 'New unique note', 'New canvas in the Daily Scratchpad', 'Open graph view'], 'toolbar: same tooltips as before');
-ok(S.TOOLS.every((t) => t.command.startsWith('a4-sidebar:')), 'toolbar: every button runs an A4 Sidebar command');
+ok(S.TOOLS.every((t) => t.command.startsWith('a4-sidebar:')), 'toolbar: every button runs an Sidebar command');
 for (const t of S.TOOLS) { const id = t.command.split(':')[1]; ok(!!S.CORE_TOOLS[id] || new RegExp(`id: '${id}'`).test(src), `toolbar: command ${id} is registered by the sidebar`); }
 eq(Object.values(S.CORE_TOOLS).map((c) => c.core), ['daily-notes', 'zk-prefixer', 'graph:open'], 'toolbar: core commands behind daily, unique, graph');
 ok(!/icor-for-life-connect:|micor-/.test(src), 'sidebar: no ICOR Connect command or class used');
@@ -170,12 +170,12 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   eq(D.perFolder, { '00 Daily Scratchpad': 'newest', '04 Inner World': 'az', '04 Inner World/Library Notes': 'az', '04 Inner World/My Life': 'az', '06 AI Team/Scheduled Jobs/Reports': 'newest' }, 'pre-fill: folder-by-folder list');
   eq([D.dates, D.text, D.folders], ['last', 'az', false], 'pre-fill: Newest last, A to Z, folders off');
   eq(D.newestFirstIn, ['00 Daily Scratchpad', 'Journal', '06 AI Team/Scheduled Jobs/Reports'], 'pre-fill: always newest first in');
-  eq(order('06 AI Team/Agents/Dex/Journal', ['2026-09-02-a.md', '2026-10-08-b.md']), ['2026-10-08-b.md', '2026-09-02-a.md'], 'every Journal folder newest first (AI Team journals too, as in 0.7)');
+  eq(order('Team/Agents/Sam/Journal', ['2026-09-02-a.md', '2026-10-08-b.md']), ['2026-10-08-b.md', '2026-09-02-a.md'], 'every Journal folder newest first (nested Journal folders too, as in 0.7)');
   ok(!S.SORT_MODES.includes('own') && !/My own order/.test(src), 'no drag-your-own-order option (2026-10-08)');
   // damaged / partial settings never break the list
   eq(S.normalizeSort({ dates: 'x', text: 7, perFolder: { a: 'own', b: 'za' }, newestFirstIn: 'x' }), { dates: 'last', text: 'az', folders: false, newestFirstIn: D.newestFirstIn, perFolder: { b: 'za' } }, 'damaged values fall back');
   eq(S.normalizeSort({ perFolder: {} }).perFolder, {}, 'an emptied list stays empty (not re-filled)');
-  // dates in A4 names
+  // dates in note names
   eq(S.dateKey('10-08-2026.md'), { day: 20261008, time: -1 }, 'date: daily note');
   eq(S.dateKey('10-08-2026 - 2-05 PM.md'), { day: 20261008, time: 845 }, 'date: quick capture PM');
   eq(S.dateKey('10-08-2026 - 12-05 AM.md'), { day: 20261008, time: 5 }, 'date: 12 AM is midnight');
@@ -198,8 +198,8 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   // Library Notes: A to Z by name, a quote-mark title first, dates not special
   eq(order('04 Inner World/Library Notes', ['Twin Market.md', '‘I got carried away’.md', '67 Ways to Bake.md', 'Applewood.md']), ['‘I got carried away’.md', '67 Ways to Bake.md', 'Applewood.md', 'Twin Market.md'], 'Library Notes: A to Z');
   // a NEW note lands in place (computed from names, nothing frozen)
-  const topics = ['A3.md', 'A4.md', 'Cabin Retreat.md', 'Zebra.md'];
-  eq(order('04 Inner World/My Life/Topics', topics.concat('Banana.md')), ['A3.md', 'A4.md', 'Banana.md', 'Cabin Retreat.md', 'Zebra.md'], 'new note lands A to Z, not at the bottom');
+  const topics = ['A3.md', 'A5.md', 'Cabin Retreat.md', 'Zebra.md'];
+  eq(order('04 Inner World/My Life/Topics', topics.concat('Banana.md')), ['A3.md', 'A5.md', 'Banana.md', 'Cabin Retreat.md', 'Zebra.md'], 'new note lands A to Z, not at the bottom');
   eq(order('00 Daily Scratchpad', ['10-06-2026.md', '10-07-2026.md', '10-08-2026.md'])[0], '10-08-2026.md', 'new daily note lands on top');
   // the main settings
   const main = (p) => S.normalizeSort({ ...p, perFolder: {}, newestFirstIn: [] });
@@ -235,7 +235,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
 {
   eq([S.BASES_TOOL.id, S.BASES_TOOL.icon, S.BASES_TOOL.label], ['bases', 'database', 'Open a base'], 'bases: database icon, tooltip "Open a base"');
   eq(S.TOOLS.length, 4, 'bases: the four older buttons are unchanged');
-  // the vault, read-only (the frozen copy unless A4_VAULT)
+  // the vault, read-only (the frozen copy unless LIFEWORLD_VAULT)
   const found = [];
   if (VAULT) {
   const walk = (d) => { for (const e of fs.readdirSync(path.join(VAULT, d), { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = d ? `${d}/${e.name}` : e.name; if (e.isDirectory()) walk(p); else found.push(p); } };
@@ -254,7 +254,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   if (VAULT) eq(S.listBases(found.concat('04 Inner World/My Life/Health/Health.base')).map((b) => b.name), ['Companies', 'Documents', 'Health', 'Library Notes', 'People', 'Places'], 'bases: a new base appears in its A to Z place');
   eq(S.baseWhere('04 Inner World/Contacts/People/People.base', 'People'), 'Contacts', 'bases: named after its folder, shows the folder above');
   // wiring
-  ok(/data-tool': BASES_TOOL\.id[\s\S]*?this\.plugin\.showBases\(bb\)[\s\S]*?const sectionIds/.test(src), 'bases: A4 tab button sits after the four tools, before collapse-all');
+  ok(/data-tool': BASES_TOOL\.id[\s\S]*?this\.plugin\.showBases\(bb\)[\s\S]*?const sectionIds/.test(src), 'bases: Sidebar tab button sits after the four tools, before collapse-all');
   ok(/attachTools\(ex\) \{[\s\S]*?for \(const t of TOOLS\)[\s\S]*?a4sb-files-tool', attr: \{ 'aria-label': BASES_TOOL\.label[\s\S]*?bar\.insertBefore\(bb, at\)/.test(src), 'bases: same button on the Files tab, after graph, removed with the others');
   ok(/showBases\(btn\) \{\s*const bases = listBases\(this\.app\.vault\.getFiles\(\)/.test(src), 'bases: list read from the vault on every click');
   ok(/menu\.setUseNativeMenu\(false\)/.test(src), "bases: Obsidian's own menu, so the folder names show");

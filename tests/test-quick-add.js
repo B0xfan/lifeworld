@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/* Quick add with dates and times in A4 Planner, the same as A4 Projects' quick
- * add (task times v3, approved 2026-10-05). Moved from the A4 vault: Menu Bar
+/* Quick add with dates and times in Planner, the same as Projects' quick
+ * add (task times v3, approved 2026-10-05). Moved from the owner's vault: Menu Bar
  * Capture is a separate companion, not in this repo, so its checks (old parts
  * 1 and 5) stay in the vault copy only.
  * No Obsidian: stand-ins for the vault and TaskNotes' API.
@@ -11,7 +11,7 @@
  *  2. The three plugins read every phrase the same way: same task fields, same
  *     orange "Adds:" line.
  *  3. Planner quick add saves what Projects' quick add saves (time on Due in
- *     TaskNotes' format, planned_half, planned_order, project), through A4
+ *     TaskNotes' format, planned_half, planned_order, project), through
  *     Projects' own engine (planCreate) as well.
  *  4. A calendar event dropped on the Planner keeps its start time on Due only
  *     inside that time's half of the day.
@@ -28,12 +28,12 @@ const Module = require('module');
 const { part, STYLES, source } = require('./lib/paths');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'Australia/Lord_Howe'];
 
-if (!process.env.A4QA_CHILD) {
-  console.log('skipped: the Menu Bar Capture checks (old parts 1 and 5); that companion is not in this repo, its checks run in the A4 vault copy');
+if (!process.env.LWQA_CHILD) {
+  console.log('skipped: the Menu Bar Capture checks (old parts 1 and 5); that companion is not in this repo, its checks run in a copy of the owner vault');
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4QA_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWQA_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -83,8 +83,8 @@ async function main() {
 
   /* ---- 2. same reading, same orange line ------------------------------------- */
   const MON = '2026-10-05'; // a Monday
-  const PHRASES = ['call Ana friday 3pm', 'call Ana 3pm', 'call Ana due friday 4pm', 'lunch at noon tomorrow', 'meet at 15:30', 'read Acts 2:38', 'buy 3 eggs',
-    'call Ana tomorrow afternoon', 'book flights starts monday 9am', 'standup every monday 9am', 'standup tomorrow 9:30 a.m. !high', 'water plants every Monday',
+  const PHRASES = ['call Max friday 3pm', 'call Max 3pm', 'call Max due friday 4pm', 'lunch at noon tomorrow', 'meet at 15:30', 'read Acts 2:38', 'buy 3 eggs',
+    'call Max tomorrow afternoon', 'book flights starts monday 9am', 'standup every monday 9am', 'standup tomorrow 9:30 a.m. !high', 'water plants every Monday',
     'fix the hose tomorrow afternoon', '!high due Friday', 'pay rent oct 20 p1', 'dentist next tuesday 10:15am', 'gym every weekday 6am', 'trash tonight',
     'review report in 3 days', 'call mom this evening', 'tomorrow', 'plan trip 12/24', 'ship it at midnight', 'meet 4 p.m. thursday', 'email Alex', ''];
   for (const p of PHRASES) {
@@ -95,9 +95,9 @@ async function main() {
     eq(PL.quickAddPlan(b, MON), L.quickAddPlan(a, MON), `Planner saves "${p}" as Projects does`);
   }
   // The brief's own example, end to end.
-  const ana = L.understand('call Ana friday 3pm', MON);
-  eq(L.quickAddChips(ana, MON, null, 'normal'), ['Call Ana', 'Due Fri, Oct 9, 3:00 PM'], '"call Ana friday 3pm" -> the line reads Due Fri, Oct 9, 3:00 PM');
-  eq(L.quickAddPlan(ana, MON), { input: { title: 'Call Ana', customFrontmatter: { planned_half: 'pm' }, due: '2026-10-09T15:00' }, lane: { day: '2026-10-09', half: 'pm' } }, '"call Ana friday 3pm" -> due 2026-10-09T15:00, afternoon');
+  const ana = L.understand('call Max friday 3pm', MON);
+  eq(L.quickAddChips(ana, MON, null, 'normal'), ['Call Max', 'Due Fri, Oct 9, 3:00 PM'], '"call Max friday 3pm" -> the line reads Due Fri, Oct 9, 3:00 PM');
+  eq(L.quickAddPlan(ana, MON), { input: { title: 'Call Max', customFrontmatter: { planned_half: 'pm' }, due: '2026-10-09T15:00' }, lane: { day: '2026-10-09', half: 'pm' } }, '"call Max friday 3pm" -> due 2026-10-09T15:00, afternoon');
   eq(L.quickAddChips(L.understand('standup every monday 9am !high', MON), MON, 'Work', 'normal'), ['Standup', 'Work', 'Every Monday, 9:00 AM', 'High'], 'repeat, time, project and priority on the line');
   eq(L.quickAddChips(L.understand('email Alex !normal', MON), MON, null, 'normal'), ['Email Alex'], 'the default priority is left off the line');
   eq(L.quickAddChips({ title: '' }, MON, null, 'normal'), ['…'], 'no title yet: an ellipsis');
@@ -113,25 +113,25 @@ async function main() {
   const plugin = new PlannerPlugin();
   const made = [];
   const fakeApi = { tasks: { create: async (d) => { made.push(clone(d)); return { path: `T/${d.title}.md` }; } } };
-  plugin.tasksApi = () => fakeApi; // updated when moved: Planner asks A4 Projects' engine now, not TaskNotes (2026-10-13)
-  await plugin.createTyped('call Ana friday 3pm !high', 'Miscellaneous', items, MON);
-  eq(made.pop(), { title: 'Call Ana', customFrontmatter: { planned_half: 'pm', planned_order: 40 }, priority: 'high', due: '2026-10-09T15:00', projects: ['[[Miscellaneous]]'] },
+  plugin.tasksApi = () => fakeApi; // updated when moved: Planner asks Projects' engine now, not TaskNotes (2026-10-13)
+  await plugin.createTyped('call Max friday 3pm !high', 'Miscellaneous', items, MON);
+  eq(made.pop(), { title: 'Call Max', customFrontmatter: { planned_half: 'pm', planned_order: 40 }, priority: 'high', due: '2026-10-09T15:00', projects: ['[[Miscellaneous]]'] },
     'Planner quick add: Due Fri 3:00 PM in TaskNotes\' format, afternoon, after the untimed tasks of that lane, the picked project');
-  await plugin.createTyped('call Ana tomorrow afternoon', null, items, MON);
-  eq(made.pop(), { title: 'Call Ana', customFrontmatter: { planned_day: '2026-10-06', planned_half: 'pm', planned_order: 15 } }, 'Planner quick add: tomorrow afternoon -> planned day and half, as Projects');
+  await plugin.createTyped('call Max tomorrow afternoon', null, items, MON);
+  eq(made.pop(), { title: 'Call Max', customFrontmatter: { planned_day: '2026-10-06', planned_half: 'pm', planned_order: 15 } }, 'Planner quick add: tomorrow afternoon -> planned day and half, as Projects');
   await plugin.createTyped('email Alex', null, items, MON);
   eq(made.pop(), { title: 'Email Alex' }, 'Planner quick add: no date -> Unscheduled, no planned fields (as before)');
   await plugin.createTyped('standup every monday 9am', null, items, MON);
   eq(made.pop(), { title: 'Standup', customFrontmatter: { planned_half: 'am' }, recurrence: 'FREQ=WEEKLY;BYDAY=MO', scheduled: '2026-10-05T09:00' }, 'Planner quick add: a repeat keeps its time as its start');
   eq(await plugin.createTyped('tomorrow 3pm', null, items, MON), null, 'Planner quick add: only a day and time, no title -> nothing saved');
   eq(made.length, 0, '... and TaskNotes was not called');
-  // The same fields through A4 Projects' engine: what lands in the note.
+  // The same fields through Projects' engine: what lands in the note.
   const cfg = L.engineConfig(null);
   const fmOf = (input) => L.planCreate(input, cfg, '2026-10-05T10:00:00.000-06:00', MON).frontmatter;
-  await plugin.createTyped('call Ana friday 3pm', null, items, MON);
+  await plugin.createTyped('call Max friday 3pm', null, items, MON);
   const fm = fmOf(made.pop());
   eq([fm.due, fm.planned_half, fm.planned_order, fm.planned_day], ['2026-10-09T15:00', 'pm', 40, undefined], 'through the engine: due 2026-10-09T15:00 (TaskNotes\' format), afternoon, no planned_day');
-  const back = PL.taskFromFrontmatter(Object.assign({}, fm, { tags: ['task'] }), 'T/Call Ana.md', 'Call Ana');
+  const back = PL.taskFromFrontmatter(Object.assign({}, fm, { tags: ['task'] }), 'T/Call Max.md', 'Call Max');
   eq([back.due, back.time, back.plannedHalf, back.plannedDay], ['2026-10-09', '15:00', 'pm', '2026-10-09'], 'read back by the Planner: Fri, 3:00 PM, in the Afternoon');
   ok(!PL.understand.toString().includes('this.'), 'parser is pure');
 

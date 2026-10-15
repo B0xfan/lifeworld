@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* Task times (mockup v3 + review, approved 2026-10-05) across
- * A4 Projects, A4 Today and A4 Planner. No Obsidian: an in-memory vault.
+ * Projects, Today and Planner. No Obsidian: an in-memory vault.
  * `node tests/test-task-times.js` (re-runs itself in several time zones).
  *
  *  1. The time helpers are the same code in all three plugins.
@@ -8,7 +8,7 @@
  *     clock times, the 1 PM split, and what the orange line says.
  *  3. Quick add puts a typed time on Due (or on Starts, or a repeat's start).
  *  4. Storage in TaskNotes' format ('YYYY-MM-DDTHH:MM') and back, through the
- *     A4 Projects engine; "due always wins"; repeating tasks keep the time
+ *     Projects engine; "due always wins"; repeating tasks keep the time
  *     when ticked.
  *  5. Moves and drags keep the time inside its half of the day; into the
  *     other half (or Any time) it comes off, and Undo puts it back. Also the
@@ -24,11 +24,11 @@ const Module = require('module');
 const { part, STYLES, source } = require('./lib/paths');
 const ZONES = ['America/Costa_Rica', 'UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kolkata', 'America/New_York', 'Australia/Lord_Howe'];
 
-if (!process.env.A4TT_CHILD) {
+if (!process.env.LWTT_CHILD) {
   let fails = 0; let total = 0;
   for (const tz of ZONES) {
     try {
-      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, A4TT_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
+      const out = execFileSync(process.execPath, [__filename], { env: { ...process.env, TZ: tz, LWTT_CHILD: '1' }, encoding: 'utf8', timeout: 120000 });
       const m = /RESULT (\d+) (\d+)/.exec(out);
       total += Number(m[1]); fails += Number(m[2]);
       console.log(`${tz.padEnd(22)} ${m[1]} checks, ${m[2]} failed`);
@@ -148,15 +148,15 @@ const MON = '2026-10-05'; // a Monday, the day the v2 table was run
 /* ---- 3. quick add -------------------------------------------------------------- */
 {
   const U = (s) => L.understand(s, MON);
-  eq(U('call Ana friday 3pm'), { priority: null, time: '15:00', plannedHalf: 'pm', due: '2026-10-09', title: 'Call Ana' }, 'quick add: "call Ana friday 3pm" -> Due Fri 3:00 PM');
-  eq(U('call Ana 3pm').due, MON, 'quick add: a time alone -> due today');
-  eq(U('call Ana due friday 4pm'), { priority: null, due: '2026-10-09', time: '16:00', plannedHalf: 'pm', title: 'Call Ana' }, 'quick add: due friday 4pm');
+  eq(U('call Max friday 3pm'), { priority: null, time: '15:00', plannedHalf: 'pm', due: '2026-10-09', title: 'Call Max' }, 'quick add: "call Max friday 3pm" -> Due Fri 3:00 PM');
+  eq(U('call Max 3pm').due, MON, 'quick add: a time alone -> due today');
+  eq(U('call Max due friday 4pm'), { priority: null, due: '2026-10-09', time: '16:00', plannedHalf: 'pm', title: 'Call Max' }, 'quick add: due friday 4pm');
   eq(U('lunch at noon tomorrow').due, '2026-10-06', 'quick add: at noon tomorrow -> due tomorrow');
   eq(U('lunch at noon tomorrow').time, '12:00', 'quick add: at noon');
   eq(U('meet at 15:30').time, '15:30', 'quick add: "at 15:30"');
   eq(U('read Acts 2:38'), { priority: null, title: 'Read Acts 2:38' }, 'quick add: a bare colon number stays in the title');
   eq(U('buy 3 eggs'), { priority: null, title: 'Buy 3 eggs' }, 'quick add: numbers in titles are left alone');
-  eq(U('call Ana tomorrow afternoon'), { priority: null, plannedHalf: 'pm', plannedDay: '2026-10-06', title: 'Call Ana' }, 'quick add: no clock time = as before');
+  eq(U('call Max tomorrow afternoon'), { priority: null, plannedHalf: 'pm', plannedDay: '2026-10-06', title: 'Call Max' }, 'quick add: no clock time = as before');
   eq(U('book flights starts monday 9am'), { priority: null, start: '2026-10-12', startTime: '09:00', title: 'Book flights' }, 'quick add: "starts monday 9am" -> the time goes with Starts');
   const rep = U('water plants every monday 9am');
   eq([rep.recurrence, rep.time, rep.plannedHalf, rep.due, rep.plannedDay], ['FREQ=WEEKLY;BYDAY=MO', '09:00', 'am', undefined, undefined], 'quick add: a repeat with a time');

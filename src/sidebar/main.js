@@ -1,6 +1,6 @@
-/* A4 Sidebar: the left sidebar laid out like the Lifeworld desktop app
+/* Sidebar: the left sidebar laid out like the Lifeworld desktop app
  * (Lifeworld/src/renderer/components/Sidebar.tsx), approved from
- * 03 WiP/2026-09-22-business-ideas/mockup-sidebar.html on 2026-10-03.
+ * the sidebar mockup on 2026-10-03.
  *
  * One deliberate change from Lifeworld: the type hierarchy is flipped.
  * Section names (My Life, Rooms) are the largest text, group names
@@ -12,17 +12,17 @@
  * What each row does (every target below was read from that plugin's own
  * main.js, not guessed):
  *   Today    -> a4-today:open
- *   Planner  -> a4-planner:open (the A4 Planner, 2026-10-04)
+ *   Planner  -> a4-planner:open (the Planner, 2026-10-04)
  *   Focus    -> icor-for-life-focus:open-focus (the ICOR Focus map)
  *
  * Files tab chrome (0.7.0): the four toolbar buttons, the Audrey badge at the
  * bottom (opens the team roster) and the Terminal/Settings buttons on the
- * right sidebar's tab row. These used to come from ICOR Connect; A4 Sidebar
+ * right sidebar's tab row. These used to come from ICOR Connect; Sidebar
  * puts them there itself now, so Connect can stay off.
  *   Compass  -> left out: Lifeworld's Compass (Key Elements -> Goals ->
- *               Projects board) has no A4 equivalent, and the brief said not
+ *               Projects board) has no equivalent here, and the brief said not
  *               to invent one.
- *   My Life items open the item's existing dashboard where A4 has one
+ *   My Life items open the item's existing dashboard where the vault has one
  *   (LANDING below), else its landing note/base, else unfold to its notes.
  *   The small chevron always unfolds the notes inside.
  *
@@ -32,7 +32,7 @@
  *
  * Drag a NOTE onto any folder row to move it (fileManager.renameFile, so
  * links update). Folders are not draggable and there is no "New folder":
- * folders are the AI Team's job (CLAUDE.md hard rule 5).
+ * folders are made elsewhere, on purpose.
  * Right-click a note: open in new tab / to the right, rename, delete, reveal
  * in Files, plus everything other plugins add through the 'file-menu' event.
  *
@@ -83,21 +83,21 @@ const PROJECT_STATUS_ORDER = { active: 0, paused: 1, backlog: 2 };
 function sortProjects(list) {
   return list.slice().sort((a, b) => ((PROJECT_STATUS_ORDER[a.status] ?? 3) - (PROJECT_STATUS_ORDER[b.status] ?? 3)) || collator.compare(a.name, b.name));
 }
-// Work / Personal / Unsorted count = the projects A4 Projects lists as open
+// Work / Personal / Unsorted count = the projects Projects lists as open
 // (bug 2026-10-05: 16 shown, 14 listed; the 2 failed ones were counted). The
-// rule is A4 Projects' own (`isOpenProjectNote`), never a copy here. Without
-// A4 Projects there is no open list to match, so every project counts.
+// rule is Projects' own (`isOpenProjectNote`), never a copy here. Without
+// Projects there is no open list to match, so every project counts.
 function openRuleFrom(projectsPlugin) {
   return projectsPlugin && typeof projectsPlugin.isOpenProjectNote === 'function'
     ? (fm) => !!projectsPlugin.isOpenProjectNote(fm) : () => true;
 }
 // The list that folds out under Work / Personal / Unsorted shows the same
-// open projects as the count (ruling 2026-10-05, Audrey): failed, done and
+// open projects as the count (ruling 2026-10-05): failed, done and
 // dropped ones stay reachable from the Projects page's Closed section.
 const openProjects = (members) => members.filter((m) => m.open);
 const openProjectCount = (members) => openProjects(members).length;
 
-// A4's existing dashboards for the Lifeworld items that open one.
+// the owner's existing dashboards for the Lifeworld items that open one.
 const LANDING = {
   'Client Analytics': { command: 'a4-analytics:open-client-analytics' },
   Finance: { command: 'a4-finance:open-finance-summary' },
@@ -174,7 +174,7 @@ function findRoomFolders(rootFolderNames) {
   }).filter(Boolean);
 }
 
-// My Life groups: Lifeworld's order; folders A4 does not have are skipped; any
+// My Life groups: Lifeworld's order; folders the vault does not have are skipped; any
 // My Life folder no group names lands in "More" (Lifeworld does the same).
 function buildLifeGroups(myLifeFolderNames) {
   const have = new Set(myLifeFolderNames);
@@ -193,7 +193,7 @@ function itemLabel(name) { return SBC.labels[name] || name; }
 function itemIcon(name) { return SBC.icons[name] || 'folder'; }
 function itemShowsCount(name) { return !SBC.noCount.includes(name); }
 
-// What clicking a My Life item does, in order: an A4 dashboard command that
+// What clicking a My Life item does, in order: a dashboard command that
 // is actually registered; else a landing note named like the folder; else a
 // single .base in the folder; else unfold.
 function resolveLanding(name, folderPath, childPaths, hasCommand) {
@@ -218,9 +218,8 @@ function countNotes(allFilePaths, folderPaths) {
   return out;
 }
 
-/* Sort order (0.8.0). Approved mockups: 03 WiP/2026-09-22-business-ideas/
- * mockup-sidebar-sort-settings.html (2026-10-07) and 03 WiP/2026-10-08-sort-
- * options-in-a4-plugin/mockup.html (2026-10-08, option A, no drag order).
+/* Sort order (0.8.0). Approved mockups: the sort settings mockup
+ * (2026-10-07) and the sort options mockup (2026-10-08, option A, no drag order).
  * Replaces Explorer Order Editor + Custom File Explorer sorting, whose saved
  * lists froze (new notes dropped to the bottom). Nothing here is a saved list
  * of notes: the order is worked out from the names on every render, so a new
@@ -289,7 +288,7 @@ function sortRuleFor(folderPath, sort) {
   return null;
 }
 
-// Date at the START of a name, in A4's naming styles: 2026-10-08..., 10-08-2026,
+// Date at the START of a name, in the usual naming styles: 2026-10-08..., 10-08-2026,
 // quick captures "10-08-2026 - 2-05 PM" and older "10-08-2026 - 1328".
 // -> { day: 20261008, time: minutes or -1 } or null. Impossible dates are not dates.
 function dateKey(name) {
@@ -488,10 +487,10 @@ function countNotesExcluding(allFilePaths, folderPaths, hidden) {
 
 // Toolbar (approved 2026-10-03; "New unique note" added and the commands made
 // our own in 0.7.0, plugin overhaul step 3, mockup approved 2026-10-06).
-// The same four buttons sit on BOTH the A4 tab and the Files tab, in this
+// The same four buttons sit on BOTH the Sidebar tab and the Files tab, in this
 // order, with the icons and tooltips already known. They used to call the
 // ICOR Connect plugin's commands; that plugin is switched off now, so the
-// commands below are A4 Sidebar's own. Three of them only run an Obsidian core
+// commands below are Sidebar's own. Three of them only run an Obsidian core
 // command; the canvas one is a few lines of our own.
 const TOOLS = [
   { id: 'daily', icon: 'calendar-check', label: "Open today's daily note", command: 'a4-sidebar:open-daily-note' },
@@ -568,7 +567,7 @@ function canvasPath(date, exists) {
   return p;
 }
 
-// The A4 mark (06 AI Team/AI Team Knowledge/Brand/a4-mark.svg geometry): ink
+// The owner's badge mark (companion add-on territory, leaves with the badge): ink
 // strokes take the text colour, the crossbar the marker orange (styles.css),
 // so one SVG serves light and dark.
 function a4Mark() {
@@ -875,7 +874,7 @@ class A4SidebarView extends ItemView {
       const box = parent.createDiv();
       const members = openProjects(this.projectsOf(v.kind));
       if (v.hideEmpty && !members.length) { box.remove(); return; }
-      // A4 Projects (0.6.0, 2026-10-04): the Work and Personal items open its
+      // Projects (0.6.0, 2026-10-04): the Work and Personal items open its
       // overview at that list, and a project opens its project page. The
       // arrow still folds the list; Cmd/Ctrl-click a project opens its note.
       const pjCmd = v.kind === 'unsorted' ? null : `a4-projects:open-${v.kind}`;
@@ -1047,7 +1046,7 @@ class A4SidebarView extends ItemView {
   // Copy dropped outside files into `folder`. Uses Obsidian's own import
   // routine (the one its Files list calls), which numbers a clashing name
   // ("photo 1.png") and never overwrites. Dropped folders are skipped:
-  // folders are the AI Team's job (CLAUDE.md hard rule 5).
+  // folders are made elsewhere, on purpose.
   async importExternal(dt, folder) {
     const { files, folders } = collectDropped(dt);
     const where = showName(folder.name);
@@ -1492,7 +1491,7 @@ class A4SidebarPlugin extends Plugin {
 }
 
 /* ------------------------------------------------------------------ *
- * Settings page: Settings > A4 Sidebar > Sort order (approved mockups
+ * Settings page: Settings > LifeWorld > Sidebar > Sort order (approved mockups
  * 2026-10-07 and 2026-10-08; drawn with Obsidian's own controls).
  * ------------------------------------------------------------------ */
 class FolderPickModal extends FuzzySuggestModal {

@@ -7,7 +7,7 @@ import { asList } from './lists';
 // Reminders (reminder setup mockup, approved 2026-10-05; GL-002
 // "Task reminders"). TaskNotes' own `reminders` list, in its format:
 // { id: 'rem_<ms>', type: 'relative', relatedTo: 'due' | 'scheduled',
-// offset: 'PT0M' | '-PT15M' | '-PT1H' | '-P1D' ... }. A4 uses the first
+// offset: 'PT0M' | '-PT15M' | '-PT1H' | '-P1D' ... }. LifeWorld uses the first
 // relative entry on the field that rings: `due` for a one-off task,
 // `scheduled` (its start) for a repeating one. Amounts are minutes BEFORE the
 // time (0 = at the time). A task with no clock time never rings.

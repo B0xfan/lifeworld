@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-/* Tests for A4 Projects 0.6.0 "task links": the status circle, priority dot,
+/* Tests for Projects 0.6.0 "task links": the status circle, priority dot,
  * title and dates drawn on every link to a task note (TaskNotes' old inline
  * task look, restored 2026-10-08). Pure parts only; the drawing and ticking
- * were checked in a hidden test Obsidian (Dex journal 2026-10-08).
+ * were checked in a hidden test Obsidian (checked 2026-10-08).
  * Built file for behaviour, src/ for text (tests/lib/paths.js). */
 'use strict';
 const path = require('path');
@@ -10,7 +10,7 @@ const fs = require('fs');
 const Module = require('module');
 
 const { part, STYLES, source } = require('./lib/paths');
-const VAULT = require('./lib/paths').vault; // the owner's vault with A4_VAULT, else the frozen copy
+const VAULT = require('./lib/paths').vault; // the owner's vault with LIFEWORLD_VAULT, else the frozen copy
 const MAIN = 'a4-projects';
 
 class TFile {}
@@ -77,7 +77,7 @@ eq(L.wikilinksIn('[[a]]\n[[b', 0).length, 1, 'links: an unclosed link is not a l
 // wiring (static)
 const src = fs.readFileSync(source('a4-projects'), 'utf8');
 ok(/this\.taskLinks = new TaskLinks\(this\);\s*this\.taskLinks\.start\(\);/.test(src), 'wiring: task links start on load');
-ok(/await this\.plugin\.completeTask\(t, !wasDone\)/.test(src.slice(src.indexOf('class TaskLinks'))), 'wiring: a circle tick uses the same completeTask as every A4 tick');
+ok(/await this\.plugin\.completeTask\(t, !wasDone\)/.test(src.slice(src.indexOf('class TaskLinks'))), 'wiring: a circle tick uses the same completeTask as every tick');
 ok(/if \(this\.skipSource\(src\)\) return;/.test(src) && /if \(!src \|\| this\.skipSource\(src\)\) return Decoration\.none;/.test(src), 'wiring: no widgets on task notes (reading and live preview)');
 ok(!/processFrontMatter|vault\.modify|vault\.process/.test(src.slice(src.indexOf('class TaskLinks'), src.indexOf("// The Find window"))), 'wiring: task links never write notes themselves');
 const css = fs.readFileSync(STYLES, 'utf8');

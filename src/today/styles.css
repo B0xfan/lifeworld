@@ -1,5 +1,5 @@
-/* A4 Today. Every selector carries the html:not(#a4t-guard) prefix so the
- * theme cannot outrank it (Dex journal 2026-09-28); keep it on new rules. */
+/* Today. Every selector carries the html:not(#a4t-guard) prefix so the
+ * theme cannot outrank it (checked 2026-09-28); keep it on new rules. */
 html:not(#a4t-guard) .a4t-root, html:not(#a4t-guard) .a4t-capture-modal {
   --a4t-bg: var(--ink, var(--background-primary));
   --a4t-bg2: var(--ink-2, var(--background-secondary));

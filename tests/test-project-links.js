@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-/* Tests for project links (A4 Today 1.2.6, A4 Planner 1.0.5, A4 Projects 0.1.5):
+/* Tests for project links (Today 1.2.6, Planner 1.0.5, Projects 0.1.5):
  * an Active projects chip and a task's project label open the project's page
- * in A4 Projects (Cmd/Ctrl-click: a new tab), or the note when A4 Projects is
+ * in Projects (Cmd/Ctrl-click: a new tab), or the note when Projects is
  * off or has no page for it. No Obsidian needed: `node tests/test-project-links.js`.
  * The click-through in real Obsidian is the hidden-sandbox run (session scratch). */
 'use strict';
@@ -27,7 +27,7 @@ function eq(a, b, name) { const x = JSON.stringify(a); const y = JSON.stringify(
 /* ---- 1. the shared helper is the same text in Today and Planner ---------- */
 function extractAsync(s, name) { const m = new RegExp(`^async function ${name}\\(`, 'm').exec(s); return m ? s.slice(m.index, s.indexOf('\n}\n', m.index) + 2) : null; }
 const hT = extractAsync(src.today, 'openProjectPage'); const hP = extractAsync(src.planner, 'openProjectPage');
-ok(hT && hP && hT === hP, 'openProjectPage identical in A4 Today and A4 Planner');
+ok(hT && hP && hT === hP, 'openProjectPage identical in Today and Planner');
 // wikilinkTarget, which it uses, is shared too
 // Updated in section 7: one copy in src/core/tasks.js (tests/test-core.js checks no plugin keeps its own).
 const { fromCore } = require('./lib/core-use');
@@ -65,7 +65,7 @@ const ctrlClick = { metaKey: false, ctrlKey: true };
 async function helperCases(label, mod) {
   const open = mod.logic.openProjectPage;
   ok(typeof open === 'function', `${label}: helper exported`);
-  // A4 Projects on and has the page
+  // Projects on and has the page
   let calls = [];
   let app = fakeApp({ projects: { openProjectPage: async (ref, opts) => { calls.push([ref, opts]); return true; } } });
   eq(await open(app, NOTE, plainClick, NOTE), 'page', `${label}: chip -> page`);
@@ -78,9 +78,9 @@ async function helperCases(label, mod) {
   eq(calls, [[NOTE, { newTab: true }]], `${label}: Ctrl-click asks for a new tab`);
   calls = [];
   await open(app, '[[Garden Plan]]', null, 'Tasks/x.md');
-  eq(calls, [['[[Garden Plan]]', { newTab: false }]], `${label}: a task link goes to A4 Projects as is (no event = plain)`);
+  eq(calls, [['[[Garden Plan]]', { newTab: false }]], `${label}: a task link goes to Projects as is (no event = plain)`);
   ok(!app.log.some((l) => l[0] === 'openFile'), `${label}: no note opened when the page opened`);
-  // A4 Projects off: the note, in a new tab as before
+  // Projects off: the note, in a new tab as before
   app = fakeApp();
   eq(await open(app, NOTE, plainClick, NOTE), 'note', `${label}: off -> note`);
   eq(app.log.filter((l) => l[0] === 'openFile'), [['openFile', 'tab', NOTE]], `${label}: off -> note in a new tab`);
@@ -91,11 +91,11 @@ async function helperCases(label, mod) {
   eq(await open(app, '[[Garden Plan#Notes]]', plainClick, 'Tasks/x.md'), 'note', `${label}: heading link -> note`);
   app = fakeApp();
   eq(await open(app, 'Missing Project', plainClick, 'Tasks/x.md'), false, `${label}: off + unknown project -> nothing`);
-  // A4 Projects on but no page for it, an older A4 Projects, or a failure: the note
+  // Projects on but no page for it, an older Projects part, or a failure: the note
   app = fakeApp({ projects: { openProjectPage: async () => false } });
   eq(await open(app, NOTE, plainClick, NOTE), 'note', `${label}: no page -> note`);
   app = fakeApp({ projects: { openProject: () => {} } });
-  eq(await open(app, NOTE, plainClick, NOTE), 'note', `${label}: older A4 Projects without the API -> note`);
+  eq(await open(app, NOTE, plainClick, NOTE), 'note', `${label}: older Projects part without the API -> note`);
   const err = console.error; console.error = () => {};
   app = fakeApp({ projects: { openProjectPage: async () => { throw new Error('boom'); } } });
   eq(await open(app, NOTE, plainClick, NOTE), 'note', `${label}: page error -> note`);
@@ -104,7 +104,7 @@ async function helperCases(label, mod) {
   eq(await open(fakeApp(), '', plainClick, NOTE), false, `${label}: empty project -> nothing`);
 }
 
-/* ---- 4. A4 Projects' public API ------------------------------------------- */
+/* ---- 4. Projects' public API ------------------------------------------- */
 async function projectsCases() {
   const P = part(FILES.projects);
   const projects = [

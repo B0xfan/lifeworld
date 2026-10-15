@@ -1,6 +1,6 @@
 // Manual tool, not part of npm test: old vs new built files. Every moved task helper the builds
 // expose is called on the same inputs; the return value AND the changed input are compared as JSON.
-// Inputs: every task note in the vault (A4_VAULT, read only; else the frozen copy) plus edge values.
+// Inputs: every task note in the vault (LIFEWORLD_VAULT, read only; else the frozen copy) plus edge values.
 // Run after `npm run build`, with an old checkout built the same way:
 //   node tests/tools/compare-builds.js <old repo root> [new repo root, default this repo]
 // Exit 1 on any difference. To see it fail, plant a change in one build (e.g. order + 1 in applyMove).

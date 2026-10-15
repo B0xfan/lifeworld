@@ -104,7 +104,7 @@ function taskFromFrontmatter(fm, path, basename) {
     status: fm.status == null || fm.status === '' ? 'open' : String(fm.status),
     priority: fm.priority == null ? '' : String(fm.priority),
     due,
-    // Same rule as the A4 Daily Planner: due always wins; planned_day only
+    // Same rule as the old daily planner: due always wins; planned_day only
     // places an undated task. A repeating task is placed by its rule instead.
     plannedDay: due || toDayStr(fm.planned_day),
     // A clock time picks the half of the day (before 1 PM is Morning).
