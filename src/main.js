@@ -104,6 +104,9 @@ class LifeWorldPlugin extends Plugin {
     this.applying = Promise.resolve();
     for (const entry of PART_LIST) if (this.wanted(entry[0].id)) await this.startPart(entry);
     this.addSettingTab(new LifeWorldSettingTab(this.app, this));
+    // A tab open before the later parts started (Today before the Planner) drew them as off: all open
+    // tabs draw again now, or at a cold start once the layout is back (a tab not yet loaded is skipped).
+    this.app.workspace.onLayoutReady(() => { if (!this.gone) this.redrawViews(); });
   }
 
   // The Parts switches; a part never switched is on, so an existing setup starts with all four.

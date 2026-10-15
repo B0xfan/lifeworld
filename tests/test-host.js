@@ -93,7 +93,8 @@ const adapter = {
   async read(p) { const s = DATA.test(p) ? disk[p.replace(DATA, '')] : files[p]; if (s === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return s; },
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
-const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
+let openTabs = {}; // tab type -> leaves already open when LifeWorld starts
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { onLayoutReady: (f) => f(), detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -718,6 +719,14 @@ const start = async (data) => {
   await sw.host.setPart('a4-planner', false);
   eq(drawn, ['projects', 'sidebar'], 'a part switched off: the open Projects and Sidebar tabs draw again');
   sw.host.unload();
+  // A Today tab already open when LifeWorld starts draws again once every part is running, so its
+  // Planner button shows (it was drawn before the Planner started).
+  const early = []; const from = log.length;
+  openTabs = { 'a4-today-view': [{ view: { scheduleRefresh: () => early.push(log.slice(from).includes('started a4-sidebar') ? 'after all parts' : 'too early') } }] };
+  const st = await start({});
+  openTabs = {};
+  eq(early, ['after all parts'], 'an open Today tab draws again once every part has started');
+  st.host.unload();
   // Today: the Planner button and the Planner shortcut go while the Planner is off, and come back.
   const TV = LW.parts['a4-today'].TodayView.prototype;
   const tp = Object.create(LW.parts['a4-today'].prototype);
