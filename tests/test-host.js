@@ -859,13 +859,18 @@ const start = async (data) => {
     // Drawn by its own render; a failing one shows the usual line, the page goes on.
     const view = { widgetFailed: TV.widgetFailed, data: {} };
     const cardEl = { removeClass() {} };
-    const body = fakeEl('div');
+    // Each draw gets a fresh body in the old one's place (review p2-s7b); `body` follows it.
+    const gc0 = global.createDiv; global.createDiv = () => fakeEl('div');
+    let body = fakeEl('div');
+    const follow = (b) => { b.replaceWith = (f) => { body = follow(f); }; return b; };
+    follow(body);
     await TV.renderWidget.call(view, 'tides', body, cardEl);
     eq(body.kids.map((k) => k.text), ['tides drawn'], "an add-on widget draws with its own render");
     const rmBad = ex.host.addTodayWidget({ id: 'bad', name: 'Bad', render: async () => { throw new Error('planted'); } });
     const errs2 = []; console.error = (...a) => errs2.push(a[1]);
     try { await TV.renderWidget.call(view, 'bad', body, cardEl); } finally { console.error = ce; }
     eq([body.kids.map((k) => k.text), errs2], [['this part could not be drawn'], ['bad']], 'a failing add-on widget shows "this part could not be drawn" and is logged');
+    global.createDiv = gc0;
     rmBad(); rmW(); await tick();
     eq([TL.EXTRA_WIDGETS.length, today.layout.zones.c1.includes('tides')], [0, false], 'removed: the widget leaves the layout (its saved place stays in the file)');
     eq(JSON.parse(disk[ex.dir])['a4-today'].layout.zones.c1, ['tides'], 'adding and removing an add-on widget writes nothing to the settings file');
@@ -877,6 +882,73 @@ const start = async (data) => {
     page.widgetEl = (id) => page.widgetEls.get(id) || (page.widgetEls.set(id, card(id)), page.widgetEls.get(id));
     TV.renderWidgets.call(page);
     eq([gone.sort(), page.widgetEls.has('tides'), page.widgetEls.has('journal')], [['journal', 'tides'], false, true], 'open page: a removed add-on widget leaves and is forgotten, a hidden one is kept for later');
+    ex.host.unload();
+  }
+
+  // ---- Section 7 review fixes (p2-s7b) ----
+  {
+    const SB = LW.parts['a4-sidebar'].__logic;
+    const TL = LW.parts['a4-today'].logic;
+    const TV = LW.parts['a4-today'].TodayView.prototype;
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const ex = await start({});
+    ex.host.running['a4-sidebar'].extrasChanged = () => {};
+    const throwsMsg = (f) => { try { f(); return null; } catch (e) { return e.message; } };
+    const ce = console.error;
+    // #2: the Sidebar's own Expand/Collapse button id is taken; so are the weather strip's class names.
+    ok(/already a Sidebar button "toggle-all"/.test(throwsMsg(() => ex.host.addToolbarButton({ id: 'toggle-all', label: 'X', icon: 'x', onClick() {} }))), "a toolbar button cannot take the Sidebar's Expand/Collapse id");
+    for (const id of ['main', 'upd', 'item']) ok(/already a Today widget/.test(throwsMsg(() => ex.host.addTodayWidget({ id, name: 'X', render() {} }))), `a Today widget cannot be "${id}" (its card would match a weather strip part)`);
+    // #6: ids are letters, digits, dash and underscore only.
+    for (const id of ['my widget', 'a"b', 'a.b']) ok(/letters, digits/.test(throwsMsg(() => ex.host.addSidebarItem({ id, label: 'X', icon: 'x', onClick() {} }))), `an id like ${JSON.stringify(id)} is refused`);
+    eq([SB.EXTRA.nav.length, SB.EXTRA.tools.length, TL.EXTRA_WIDGETS.length], [0, 0, 0], 'refused ids add nothing');
+    // #1: two overlapping draws of one async widget; the late first one (drawing or failing) never shows.
+    const gc = global.createDiv; global.createDiv = () => fakeEl('div');
+    let release; const gate = new Promise((r) => { release = r; });
+    let draws = 0;
+    const rm1 = ex.host.addTodayWidget({ id: 'slow', name: 'Slow', render: async (body) => { const n1 = ++draws; if (n1 === 1) { await gate; body.createDiv({ text: 'old' }); } else body.createDiv({ text: 'new' }); } });
+    let shown = fakeEl('div');
+    const card = { removeClass() {} };
+    const swap = (b) => { b.replaceWith = (f) => { if (shown === b) shown = swap(f); }; return b; };
+    swap(shown);
+    const view = { widgetFailed: TV.widgetFailed, data: {} };
+    const first = TV.renderWidget.call(view, 'slow', shown, card);
+    await TV.renderWidget.call(view, 'slow', shown, card);
+    release(); await first;
+    eq(shown.kids.map((k) => k.text), ['new'], 'a slow earlier draw that finishes late does not land on the newer one');
+    let fail; const failGate = new Promise((r) => { fail = r; });
+    draws = 0;
+    const rm2 = ex.host.addTodayWidget({ id: 'flaky', name: 'Flaky', render: async (body) => { if (++draws === 1) { await failGate; throw new Error('planted'); } body.createDiv({ text: 'fresh' }); } });
+    console.error = () => {};
+    try {
+      const a = TV.renderWidget.call(view, 'flaky', shown, card);
+      await TV.renderWidget.call(view, 'flaky', shown, card);
+      fail(); await a;
+    } finally { console.error = ce; }
+    eq(shown.kids.map((k) => k.text), ['fresh'], 'a slow earlier draw that fails late does not clear the newer one');
+    rm1(); rm2();
+    // #8: the Files tab toolbar draws the add-on's button after LifeWorld's own, once per change.
+    const fileTool = (o) => { const d = fakeEl('div'); d.cls.push(o.cls); Object.assign(d.attr, o.attr); d.dataset = {}; return d; };
+    global.createDiv = (o) => (o ? fileTool(o) : fakeEl('div'));
+    const bar = { kids: [], firstChild: null, addClass() {},
+      own: () => bar.kids.filter((k) => k.cls.some((c) => /a4sb-files-tool/.test(c)) || k.attr['data-tool'] === 'canvas2'),
+      querySelector: () => bar.own()[0] || null,
+      querySelectorAll: () => bar.own().map((k) => ({ remove: () => bar.kids.splice(bar.kids.indexOf(k), 1) })),
+      insertBefore(b) { bar.kids.push(b); } };
+    const files = { querySelector: () => bar };
+    const ran = [];
+    const plugin = { app: {}, runTool: (c) => ran.push(c), showBases: () => ran.push('bases') };
+    const chrome = new SB.FilesChrome(plugin);
+    const rmT = ex.host.addToolbarButton({ id: 'canvas2', label: 'Another canvas', icon: 'layout-dashboard', onClick: () => ran.push('canvas2') });
+    chrome.refresh(); chrome.attachTools(files);
+    const ids = () => bar.kids.map((k) => k.attr['data-tool']);
+    eq(ids(), ['daily', 'unique', 'canvas', 'graph', 'bases', 'canvas2'], "Files tab: the add-on's button sits after LifeWorld's own");
+    await bar.kids[5].fire('click'); await tick();
+    eq(ran, ['canvas2'], "Files tab: the add-on's button runs its click");
+    chrome.attachTools(files);
+    eq(bar.kids.length, 6, 'Files tab: drawn once, not again on the next attach');
+    rmT(); chrome.refresh(); chrome.attachTools(files);
+    eq(ids(), ['daily', 'unique', 'canvas', 'graph', 'bases'], 'Files tab: a removed button leaves after the next change');
+    global.createDiv = gc;
     ex.host.unload();
   }
 

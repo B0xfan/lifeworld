@@ -521,7 +521,8 @@ const BASES_TOOL = { id: 'bases', icon: 'database', label: 'Open a base' };
 // shortcut: kept for this LifeWorld start only; an add-on adds them again when LifeWorld restarts.
 const EXTRA = { nav: [], tools: [] };
 function addExtra(kind, def) {
-  const taken = kind === 'nav' ? NAV.concat(EXTRA.nav) : TOOLS.concat([BASES_TOOL], EXTRA.tools);
+  // 'toggle-all' is the Expand/Collapse button, found by that id (syncToggleAll; review p2-s7b).
+  const taken = kind === 'nav' ? NAV.concat(EXTRA.nav) : TOOLS.concat([BASES_TOOL, { id: 'toggle-all' }], EXTRA.tools);
   if (taken.some((x) => x.id === def.id)) throw new Error(`LifeWorld: there is already a Sidebar ${kind === 'nav' ? 'item' : 'button'} "${def.id}"`);
   EXTRA[kind].push(def);
   return () => { const i = EXTRA[kind].indexOf(def); if (i !== -1) EXTRA[kind].splice(i, 1); };
@@ -1567,7 +1568,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
 module.exports = A4SidebarPlugin;
 module.exports.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 module.exports.__logic = {
-  NAV, LANDING, FILE_CAP, SBC, A4SidebarView, EXTRA, runExtra, extraButton,
+  NAV, LANDING, FILE_CAP, SBC, A4SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

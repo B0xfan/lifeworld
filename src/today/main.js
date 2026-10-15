@@ -706,7 +706,8 @@ const EXTRA_WIDGETS = [];
 const allWidgets = () => WIDGETS.concat(EXTRA_WIDGETS);
 const isWidget = (id) => allWidgets().some((w) => w.id === id);
 function addExtraWidget(def) {
-  if (isWidget(def.id) || LATER_WIDGETS.some((w) => w.id === def.id)) throw new Error(`LifeWorld: there is already a Today widget "${def.id}"`);
+  // main, upd, item: the card's a4t-w-<id> class would match parts of the weather strip (review p2-s7b).
+  if (isWidget(def.id) || LATER_WIDGETS.some((w) => w.id === def.id) || ['main', 'upd', 'item'].includes(def.id)) throw new Error(`LifeWorld: there is already a Today widget "${def.id}"`);
   const w = { ...def, desc: typeof def.desc === 'string' ? def.desc : '', zone: ['c1', 'c2', 'c3'].includes(def.zone) ? def.zone : 'c3' };
   EXTRA_WIDGETS.push(w);
   return () => { const i = EXTRA_WIDGETS.indexOf(w); if (i !== -1) EXTRA_WIDGETS.splice(i, 1); };
@@ -899,7 +900,7 @@ class A4TodayPlugin extends Plugin {
     this.openOnStartup = normalizeOpenOnStartup(saved.openOnStartup);
     this.userName = normalizeUserName(saved.userName);
     // Runs the calendar sync now: (refresh) => Promise<boolean>. Set through LifeWorld's setCalendarSync
-    // by an add-on (A4 extras); none = the picker saves the choice and the next sync picks it up.
+    // by a companion add-on; none = the picker saves the choice and the next sync picks it up.
     this.calendarSync = null;
     this.addSettingTab(new TodaySettingTab(this.app, this));
     // First run after the picker shipped: adopt what the sync is already
@@ -1939,6 +1940,10 @@ class TodayView extends ItemView {
   renderWidget(id, body, el) {
     body.empty();
     el.removeClass('a4t-card', 'a4t-warn-card', 'a4t-strip', 'a4t-link');
+    const x = EXTRA_WIDGETS.find((w) => w.id === id);
+    // An add-on's draw gets a fresh body each time: an earlier slow draw that finishes or fails late
+    // lands in the old, detached one, never over the newer drawing (review p2-s7b).
+    if (x) { const fresh = createDiv({ cls: 'a4t-wbody' }); body.replaceWith(fresh); body = fresh; }
     try {
       if (id === 'weather') return this.renderWeather(body, el);
       if (id === 'morning') return this.renderTaskCard(body, el, 'Morning', 'Before one', this.data.lists.morning, 'nothing planned for the morning');
@@ -1950,7 +1955,6 @@ class TodayView extends ItemView {
       if (id === 'calendar') return this.renderCalendar(body, el);
       if (id === 'projects') return this.renderProjects(body, el);
       if (id === 'journal') return this.renderJournal(body, el);
-      const x = EXTRA_WIDGETS.find((w) => w.id === id);
       if (x) return Promise.resolve(x.render(body, el)).catch((e) => this.widgetFailed(id, body, e));
     } catch (e) {
       this.widgetFailed(id, body, e);

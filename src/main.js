@@ -146,7 +146,7 @@ class LifeWorldPlugin extends Plugin {
     this.addChild(part);
   }
 
-  // For an add-on (A4 extras, phase 2 section 7): the calendar sync the Today page runs after a calendar
+  // For a companion add-on (phase 2 section 7): the calendar sync the Today page runs after a calendar
   // tick and for "Refresh list", (refresh) => Promise<boolean>; anything but a function removes it.
   // Kept here, so it survives the Today page being switched off and on. -> a function that removes it.
   setCalendarSync(fn) {
@@ -156,12 +156,13 @@ class LifeWorldPlugin extends Plugin {
     return () => { if (this.calendarSync === fn) this.setCalendarSync(null); };
   }
 
-  // For an add-on (A4 extras, phase 2 section 7), each -> a function that removes what it added:
+  // For a companion add-on (phase 2 section 7), each -> a function that removes what it added:
   //   addSidebarItem({ id, label, icon, onClick })    a row under Today, Planner and Focus in the Sidebar
   //   addToolbarButton({ id, label, icon, onClick })  a button on the Sidebar's toolbar and the Files tab's
   //   addTodayWidget({ id, name, desc, zone, render(body, el) })  a widget on the Today page, placed, moved
-  //     and hidden like the others; zone 'c1' | 'c2' | 'c3' (default 'c3'); render draws into body on every
-  //     refresh (el.addClass('a4t-card') for the card look). icon is an Obsidian icon name.
+  //     and hidden like the others; zone 'c1' | 'c2' | 'c3' (default 'c3'); render draws into a fresh body on
+  //     every refresh (el.addClass('a4t-card') for the card look). icon is an Obsidian icon name; an id is
+  //     letters, digits, dash and underscore.
   // Errors in onClick or render are logged and never break the page. Kept while the Sidebar or the
   // Today page is switched off, shown again when it is back on.
   addSidebarItem(def) { return this.addExtra('a4-sidebar', 'Sidebar item', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('nav', d)); }
@@ -171,6 +172,7 @@ class LifeWorldPlugin extends Plugin {
   addExtra(part, what, def, texts, fn, add) {
     const bad = !def || typeof def !== 'object' || texts.some((k) => typeof def[k] !== 'string' || !def[k].trim()) || typeof def[fn] !== 'function';
     if (bad) throw new TypeError(`LifeWorld: a ${what} needs ${texts.join(', ')} (text) and ${fn} (a function)`);
+    if (!/^[A-Za-z0-9_-]+$/.test(def.id)) throw new TypeError(`LifeWorld: a ${what} id is letters, digits, dash and underscore only`);
     const changed = () => { const p = this.running[part]; if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => p.extrasChanged()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e)); };
     const remove = add({ ...def });
     changed();

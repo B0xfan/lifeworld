@@ -678,7 +678,7 @@ const startupChecks = (async () => {
   const tab = src0.slice(src0.indexOf('class TodaySettingTab'));
   ok(/\.setName\('Your name'\)\s*\.setDesc\('Shown in the greeting\. Leave empty for none\.'\)\s*\.addText\(\(t\) => \{\s*t\.setPlaceholder\('Optional'\)/.test(tab), 'Your name row: wording and placeholder as drawn');
   ok([...tab.matchAll(/\.setName\('([^']+)'\)/g)][0][1] === 'Your name', 'Your name is the first Today page row, as drawn');
-  // The calendar sync is an add-on's (A4 extras, section 7): without one there is nothing to run.
+  // The calendar sync is a companion add-on's (section 7): without one there is nothing to run.
   ok(!on.p.canRunSync() && (await on.p.runCalendarSync(true)) === false && on.p.scheduleCalendarSync(() => {}) === false, 'no add-on: no sync is run, the picker only saves');
   const runs = []; let release;
   on.p.calendarSync = (refresh) => { runs.push(refresh); return new Promise((r) => { release = r; }); };
