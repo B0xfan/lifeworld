@@ -16,6 +16,7 @@ const PART_LIST = [
   [require('./planner/manifest.json'), require('./planner/main')],
   [require('./sidebar/manifest.json'), require('./sidebar/main')],
 ];
+const PART_MAIN = Object.fromEntries(PART_LIST.map(([m, P]) => [m.id, P]));
 
 // Settings › Parts, in the approved mockup's order and words (lifeworld-step0-mockup.html).
 // Today and the Planner show Projects' tasks, so they cannot be on without it.
@@ -153,6 +154,28 @@ class LifeWorldPlugin extends Plugin {
     if (this.running['a4-today']) this.running['a4-today'].calendarSync = this.calendarSync;
     this.redrawCalendarPicker();
     return () => { if (this.calendarSync === fn) this.setCalendarSync(null); };
+  }
+
+  // For an add-on (A4 extras, phase 2 section 7), each -> a function that removes what it added:
+  //   addSidebarItem({ id, label, icon, onClick })    a row under Today, Planner and Focus in the Sidebar
+  //   addToolbarButton({ id, label, icon, onClick })  a button on the Sidebar's toolbar and the Files tab's
+  //   addTodayWidget({ id, name, desc, zone, render(body, el) })  a widget on the Today page, placed, moved
+  //     and hidden like the others; zone 'c1' | 'c2' | 'c3' (default 'c3'); render draws into body on every
+  //     refresh (el.addClass('a4t-card') for the card look). icon is an Obsidian icon name.
+  // Errors in onClick or render are logged and never break the page. Kept while the Sidebar or the
+  // Today page is switched off, shown again when it is back on.
+  addSidebarItem(def) { return this.addExtra('a4-sidebar', 'Sidebar item', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('nav', d)); }
+  addToolbarButton(def) { return this.addExtra('a4-sidebar', 'toolbar button', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('tools', d)); }
+  addTodayWidget(def) { return this.addExtra('a4-today', 'Today widget', def, ['id', 'name'], 'render', (d) => PART_MAIN['a4-today'].addExtraWidget(d)); }
+
+  addExtra(part, what, def, texts, fn, add) {
+    const bad = !def || typeof def !== 'object' || texts.some((k) => typeof def[k] !== 'string' || !def[k].trim()) || typeof def[fn] !== 'function';
+    if (bad) throw new TypeError(`LifeWorld: a ${what} needs ${texts.join(', ')} (text) and ${fn} (a function)`);
+    const changed = () => { const p = this.running[part]; if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => p.extrasChanged()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e)); };
+    const remove = add({ ...def });
+    changed();
+    let done = false;
+    return () => { if (done) return; done = true; remove(); changed(); };
   }
 
   // A sync that arrives while Settings is open: the Calendars picker draws again (review p2-s7).

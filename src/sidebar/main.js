@@ -516,6 +516,27 @@ const CORE_TOOLS = {
 // upkeep. TaskNotes' starter views are left out (TaskNotes is not used;
 // the files stay where they are).
 const BASES_TOOL = { id: 'bases', icon: 'database', label: 'Open a base' };
+// Added by an add-on through LifeWorld (phase 2 section 7): rows under Today/Planner/Focus ('nav') and
+// toolbar buttons on both toolbars ('tools'), { id, label, icon, onClick }, in the order added.
+// shortcut: kept for this LifeWorld start only; an add-on adds them again when LifeWorld restarts.
+const EXTRA = { nav: [], tools: [] };
+function addExtra(kind, def) {
+  const taken = kind === 'nav' ? NAV.concat(EXTRA.nav) : TOOLS.concat([BASES_TOOL], EXTRA.tools);
+  if (taken.some((x) => x.id === def.id)) throw new Error(`LifeWorld: there is already a Sidebar ${kind === 'nav' ? 'item' : 'button'} "${def.id}"`);
+  EXTRA[kind].push(def);
+  return () => { const i = EXTRA[kind].indexOf(def); if (i !== -1) EXTRA[kind].splice(i, 1); };
+}
+// An add-on's click: an error (thrown or a rejected promise) is logged, never breaks the Sidebar.
+function runExtra(x) {
+  return Promise.resolve().then(() => x.onClick()).catch((e) => console.error(`LifeWorld: add-on button ${x.id} failed`, e));
+}
+// One add-on button: Obsidian's icon names (setIcon), as the toolbar's own buttons use.
+function extraButton(parent, cls, x) {
+  const b = parent.createDiv({ cls, attr: { 'aria-label': x.label, 'data-tool': x.id } });
+  setIcon(b, x.icon);
+  b.addEventListener('click', () => runExtra(x));
+  return b;
+}
 // The faint folder name: the folder the base sits in, or the one above when
 // the base is named after its own folder (People.base in Contacts/People
 // reads "Contacts"); a room's number is dropped ("Inner World").
@@ -713,6 +734,7 @@ class A4SidebarView extends ItemView {
     const bb = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': BASES_TOOL.label, 'data-tool': BASES_TOOL.id } });
     setIcon(bb, BASES_TOOL.icon);
     bb.addEventListener('click', () => this.plugin.showBases(bb));
+    for (const x of EXTRA.tools) extraButton(bar, 'clickable-icon nav-action-button', x);
     const sectionIds = ['mylife', 'rooms'].filter((id) => id !== 'mylife' || groups.length);
     const allOpen = isAllOpen(st, groups.map((g) => g.id), sectionIds, activeGroup);
     const ex = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': allOpen ? 'Collapse all' : 'Expand all', 'data-tool': 'toggle-all' } });
@@ -751,6 +773,12 @@ class A4SidebarView extends ItemView {
         if (leaf && this.app.workspace.getMostRecentLeaf() !== leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
         this.markActive();
       });
+    }
+    for (const x of EXTRA.nav) {
+      const b = nav.createDiv({ cls: 'a4sb-nav-item', attr: { role: 'button', tabindex: '0', 'data-nav': x.id } });
+      setIcon(b.createSpan({ cls: 'a4sb-icon' }), x.icon);
+      b.createSpan({ text: x.label });
+      b.addEventListener('click', () => runExtra(x));
     }
 
     // My Life
@@ -1224,6 +1252,9 @@ class FilesChrome {
 
   fresh(el) { return el && el.dataset.a4sb === this.stamp; }
 
+  // Add-on buttons changed: a new stamp makes every piece draw again on the next attach.
+  refresh() { this.stamp = `${Date.now()}-${(this.round = (this.round || 0) + 1)}`; if (this.observer) this.schedule(); }
+
   attachTools(ex) {
     const bar = ex.querySelector('.nav-header .nav-buttons-container');
     if (!bar) return;
@@ -1244,6 +1275,7 @@ class FilesChrome {
     setIcon(bb, BASES_TOOL.icon);
     bb.addEventListener('click', () => this.plugin.showBases(bb));
     bar.insertBefore(bb, at);
+    for (const x of EXTRA.tools) bar.insertBefore(extraButton(createDiv(), 'clickable-icon nav-action-button a4sb-files-tool', x), at);
   }
 
   attachBadge(ex) {
@@ -1374,6 +1406,9 @@ class A4SidebarPlugin extends Plugin {
   }
 
   async saveState() { await this.saveData(this.state); }
+
+  // An add-on row or button was added or removed (LifeWorld calls this): both toolbars and the tab draw again.
+  extrasChanged() { this.scheduleRender(); if (this.chrome) this.chrome.refresh(); }
 
   // Sort settings changed here (settings page, right-click menu).
   async updateSort(next) {
@@ -1530,8 +1565,9 @@ class A4SidebarSettingTab extends PluginSettingTab {
 }
 
 module.exports = A4SidebarPlugin;
+module.exports.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 module.exports.__logic = {
-  NAV, LANDING, FILE_CAP, SBC, A4SidebarView,
+  NAV, LANDING, FILE_CAP, SBC, A4SidebarView, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

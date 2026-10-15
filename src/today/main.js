@@ -699,12 +699,23 @@ const LATER_WIDGETS = [
   { id: 'health', name: 'Health today', desc: 'Steps, sleep, resting heart rate' },
   { id: 'reading', name: 'Now reading', desc: 'Your current book and progress' },
 ];
-const WIDGET_IDS = WIDGETS.map((w) => w.id);
+// Widgets an add-on adds through LifeWorld (phase 2 section 7): { id, name, desc, zone, render(body, el) },
+// zone one of the three columns. shortcut: kept for this LifeWorld start only; an add-on adds them again
+// when LifeWorld restarts, and a layout saved while one is missing forgets its place (back to its zone).
+const EXTRA_WIDGETS = [];
+const allWidgets = () => WIDGETS.concat(EXTRA_WIDGETS);
+const isWidget = (id) => allWidgets().some((w) => w.id === id);
+function addExtraWidget(def) {
+  if (isWidget(def.id) || LATER_WIDGETS.some((w) => w.id === def.id)) throw new Error(`LifeWorld: there is already a Today widget "${def.id}"`);
+  const w = { ...def, desc: typeof def.desc === 'string' ? def.desc : '', zone: ['c1', 'c2', 'c3'].includes(def.zone) ? def.zone : 'c3' };
+  EXTRA_WIDGETS.push(w);
+  return () => { const i = EXTRA_WIDGETS.indexOf(w); if (i !== -1) EXTRA_WIDGETS.splice(i, 1); };
+}
 const TOP_ONLY = ['weather', 'capture'];
 
 function defaultLayout() {
   const zones = { top: [], c1: [], c2: [], c3: [] };
-  WIDGETS.forEach((w) => zones[w.zone].push(w.id));
+  allWidgets().forEach((w) => zones[w.zone].push(w.id));
   return { zones, hidden: [] };
 }
 
@@ -718,13 +729,13 @@ function normalizeLayout(raw) {
   if (!zones) return defaultLayout();
   for (const z of ZONES) {
     for (const id of asList(zones[z])) {
-      if (WIDGET_IDS.includes(id) && !seen.has(id)) { out.zones[z].push(id); seen.add(id); }
+      if (isWidget(id) && !seen.has(id)) { out.zones[z].push(id); seen.add(id); }
     }
   }
   for (const id of asList(src.hidden)) {
-    if (WIDGET_IDS.includes(id) && !seen.has(id)) { out.hidden.push(id); seen.add(id); }
+    if (isWidget(id) && !seen.has(id)) { out.hidden.push(id); seen.add(id); }
   }
-  for (const w of WIDGETS) if (!seen.has(w.id)) out.zones[w.zone].push(w.id);
+  for (const w of allWidgets()) if (!seen.has(w.id)) out.zones[w.zone].push(w.id);
   return out;
 }
 
@@ -743,7 +754,7 @@ function removeWidget(layout, id) {
 // heights: zone -> pixel height, so a new card lands in the shortest column.
 function addWidget(layout, id, heights) {
   const l = cloneLayout(layout);
-  if (!WIDGET_IDS.includes(id) || zoneOf(l, id)) return l;
+  if (!isWidget(id) || zoneOf(l, id)) return l;
   l.hidden = l.hidden.filter((x) => x !== id);
   let zone = 'top';
   if (!TOP_ONLY.includes(id)) {
@@ -869,7 +880,7 @@ const logic = {
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
-  normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES,
+  normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES, EXTRA_WIDGETS,
   normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
@@ -921,6 +932,14 @@ class A4TodayPlugin extends Plugin {
     this.userName = normalizeUserName(saved.userName);
     this.applyLook();
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (!l.view) return; if (l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); if (l.view.data && l.view.renderHeader) l.view.renderHeader(); });
+  }
+
+  // An add-on widget was added or removed (LifeWorld calls this). Read from the saved layout, so a widget
+  // the person had placed or hidden comes back there (it was set aside while it was missing).
+  async extrasChanged() {
+    const saved = (await this.loadData()) || {};
+    this.layout = normalizeLayout(saved.layout);
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); });
   }
 
   async saveLayout(layout) {
@@ -1875,7 +1894,7 @@ class TodayView extends ItemView {
   widgetEl(id) {
     let el = this.widgetEls.get(id);
     if (el) return el;
-    const meta = WIDGETS.find((w) => w.id === id);
+    const meta = allWidgets().find((w) => w.id === id);
     el = createDiv({ cls: `a4t-w a4t-w-${id}`, attr: { 'data-w': id } });
     const tools = el.createDiv({ cls: 'a4t-wtools' });
     const grip = tools.createSpan({ cls: 'a4t-grip', attr: { 'aria-label': 'Drag to move' } });
@@ -1912,7 +1931,8 @@ class TodayView extends ItemView {
         else this.renderWidget(id, el.querySelector('.a4t-wbody'), el);
       });
     }
-    for (const id of layout.hidden) { const el = this.widgetEls.get(id); if (el) el.detach(); }
+    // Hidden widgets, and an add-on's widget that is gone, leave the page.
+    for (const [id, el] of this.widgetEls) if (!zoneOf(layout, id)) { el.detach(); if (!isWidget(id)) this.widgetEls.delete(id); }
     if (this.zoneEls.c3.lastElementChild !== this.clockEl) this.zoneEls.c3.appendChild(this.clockEl);
   }
 
@@ -1930,11 +1950,17 @@ class TodayView extends ItemView {
       if (id === 'calendar') return this.renderCalendar(body, el);
       if (id === 'projects') return this.renderProjects(body, el);
       if (id === 'journal') return this.renderJournal(body, el);
+      const x = EXTRA_WIDGETS.find((w) => w.id === id);
+      if (x) return Promise.resolve(x.render(body, el)).catch((e) => this.widgetFailed(id, body, e));
     } catch (e) {
-      console.error('[a4-today] widget failed', id, e);
-      body.empty();
-      body.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' });
+      this.widgetFailed(id, body, e);
     }
+  }
+
+  widgetFailed(id, body, e) {
+    console.error('[a4-today] widget failed', id, e);
+    body.empty();
+    body.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' });
   }
 
   cardHead(body, kicker, title, countOrAction, warn) {
@@ -2453,7 +2479,7 @@ class TodayView extends ItemView {
     close.addEventListener('click', () => this.openPanel(false));
     const list = p.createDiv({ cls: 'a4t-ap-list' });
     const layout = this.plugin.layout;
-    [...WIDGETS, ...LATER_WIDGETS.map((w) => ({ ...w, later: true }))].forEach((m) => {
+    [...allWidgets(), ...LATER_WIDGETS.map((w) => ({ ...w, later: true }))].forEach((m) => {
       const row = list.createDiv({ cls: `a4t-ap-item${m.later ? ' is-later' : ''}` });
       const txt = row.createDiv({ cls: 'a4t-ap-txt' });
       txt.createDiv({ cls: 'a4t-ap-name', text: m.name });
@@ -2543,6 +2569,7 @@ class TodayView extends ItemView {
 }
 
 A4TodayPlugin.logic = logic;
+A4TodayPlugin.addExtraWidget = addExtraWidget; // for LifeWorld's add-on hooks (phase 2 section 7)
 A4TodayPlugin.TodayView = TodayView; // for tests (the Planner button)
 A4TodayPlugin.TodaySettingTab = TodaySettingTab; // for tests (the Calendars picker)
 module.exports = A4TodayPlugin;

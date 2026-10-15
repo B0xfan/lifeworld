@@ -813,5 +813,72 @@ const start = async (data) => {
     try { eq([T.isScratchpadPath('2026/10/x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }), T.isScratchpadPath('x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' })], [true, false], 'no moment: depth only'); } finally { fakeObsidian.moment = m0; }
   }
 
+  // ---- Section 7: the add-on hooks (a Sidebar item, a toolbar button, a Today widget) ----
+  {
+    const SB = LW.parts['a4-sidebar'].__logic;
+    const TL = LW.parts['a4-today'].logic;
+    const TV = LW.parts['a4-today'].TodayView.prototype;
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const ex = await start({ 'a4-today': { layout: { zones: { top: [], c1: ['tides'], c2: [], c3: [] }, hidden: ['journal'] } } });
+    const redrew = [];
+    ex.host.running['a4-sidebar'].extrasChanged = () => redrew.push('sidebar');
+    const clicks = [];
+    // Checked at the door: what is missing or already taken is refused, nothing is added.
+    const throwsMsg = (f) => { try { f(); return null; } catch (e) { return e.message; } };
+    ok(/needs id, label, icon \(text\) and onClick/.test(throwsMsg(() => ex.host.addSidebarItem({ id: 'x', label: 'X', icon: 'star' }))), 'a Sidebar item without onClick is refused');
+    ok(/needs id, name \(text\) and render/.test(throwsMsg(() => ex.host.addTodayWidget({ id: ' ', name: 'Tides', render() {} }))), 'a Today widget with a blank id is refused');
+    ok(/already a Sidebar item "today"/.test(throwsMsg(() => ex.host.addSidebarItem({ id: 'today', label: 'T', icon: 'sun', onClick() {} }))), "a Sidebar item cannot take a built-in row's id");
+    ok(/already a Today widget "weather"/.test(throwsMsg(() => ex.host.addTodayWidget({ id: 'weather', name: 'W', render() {} }))) && /already a Today widget "goals"/.test(throwsMsg(() => ex.host.addTodayWidget({ id: 'goals', name: 'G', render() {} }))), "a Today widget cannot take a built-in or 'later' widget's id");
+    eq([SB.EXTRA.nav.length, SB.EXTRA.tools.length, TL.EXTRA_WIDGETS.length, redrew], [0, 0, 0, []], 'refused: nothing added, nothing redrawn');
+    // A Sidebar item and a toolbar button: added, the Sidebar told, removed once.
+    const rmItem = ex.host.addSidebarItem({ id: 'finance', label: 'Finance', icon: 'wallet', onClick: () => clicks.push('finance') });
+    const rmTool = ex.host.addToolbarButton({ id: 'canvas2', label: 'New canvas', icon: 'layout-dashboard', onClick: () => { throw new Error('planted'); } });
+    await tick();
+    eq([SB.EXTRA.nav.map((x) => x.id), SB.EXTRA.tools.map((x) => x.id), redrew], [['finance'], ['canvas2'], ['sidebar', 'sidebar']], 'a Sidebar item and a toolbar button are added and the Sidebar redraws');
+    ok(/already a Sidebar button "canvas2"/.test(throwsMsg(() => ex.host.addToolbarButton({ id: 'canvas2', label: 'Again', icon: 'x', onClick() {} }))), 'the same button id twice is refused');
+    // Drawn as an Obsidian toolbar button; its click runs, a failing click is logged, not thrown.
+    const bar = fakeEl('div');
+    const btn = SB.extraButton(bar, 'clickable-icon nav-action-button', SB.EXTRA.tools[0]);
+    const errs = []; const ce = console.error; console.error = (...a) => errs.push(a[0]);
+    try { await btn.fire('click'); await tick(); await SB.runExtra(SB.EXTRA.nav[0]); } finally { console.error = ce; }
+    eq([bar.kids.length, btn.attr['aria-label'], btn.attr['data-tool'], errs, clicks], [1, 'New canvas', 'canvas2', ['LifeWorld: add-on button canvas2 failed'], ['finance']], 'an add-on button: drawn with its label, a failing click logged, a working click runs');
+    // Kept while the Sidebar is off; the Sidebar part that comes back draws them.
+    await ex.host.setPart('a4-sidebar', false); await ex.host.setPart('a4-sidebar', true);
+    eq(SB.EXTRA.nav.map((x) => x.id), ['finance'], 'add-on rows are kept while the Sidebar is switched off');
+    ex.host.running['a4-sidebar'].extrasChanged = () => redrew.push('sidebar again');
+    rmItem(); rmItem(); rmTool(); await tick();
+    eq([SB.EXTRA.nav.length, SB.EXTRA.tools.length, redrew.slice(2)], [0, 0, ['sidebar again', 'sidebar again']], 'removed (a second remove does nothing); the Sidebar redraws');
+    // A Today widget: its saved place and hidden state come back from the settings file.
+    const today = ex.host.running['a4-today'];
+    const rmW = ex.host.addTodayWidget({ id: 'tides', name: 'Tides', desc: 'High and low water', zone: 'c2', render: (body) => body.createDiv({ text: 'tides drawn' }) });
+    await tick();
+    eq([today.layout.zones.c1[0], today.layout.hidden], ['tides', ['journal']], 'an add-on widget goes back where it was saved; hidden stays hidden');
+    eq(TL.normalizeLayout(null).zones.c2.slice(-1), ['tides'], 'a new install: the add-on widget sits in its own column');
+    const noC1 = TL.removeWidget(today.layout, 'tides');
+    eq(TL.addWidget(noC1, 'tides', { c1: 9, c2: 1, c3: 5 }).zones.c2.slice(-1), ['tides'], '"Add widget" works for an add-on widget (shortest column)');
+    // Drawn by its own render; a failing one shows the usual line, the page goes on.
+    const view = { widgetFailed: TV.widgetFailed, data: {} };
+    const cardEl = { removeClass() {} };
+    const body = fakeEl('div');
+    await TV.renderWidget.call(view, 'tides', body, cardEl);
+    eq(body.kids.map((k) => k.text), ['tides drawn'], "an add-on widget draws with its own render");
+    const rmBad = ex.host.addTodayWidget({ id: 'bad', name: 'Bad', render: async () => { throw new Error('planted'); } });
+    const errs2 = []; console.error = (...a) => errs2.push(a[1]);
+    try { await TV.renderWidget.call(view, 'bad', body, cardEl); } finally { console.error = ce; }
+    eq([body.kids.map((k) => k.text), errs2], [['this part could not be drawn'], ['bad']], 'a failing add-on widget shows "this part could not be drawn" and is logged');
+    rmBad(); rmW(); await tick();
+    eq([TL.EXTRA_WIDGETS.length, today.layout.zones.c1.includes('tides')], [0, false], 'removed: the widget leaves the layout (its saved place stays in the file)');
+    eq(JSON.parse(disk[ex.dir])['a4-today'].layout.zones.c1, ['tides'], 'adding and removing an add-on widget writes nothing to the settings file');
+    // An open Today page: the removed widget's card leaves the page and is forgotten; a hidden one only leaves.
+    const gone = []; const card = (id) => ({ id, dataset: {}, toggleClass() {}, querySelector: () => ({}), detach() { gone.push(id); } });
+    const zone = () => ({ children: [], insertBefore(el) { this.children.push(el); }, appendChild() {} });
+    const page = { data: {}, plugin: { layout: today.layout }, zoneEls: { top: zone(), c1: zone(), c2: zone(), c3: zone() }, clockEl: {},
+      widgetEls: new Map([['tides', card('tides')], ['journal', card('journal')]]), renderWidget() {}, renderCapture() {} };
+    page.widgetEl = (id) => page.widgetEls.get(id) || (page.widgetEls.set(id, card(id)), page.widgetEls.get(id));
+    TV.renderWidgets.call(page);
+    eq([gone.sort(), page.widgetEls.has('tides'), page.widgetEls.has('journal')], [['journal', 'tides'], false, true], 'open page: a removed add-on widget leaves and is forgotten, a hidden one is kept for later');
+    ex.host.unload();
+  }
+
   console.log(`host self-check: OK (${n} checks)`);
 })().catch((e) => { console.error(e); process.exit(1); });
