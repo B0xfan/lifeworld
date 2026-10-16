@@ -1051,7 +1051,14 @@ const start = async (data) => {
     eq([JSON.parse(disk[ex.dir]).lifeworld.vault.feeds, V.feedNotes.calendar, V.vaultFolders.mood], [{ calendar: 'P/Cal.md', weather: 'P/W.md' }, 'P/Cal.md', 'L/Mood'], 'note paths and the mood folder are saved and read');
     await ex.host.setVaultSettings({ folders: { mood: '' } });
     eq(V.vaultFolders.mood, '', 'no mood folder: none (a new install)');
+    // An add-on button in the Sidebar tab closes the phone drawer after its click, as the built-in ones do.
+    const after = []; const xb = SB.extraButton(fakeEl('div'), 'c', { id: 'z', label: 'Z', icon: 'x', onClick: () => after.push('click') }, () => after.push('drawer'));
+    await xb.fire('click'); await tick();
+    eq(after, ['click', 'drawer'], 'an add-on button runs its click, then the after-step');
+    const sbSrc = fs.readFileSync(path.join(ROOT, 'src/sidebar/main.js'), 'utf8');
+    ok(/extraButton\(bar, 'clickable-icon nav-action-button', t, \(\) => this\.closeDrawer\(\)\)/.test(sbSrc) && /runExtra\(x\)\.then\(\(\) => this\.closeDrawer\(\)\)/.test(sbSrc), 'Sidebar tab: add-on toolbar buttons and rows close the phone drawer');
     ex.host.unload();
+    eq(ex.host.ready, false, 'LifeWorld off: no longer ready');
   }
 
   console.log(`host self-check: OK (${n} checks)`);

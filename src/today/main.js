@@ -1018,7 +1018,7 @@ class A4TodayPlugin extends Plugin {
   openMoodCheckin() {
     const cmds = this.app.commands;
     if (this.moodCheckinOn()) cmds.executeCommandById(ADDON.moodCheckin);
-    else new Notice('Mood check-in is part of the health add-on, which is not turned on.');
+    else new Notice('Mood check-in comes from an add-on, and none is turned on.');
   }
 
   /* ---- color scheme ------------------------------------------------------ */

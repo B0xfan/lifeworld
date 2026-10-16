@@ -507,7 +507,7 @@ function addExtra(kind, def) {
 function toolbarItems() {
   const out = TOOLS.concat([BASES_TOOL]);
   for (const x of EXTRA.tools) {
-    const i = out.findIndex((t) => t.id === x.before && (TOOLS.includes(t) || t === BASES_TOOL));
+    const i = out.findIndex((t) => t.id === x.before); // add-on ids never repeat a built-in one (addExtra)
     out.splice(i === -1 ? out.length : i, 0, x);
   }
   return out;
@@ -520,11 +520,12 @@ function formTargets() {
 function runExtra(x) {
   return Promise.resolve().then(() => x.onClick()).catch((e) => console.error(`LifeWorld: add-on button ${x.id} failed`, e));
 }
-// One add-on button: Obsidian's icon names (setIcon), as the toolbar's own buttons use.
-function extraButton(parent, cls, x) {
+// One add-on button: Obsidian's icon names (setIcon), as the toolbar's own buttons use. then: runs after
+// the click (the Sidebar tab closes the phone drawer, as its own buttons do; review of the add-on job).
+function extraButton(parent, cls, x, then) {
   const b = parent.createDiv({ cls, attr: { 'aria-label': x.label, 'data-tool': x.id } });
   setIcon(b, x.icon);
-  b.addEventListener('click', () => runExtra(x));
+  b.addEventListener('click', () => runExtra(x).then(then));
   return b;
 }
 // The faint folder name: the folder the base sits in, or the one above when
@@ -685,7 +686,7 @@ class A4SidebarView extends ItemView {
     const header = root.createDiv({ cls: 'nav-header a4sb-header' });
     const bar = header.createDiv({ cls: 'nav-buttons-container a4sb-tools' });
     for (const t of toolbarItems()) {
-      if (EXTRA.tools.includes(t)) { extraButton(bar, 'clickable-icon nav-action-button', t); continue; }
+      if (EXTRA.tools.includes(t)) { extraButton(bar, 'clickable-icon nav-action-button', t, () => this.closeDrawer()); continue; }
       const b = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': t.label, 'data-tool': t.id } });
       setIcon(b, t.icon);
       b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.run(t.command));
@@ -733,7 +734,7 @@ class A4SidebarView extends ItemView {
       const b = nav.createDiv({ cls: 'a4sb-nav-item', attr: { role: 'button', tabindex: '0', 'data-nav': x.id } });
       setIcon(b.createSpan({ cls: 'a4sb-icon' }), x.icon);
       b.createSpan({ text: x.label });
-      b.addEventListener('click', () => runExtra(x));
+      b.addEventListener('click', () => runExtra(x).then(() => this.closeDrawer()));
     }
 
     // My Life
@@ -880,7 +881,7 @@ class A4SidebarView extends ItemView {
     row.createSpan({ cls: 'a4sb-label', text: o.label || folder.name });
     if (o.count != null) row.createSpan({ cls: 'a4sb-count', text: Number(o.count).toLocaleString() });
     const t = this.plus[folder.path];
-    if (t && ADDON.form && !o.noPlus) {
+    if (t && !o.noPlus) { // this.plus is empty without a form
       const b = row.createSpan({ cls: 'a4sb-act', attr: { 'data-plus': t.key, title: t.label } });
       b.appendChild(icon('plus', 13));
       b.addEventListener('click', (e) => { e.stopPropagation(); this.plugin.openForm(t.key, o.plusPreset || undefined); });

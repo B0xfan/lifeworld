@@ -308,6 +308,7 @@ class LifeWorldPlugin extends Plugin {
 
   onunload() {
     this.gone = true; // a switch or outside change still under way starts nothing more
+    this.ready = false; // its hooks are gone with it
     this.running = {};
     for (const [m] of PART_LIST) delete PARTS[m.id];
   }
