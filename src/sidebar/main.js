@@ -1290,7 +1290,7 @@ class A4SidebarPlugin extends Plugin {
       this.state.sort = next;
       this.saveState();
     }));
-    this.addRibbonIcon('layout-list', 'Open the A4 sidebar', () => this.activate());
+    this.addRibbonIcon('layout-list', 'Open the LifeWorld sidebar', () => this.activate());
     this.addCommand({ id: 'open', name: 'Open the sidebar', callback: () => this.activate() });
     // The toolbar commands (0.7.0): ours, so the buttons work with ICOR Connect off.
     for (const [id, c] of Object.entries(CORE_TOOLS)) {

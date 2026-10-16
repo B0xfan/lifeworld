@@ -25,7 +25,6 @@ const KEEP = [
   [/^a4-today-capture$/, SRC, 'the capture link obsidian://a4-today-capture (saved links and the menu bar capture open it)'],
   [/^a4(t|pl|pj|sb)-|^a4-undo-/, /./, 'CSS class names (kept: themes and snippets may target them)'],
   [/^a4-daily-planner$/, TESTS, 'tests that check the old daily planner id is gone from the code'],
-  [/^A4$/, /^(src\/sidebar\/main\.js|main\.js)$/, "the Sidebar ribbon tooltip 'Open the A4 sidebar': Obsidian keys a ribbon button by id plus tooltip, so new words would reset the owner's ribbon order; phase 3 migration"],
   [/^AI Team$/i, /^tests\/(fixtures\/|test-host\.js$|test-today\.js$|test-sidebar\.js$)/, "the owner-preset test vault's folder names (made-up notes in the owner's folder layout)"],
 ];
 
@@ -47,7 +46,5 @@ for (const f of files) {
   }
 }
 assert.deepStrictEqual(bad, [], `old private naming in public code (reword it, or add a KEEP rule with its reason):\n${bad.join('\n')}`);
-// The kept ribbon tooltip is the only "A4" word left; a second one in the Sidebar must fail too.
-assert.strictEqual((fs.readFileSync(path.join(ROOT, 'src/sidebar/main.js'), 'utf8').match(LOOK[0]) || []).length, 1, 'one "A4" word in the Sidebar (the ribbon tooltip)');
 console.log(`public names self-check: OK (${files.length} files)`);
 for (const [why, n] of Object.entries(kept)) console.log(`  kept ${n}: ${why}`);
