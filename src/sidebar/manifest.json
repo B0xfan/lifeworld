@@ -3,7 +3,7 @@
   "name": "Sidebar",
   "version": "0.9.0",
   "minAppVersion": "1.7.2",
-  "description": "A left-sidebar tab laid out like Lifeworld: Today, Planner and Focus at the top, then your own groups and folders, with section names large and items small. Notes can be dragged onto folders to move them; the + on a row opens the Quick Create add-on when it is on. It also puts toolbar buttons (today's daily note, new unique note, new canvas, graph view, and a Bases menu listing every base A to Z) and a team badge on the Files tab, and Terminal and Settings buttons on the right sidebar. Works on phone too: long-press for the menu. Sort order per folder (Settings, or right-click a folder): newest first, oldest first, A to Z or Z to A, with dated notes sorted by their real date.",
+  "description": "A left-sidebar tab laid out like Lifeworld: Today, Planner and Focus at the top, then your own groups and folders, with section names large and items small. Notes can be dragged onto folders to move them; a companion add-on can put a + on rows for its own new-note form. It also puts toolbar buttons (today's daily note, new unique note, graph view, and a Bases menu listing every base A to Z) on the Files tab, and a Settings button on the right sidebar. Works on phone too: long-press for the menu. Sort order per folder (Settings, or right-click a folder): newest first, oldest first, A to Z or Z to A, with dated notes sorted by their real date.",
   "author": "B0xfan",
   "isDesktopOnly": false
 }

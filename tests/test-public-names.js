@@ -24,10 +24,8 @@ const KEEP = [
   [/^a4-((today|planner|projects|sidebar)-view|sid)$/, TESTS, "test stand-ins for the parts' tab types, and a cut-off settings file"],
   [/^a4-today-capture$/, SRC, 'the capture link obsidian://a4-today-capture (saved links and the menu bar capture open it)'],
   [/^a4(t|pl|pj|sb)-|^a4-undo-/, /./, 'CSS class names (kept: themes and snippets may target them)'],
-  [/^a4-(quick-create|health|finance|analytics|media)$/, SRC, 'commands of private add-ons the Sidebar and Today still call; the companion add-on job moves them out'],
   [/^a4-daily-planner$/, TESTS, 'tests that check the old daily planner id is gone from the code'],
   [/^A4$/, /^(src\/sidebar\/main\.js|main\.js)$/, "the Sidebar ribbon tooltip 'Open the A4 sidebar': Obsidian keys a ribbon button by id plus tooltip, so new words would reset the owner's ribbon order; phase 3 migration"],
-  [/^(Audrey|AI Team)$/i, /^(src\/sidebar\/|main\.js$|styles\.css$|tests\/test-sidebar\.js$)/, 'the team badge and roster in the Sidebar; the companion add-on job moves them out'],
   [/^AI Team$/i, /^tests\/(fixtures\/|test-host\.js$|test-today\.js$|test-sidebar\.js$)/, "the owner-preset test vault's folder names (made-up notes in the owner's folder layout)"],
 ];
 

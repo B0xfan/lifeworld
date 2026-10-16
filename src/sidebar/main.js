@@ -15,20 +15,20 @@
  *   Planner  -> a4-planner:open (the Planner, 2026-10-04)
  *   Focus    -> icor-for-life-focus:open-focus (the ICOR Focus map)
  *
- * Files tab chrome (0.7.0): the four toolbar buttons, the Audrey badge at the
- * bottom (opens the team roster) and the Terminal/Settings buttons on the
- * right sidebar's tab row. These used to come from ICOR Connect; Sidebar
- * puts them there itself now, so Connect can stay off.
+ * Files tab chrome (0.7.0): the toolbar buttons on Obsidian's Files tab and a
+ * Settings button on the right sidebar's tab row. These used to come from ICOR
+ * Connect; Sidebar puts them there itself now, so Connect can stay off. A
+ * companion add-on can add a footer to the Files tab and buttons to that tab
+ * row (LifeWorld's addFilesFooter and addTabRowButton).
  *   Compass  -> left out: Lifeworld's Compass (Key Elements -> Goals ->
  *               Projects board) has no equivalent here, and the brief said not
  *               to invent one.
- *   My Life items open the item's existing dashboard where the vault has one
- *   (LANDING below), else its landing note/base, else unfold to its notes.
+ *   My Life items open the command an add-on named for them (LifeWorld's
+ *   addItemCommand), else their landing note/base, else unfold to their notes.
  *   The small chevron always unfolds the notes inside.
  *
- * "+" on a row = a4-quick-create's own modal via its public openCreate(key)
- * (added in quick-create 1.4.2), so notes come out identical to the Files
- * tab "+".
+ * "+" on a row = an add-on's new-note form (LifeWorld's setNewNoteForm); with
+ * none, rows have no "+".
  *
  * Drag a NOTE onto any folder row to move it (fileManager.renameFile, so
  * links update). Folders are not draggable and there is no "New folder":
@@ -41,8 +41,7 @@
 'use strict';
 
 import { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } from 'obsidian';
-import { dayOf } from '../core/dates'; // the one shared copy of the date helpers
-import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
 import { sidebarContent } from '../core/vault';
@@ -96,16 +95,6 @@ function openRuleFrom(projectsPlugin) {
 // dropped ones stay reachable from the Projects page's Closed section.
 const openProjects = (members) => members.filter((m) => m.open);
 const openProjectCount = (members) => openProjects(members).length;
-
-// the owner's existing dashboards for the Lifeworld items that open one.
-const LANDING = {
-  'Client Analytics': { command: 'a4-analytics:open-client-analytics' },
-  Finance: { command: 'a4-finance:open-finance-summary' },
-  Health: { command: 'a4-health:open-health-dashboard' },
-  Movies: { command: 'a4-media:open-a4-media-library' },
-  Media: { command: 'a4-media:open-a4-music' },
-  Reading: { command: 'reading-vault:open-reading' },
-};
 
 // Lifeworld's stroke icons (ui.tsx P), 24x24 viewBox.
 const P = {
@@ -193,11 +182,11 @@ function itemLabel(name) { return SBC.labels[name] || name; }
 function itemIcon(name) { return SBC.icons[name] || 'folder'; }
 function itemShowsCount(name) { return !SBC.noCount.includes(name); }
 
-// What clicking a My Life item does, in order: a dashboard command that
-// is actually registered; else a landing note named like the folder; else a
-// single .base in the folder; else unfold.
+// What clicking a My Life item does, in order: the command an add-on named for
+// it (addItemCommand) while that is registered; else a landing note named like
+// the folder; else a single .base in the folder; else unfold.
 function resolveLanding(name, folderPath, childPaths, hasCommand) {
-  const l = LANDING[name];
+  const l = EXTRA.items.find((x) => x.item === name);
   if (l && hasCommand(l.command)) return { kind: 'command', id: l.command };
   const note = `${folderPath}/${name}.md`;
   if (childPaths.includes(note)) return { kind: 'file', path: note };
@@ -229,8 +218,7 @@ function countNotes(allFilePaths, folderPaths) {
  *                  name starts with a date, by the real date and time.
  *   newestFirstIn  folders (and everything inside them) always newest first.
  *                  A plain name with no "/" ("Journal") means every folder
- *                  with that name, as the 0.7 rule did: the Inner World
- *                  Journal and every AI Team agent's Journal.
+ *                  with that name, wherever it is.
  *   text           'az' | 'za': everything without a date, after the dated ones.
  *   folders        false: folders on top, A to Z. true: folders on top, ordered
  *                  by the same rule as the notes. A folder with its own order
@@ -242,25 +230,12 @@ function countNotes(allFilePaths, folderPaths) {
  *   perFolder      { path: 'newest'|'oldest'|'az'|'za' } "Folder by folder";
  *                  a subfolder follows the nearest listed parent. The nearest
  *                  folder that is listed (here or in newestFirstIn) wins.
- * Pre-filled with what the two retired plugins did (progress report
- * 2026-10-08): Scratchpad and Reports newest first; Inner World, Library
- * Notes and My Life (Projects and its three folders, Sports, Topics) A to Z.
+ * A new install starts with no folder listed (the owner's folders come with
+ * the settings carried over from the old plugin).
  */
 const SORT_MODES = ['newest', 'oldest', 'az', 'za'];
 const SORT_LABEL = { newest: 'Newest first', oldest: 'Oldest first', az: 'A to Z', za: 'Z to A' };
-const DEFAULT_SORT = {
-  dates: 'last',
-  newestFirstIn: ['00 Daily Scratchpad', 'Journal', '06 AI Team/Scheduled Jobs/Reports'],
-  text: 'az',
-  folders: false,
-  perFolder: {
-    '00 Daily Scratchpad': 'newest',
-    '04 Inner World': 'az',
-    '04 Inner World/Library Notes': 'az',
-    '04 Inner World/My Life': 'az',
-    '06 AI Team/Scheduled Jobs/Reports': 'newest',
-  },
-};
+const DEFAULT_SORT = { dates: 'last', newestFirstIn: [], text: 'az', folders: false, perFolder: {} };
 
 // Saved settings -> a clean sort object. Missing = the pre-filled defaults; a
 // damaged value falls back to its default rather than breaking the list.
@@ -338,7 +313,7 @@ function sortChildren(folderPath, children, sortSettings) {
   return folders.concat(files);
 }
 
-// "04 Inner World/Library Notes" -> "Inner World / Library Notes"
+// "04 Work/Clients" -> "Work / Clients"
 function folderDisplay(path) { return String(path || '').split('/').map((s) => s.replace(/^\d\d /, '')).join(' / '); }
 
 // Set (mode) or clear (null) one folder's own order. Returns a new sort object.
@@ -487,18 +462,16 @@ function countNotesExcluding(allFilePaths, folderPaths, hidden) {
 
 // Toolbar (approved 2026-10-03; "New unique note" added and the commands made
 // our own in 0.7.0, plugin overhaul step 3, mockup approved 2026-10-06).
-// The same four buttons sit on BOTH the Sidebar tab and the Files tab, in this
+// The same buttons sit on BOTH the Sidebar tab and the Files tab, in this
 // order, with the icons and tooltips already known. They used to call the
 // ICOR Connect plugin's commands; that plugin is switched off now, so the
-// commands below are Sidebar's own. Three of them only run an Obsidian core
-// command; the canvas one is a few lines of our own.
+// commands below are Sidebar's own, each running an Obsidian core command.
 const TOOLS = [
   { id: 'daily', icon: 'calendar-check', label: "Open today's daily note", command: 'a4-sidebar:open-daily-note' },
   { id: 'unique', icon: 'file-clock', label: 'New unique note', command: 'a4-sidebar:new-unique-note' },
-  { id: 'canvas', icon: 'layout-dashboard', label: 'New canvas in the Daily Scratchpad', command: 'a4-sidebar:new-scratchpad-canvas' },
   { id: 'graph', icon: 'git-fork', label: 'Open graph view', command: 'a4-sidebar:open-graph-view' },
 ];
-// Obsidian core commands behind three of the buttons, and the core plugin to
+// Obsidian core commands behind the buttons, and the core plugin to
 // name in the notice when it is turned off. The unique-note NAME
 // (MM-DD-YYYY - h-mm A) comes from core "Unique note creator" settings
 // (.obsidian/zk-prefixer.json), never from this plugin.
@@ -514,16 +487,34 @@ const CORE_TOOLS = {
 // upkeep. TaskNotes' starter views are left out (TaskNotes is not used;
 // the files stay where they are).
 const BASES_TOOL = { id: 'bases', icon: 'database', label: 'Open a base' };
-// Added by an add-on through LifeWorld (phase 2 section 7): rows under Today/Planner/Focus ('nav') and
-// toolbar buttons on both toolbars ('tools'), { id, label, icon, onClick }, in the order added.
+// Added by an add-on through LifeWorld (phase 2 section 7), in the order added: rows under
+// Today/Planner/Focus ('nav'), buttons on both toolbars ('tools'), buttons on the right sidebar's tab
+// row ('top'), each { id, label, icon, onClick }; Files tab footers ('foot', { id, draw }); and the
+// command a My Life item opens ('items', { item, command }).
 // shortcut: kept for this LifeWorld start only; an add-on adds them again when LifeWorld restarts.
-const EXTRA = { nav: [], tools: [] };
+const EXTRA = { nav: [], tools: [], top: [], foot: [], items: [] };
 function addExtra(kind, def) {
   // 'toggle-all' is the Expand/Collapse button, found by that id (syncToggleAll; review p2-s7b).
-  const taken = kind === 'nav' ? NAV.concat(EXTRA.nav) : TOOLS.concat([BASES_TOOL, { id: 'toggle-all' }], EXTRA.tools);
-  if (taken.some((x) => x.id === def.id)) throw new Error(`LifeWorld: there is already a Sidebar ${kind === 'nav' ? 'item' : 'button'} "${def.id}"`);
+  const taken = { nav: NAV, tools: TOOLS.concat([BASES_TOOL, { id: 'toggle-all' }]), top: [{ id: 'settings' }] }[kind] || [];
+  const key = kind === 'items' ? 'item' : 'id';
+  const noun = { nav: 'item', tools: 'button', top: 'tab row button', foot: 'footer', items: 'item command for' }[kind];
+  if (taken.concat(EXTRA[kind]).some((x) => x[key] === def[key])) throw new Error(`LifeWorld: there is already a Sidebar ${noun} "${def[key]}"`);
   EXTRA[kind].push(def);
   return () => { const i = EXTRA[kind].indexOf(def); if (i !== -1) EXTRA[kind].splice(i, 1); };
+}
+// The toolbar, in order: the built-in buttons, an add-on button with `before` in front of that built-in
+// button, the other add-on buttons after them.
+function toolbarItems() {
+  const out = TOOLS.concat([BASES_TOOL]);
+  for (const x of EXTRA.tools) {
+    const i = out.findIndex((t) => t.id === x.before && (TOOLS.includes(t) || t === BASES_TOOL));
+    out.splice(i === -1 ? out.length : i, 0, x);
+  }
+  return out;
+}
+// The add-on's new-note form: folder path -> its "+" target. A failing form is logged; no "+" then.
+function formTargets() {
+  try { return plusTargetsByPath(ADDON.form ? ADDON.form.targets() : []); } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); return {}; }
 }
 // An add-on's click: an error (thrown or a rejected promise) is logged, never breaks the Sidebar.
 function runExtra(x) {
@@ -551,39 +542,8 @@ function listBases(paths) {
     .map((p) => { const name = nameOf(p).replace(/\.base$/i, ''); return { path: p, name, where: baseWhere(p, name) }; })
     .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.path, b.path));
 }
-const SCRATCHPAD = '00 Daily Scratchpad';
 // the retired add-on whose Files-tab buttons these replace (see connectOn)
 const LEGACY_CHROME = ['icor', 'for', 'life', 'connect'].join('-');
-// The Audrey badge at the bottom of the Files tab opens the team roster
-// (2026-10-06).
-const ROSTER = '06 AI Team/Agents/agent-index.md';
-
-// New canvas path: 00 Daily Scratchpad/YYYY-MM-DD_canvas.canvas, then
-// _canvas-1, _canvas-2... when the name is taken (the naming already in use).
-function canvasPath(date, exists) {
-  const base = `${SCRATCHPAD}/${dayOf(date)}_canvas`;
-  let p = `${base}.canvas`;
-  for (let i = 1; exists(p); i++) p = `${base}-${i}.canvas`;
-  return p;
-}
-
-// The owner's badge mark (companion add-on territory, leaves with the badge): ink
-// strokes take the text colour, the crossbar the marker orange (styles.css),
-// so one SVG serves light and dark.
-function a4Mark() {
-  const svg = document.createElementNS(SVGNS_MARK, 'svg');
-  svg.setAttribute('class', 'a4sb-audrey-mark'); svg.setAttribute('viewBox', '0 0 112 74'); svg.setAttribute('aria-hidden', 'true');
-  const g = document.createElementNS(SVGNS_MARK, 'g');
-  g.setAttribute('class', 'a4sb-mark-ink'); g.setAttribute('fill', 'none'); g.setAttribute('stroke-width', '6');
-  g.setAttribute('stroke-linejoin', 'round'); g.setAttribute('stroke-linecap', 'round'); g.setAttribute('transform', 'translate(10,2)');
-  for (const d of ['M6 42 L26 6 L46 42', 'M78 6 L58 30 L92 30', 'M78 6 V44']) { const p = document.createElementNS(SVGNS_MARK, 'path'); p.setAttribute('d', d); g.appendChild(p); }
-  svg.appendChild(g);
-  const bar = document.createElementNS(SVGNS_MARK, 'path');
-  bar.setAttribute('class', 'a4sb-mark-bar'); bar.setAttribute('d', 'M24 32 H102'); bar.setAttribute('fill', 'none'); bar.setAttribute('stroke-width', '6'); bar.setAttribute('stroke-linecap', 'round');
-  svg.appendChild(bar);
-  return svg;
-}
-const SVGNS_MARK = 'http://www.w3.org/2000/svg';
 
 // Expand/collapse all, mirroring the Files button: it reads "Expand all" while
 // anything is folded, "Collapse all" once everything is open.
@@ -717,24 +677,19 @@ class A4SidebarView extends ItemView {
       countNotes(filePaths, countFolders),
       countNotesExcluding(filePaths, rooms.map((r) => r.path), this.hideInRooms),
     );
-    const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
-    this.qc = qc && typeof qc.openCreate === 'function' ? qc : null;
-    this.plus = plusTargetsByPath(this.qc && this.qc.createTargets ? this.qc.createTargets() : []);
+    this.plus = formTargets();
     const activePath = this.activePath();
     const activeGroup = activeGroupFor(activePath, groups, this.classify);
 
     // toolbar, same look as the Files tab's
     const header = root.createDiv({ cls: 'nav-header a4sb-header' });
     const bar = header.createDiv({ cls: 'nav-buttons-container a4sb-tools' });
-    for (const t of TOOLS) {
+    for (const t of toolbarItems()) {
+      if (EXTRA.tools.includes(t)) { extraButton(bar, 'clickable-icon nav-action-button', t); continue; }
       const b = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': t.label, 'data-tool': t.id } });
       setIcon(b, t.icon);
-      b.addEventListener('click', () => this.run(t.command));
+      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.run(t.command));
     }
-    const bb = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': BASES_TOOL.label, 'data-tool': BASES_TOOL.id } });
-    setIcon(bb, BASES_TOOL.icon);
-    bb.addEventListener('click', () => this.plugin.showBases(bb));
-    for (const x of EXTRA.tools) extraButton(bar, 'clickable-icon nav-action-button', x);
     const sectionIds = ['mylife', 'rooms'].filter((id) => id !== 'mylife' || groups.length);
     const allOpen = isAllOpen(st, groups.map((g) => g.id), sectionIds, activeGroup);
     const ex = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': allOpen ? 'Collapse all' : 'Expand all', 'data-tool': 'toggle-all' } });
@@ -925,10 +880,10 @@ class A4SidebarView extends ItemView {
     row.createSpan({ cls: 'a4sb-label', text: o.label || folder.name });
     if (o.count != null) row.createSpan({ cls: 'a4sb-count', text: Number(o.count).toLocaleString() });
     const t = this.plus[folder.path];
-    if (t && this.qc && !o.noPlus) {
+    if (t && ADDON.form && !o.noPlus) {
       const b = row.createSpan({ cls: 'a4sb-act', attr: { 'data-plus': t.key, title: t.label } });
       b.appendChild(icon('plus', 13));
-      b.addEventListener('click', (e) => { e.stopPropagation(); this.qc.openCreate(t.key, o.plusPreset || undefined); });
+      b.addEventListener('click', (e) => { e.stopPropagation(); this.plugin.openForm(t.key, o.plusPreset || undefined); });
     }
     const kids = parent.createDiv({ cls: 'a4sb-kids' + (open ? '' : ' is-hidden') });
     let filled = false;
@@ -1208,9 +1163,9 @@ class A4SidebarView extends ItemView {
 
 
 /* ------------------------------------------------------------------ *
- * Files tab chrome (0.7.0). Obsidian's own Files tab gets the four toolbar
- * buttons and the Audrey badge; the right sidebar's tab row gets Terminal and
- * Settings. All of it is our own DOM, re-attached when Obsidian rebuilds those
+ * Files tab chrome (0.7.0). Obsidian's own Files tab gets the toolbar
+ * buttons and an add-on's footer; the right sidebar's tab row gets an add-on's
+ * buttons and Settings. All of it is our own DOM, re-attached when Obsidian rebuilds those
  * areas (the Files tab is built late when it is not the front tab), and
  * removed again when the plugin is turned off.
  * ------------------------------------------------------------------ */
@@ -1245,7 +1200,7 @@ class FilesChrome {
     if (this.connectOn()) { this.clear(); return; }
     for (const ex of document.querySelectorAll('.workspace-leaf-content[data-type="file-explorer"]')) {
       this.attachTools(ex);
-      this.attachBadge(ex);
+      this.attachFoot(ex);
     }
     this.attachTopButtons();
   }
@@ -1262,34 +1217,27 @@ class FilesChrome {
     if (have && this.fresh(have)) return;
     bar.querySelectorAll('.a4sb-files-tool').forEach((b) => b.remove());
     bar.addClass('a4sb-files-tools');
-    let at = bar.firstChild;
-    for (const t of TOOLS) {
+    const at = bar.firstChild;
+    for (const t of toolbarItems()) {
+      if (EXTRA.tools.includes(t)) { const x = extraButton(createDiv(), 'clickable-icon nav-action-button a4sb-files-tool', t); x.dataset.a4sb = this.stamp; bar.insertBefore(x, at); continue; }
       const b = createDiv({ cls: 'clickable-icon nav-action-button a4sb-files-tool', attr: { 'aria-label': t.label, 'data-tool': t.id } });
       b.dataset.a4sb = this.stamp;
       setIcon(b, t.icon);
-      b.addEventListener('click', () => this.plugin.runTool(t.command));
+      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.plugin.runTool(t.command));
       bar.insertBefore(b, at);
     }
-    const bb = createDiv({ cls: 'clickable-icon nav-action-button a4sb-files-tool', attr: { 'aria-label': BASES_TOOL.label, 'data-tool': BASES_TOOL.id } });
-    bb.dataset.a4sb = this.stamp;
-    setIcon(bb, BASES_TOOL.icon);
-    bb.addEventListener('click', () => this.plugin.showBases(bb));
-    bar.insertBefore(bb, at);
-    for (const x of EXTRA.tools) bar.insertBefore(extraButton(createDiv(), 'clickable-icon nav-action-button a4sb-files-tool', x), at);
   }
 
-  attachBadge(ex) {
-    const have = ex.querySelector(':scope > .a4sb-audrey');
-    if (have && this.fresh(have)) return;
-    if (have) have.remove();
-    const foot = ex.createDiv({ cls: 'a4sb-audrey' });
-    foot.dataset.a4sb = this.stamp;
-    const btn = foot.createDiv({ cls: 'a4sb-audrey-btn', attr: { role: 'button', tabindex: '0', 'aria-label': 'Open the AI Team roster' } });
-    btn.appendChild(a4Mark());
-    btn.createSpan({ cls: 'a4sb-audrey-label', text: 'Audrey' });
-    const go = (e) => this.plugin.openRoster(e);
-    btn.addEventListener('click', go);
-    btn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(e); } });
+  // An add-on's footers at the foot of the Files tab, in the order added; a failing draw is logged.
+  attachFoot(ex) {
+    const have = ex.querySelectorAll(':scope > .a4sb-files-foot');
+    if (have.length === EXTRA.foot.length && [...have].every((f) => this.fresh(f))) return;
+    have.forEach((f) => f.remove());
+    for (const x of EXTRA.foot) {
+      const foot = ex.createDiv({ cls: 'a4sb-files-foot', attr: { 'data-foot': x.id } });
+      foot.dataset.a4sb = this.stamp;
+      try { x.draw(foot); } catch (e) { console.error(`LifeWorld: add-on footer ${x.id} failed`, e); }
+    }
   }
 
   attachTopButtons() {
@@ -1304,10 +1252,7 @@ class FilesChrome {
       setIcon(b, ic);
       b.addEventListener('click', fn);
     };
-    // Terminal is a desktop-only plugin; no dead button on the phone.
-    if (!IS_MOBILE) add('a4sb-top-terminal', 'terminal', 'Open terminal', () => {
-      if (!this.app.commands.executeCommandById('terminal:open-terminal.integrated.root')) new Notice('Turn on the terminal plugin to use this button.');
-    });
+    for (const x of EXTRA.top) { const b = extraButton(row, 'clickable-icon a4sb-top-btn', x); b.dataset.a4sb = this.stamp; }
     add('a4sb-top-settings', 'settings', 'Settings', () => this.app.setting.open());
   }
 
@@ -1318,7 +1263,7 @@ class FilesChrome {
   }
 
   clear() {
-    document.querySelectorAll('.a4sb-files-tool, .a4sb-audrey, .a4sb-top-btn').forEach((e) => e.remove());
+    document.querySelectorAll('.a4sb-files-tool, .a4sb-files-foot, .a4sb-top-btn').forEach((e) => e.remove());
     document.querySelectorAll('.a4sb-files-tools').forEach((e) => e.removeClass('a4sb-files-tools'));
   }
 }
@@ -1352,8 +1297,6 @@ class A4SidebarPlugin extends Plugin {
         if (!this.app.commands.executeCommandById(c.core)) new Notice(`Turn on the ${c.plugin} core plugin in Settings to use this.`);
       } });
     }
-    this.addCommand({ id: 'new-scratchpad-canvas', name: 'New canvas in the daily scratchpad', callback: () => this.newCanvas() });
-    this.addCommand({ id: 'open-team-roster', name: 'Open the AI team roster', callback: () => this.openRoster() });
     this.chrome = new FilesChrome(this);
     this.app.workspace.onLayoutReady(async () => {
       // First run only: add the tab next to Files and show it. After that
@@ -1368,7 +1311,7 @@ class A4SidebarPlugin extends Plugin {
       // and the settings page read the same list.
       if (sortIsNew) await this.saveState();
       this.chrome.start();
-      // Plugins that load later (quick-create, dashboards) change what rows show.
+      // Plugins that load later (an add-on's form, dashboards) change what rows show.
       window.setTimeout(() => this.scheduleRender(), 1500);
     });
   }
@@ -1435,15 +1378,9 @@ class A4SidebarPlugin extends Plugin {
     return false;
   }
 
-  async newCanvas() {
-    if (!(this.app.vault.getAbstractFileByPath(SCRATCHPAD) instanceof TFolder)) { new Notice(`The ${SCRATCHPAD} folder is missing, so there is nowhere to put the canvas.`); return; }
-    const p = canvasPath(new Date(), (x) => !!this.app.vault.getAbstractFileByPath(x));
-    try {
-      const file = await this.app.vault.create(p, '{"nodes":[],"edges":[]}');
-      await this.app.workspace.getLeaf(true).openFile(file);
-    } catch (e) {
-      new Notice('Could not make the canvas: ' + (e && e.message ? e.message : e));
-    }
+  // A row's "+": the add-on's form; a failing form is logged, the Sidebar carries on.
+  openForm(key, preset) {
+    try { if (ADDON.form) ADDON.form.open(key, preset); } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); }
   }
 
   // The Bases drop-down. Always Obsidian's own drawn menu (not the Mac
@@ -1480,13 +1417,6 @@ class A4SidebarPlugin extends Plugin {
     if (IS_MOBILE) { const ls = this.app.workspace.leftSplit; if (ls && ls.collapse && !ls.collapsed) ls.collapse(); }
   }
 
-  async openRoster(e) {
-    const f = this.app.vault.getAbstractFileByPath(ROSTER);
-    if (!(f instanceof TFile)) { new Notice('The AI team roster note is missing.'); return; }
-    await this.app.workspace.getLeaf(e && Keymap.isModEvent(e)).openFile(f);
-    if (IS_MOBILE) { const ls = this.app.workspace.leftSplit; if (ls && ls.collapse && !ls.collapsed) ls.collapse(); }
-  }
-
   onunload() { window.clearTimeout(this.renderTimer); if (this.chrome) this.chrome.stop(); }
 }
 
@@ -1507,7 +1437,7 @@ class NewestFirstListModal extends Modal {
   draw() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createDiv({ cls: 'setting-item-description', text: 'These folders, and every folder inside them, list newest first whatever the main Dates setting is. "Journal" covers every folder called Journal (yours and the AI Team\'s).' });
+    contentEl.createDiv({ cls: 'setting-item-description', text: 'These folders, and every folder inside them, list newest first whatever the main Dates setting is. "Journal" covers every folder called Journal, wherever it is.' });
     const list = this.plugin.state.sort.newestFirstIn;
     if (!list.length) contentEl.createDiv({ cls: 'setting-item-description a4sb-sort-empty', text: 'No folders.' });
     for (const p of list) {
@@ -1567,7 +1497,7 @@ class A4SidebarSettingTab extends PluginSettingTab {
 export default A4SidebarPlugin;
 A4SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 A4SidebarPlugin.__logic = {
-  NAV, LANDING, FILE_CAP, SBC, A4SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
+  NAV, FILE_CAP, SBC, A4SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
-  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, SCRATCHPAD, ROSTER, canvasPath, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
+  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

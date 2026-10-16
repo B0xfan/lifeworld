@@ -128,7 +128,7 @@ import { asList } from '../core/lists';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } from '../core/quickadd';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
-import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, inTaskFolders, readable, writable, toNote, isRenamed } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 
 /* ========================================================================== *
@@ -2417,12 +2417,10 @@ class A4ProjectsPlugin extends Plugin {
     this.toast.show(`Saved why for "${f.basename}"`, undo);
     return true;
   }
-  // "+ Add project" (spec 13): the Quick Create add-on's own New Project form, unchanged.
+  // "+ Add project" (spec 13): an add-on's own new project form (LifeWorld's setNewNoteForm), unchanged.
   addProject() {
-    const qc = this.app.plugins && this.app.plugins.plugins && this.app.plugins.plugins['a4-quick-create'];
-    if (qc && typeof qc.openCreate === 'function' && qc.openCreate('project')) return true;
-    if (Platform.isMobile) { new Notice('Add new projects on your computer: the new project form only works there.'); return false; } // Quick Create is desktop-only
-    new Notice('The new project form needs the Quick Create add-on turned on.');
+    try { if (ADDON.form && ADDON.form.open('project')) return true; } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); }
+    new Notice('The new project form comes from an add-on, and none is turned on.');
     return false;
   }
   // "+ Add idea" (spec 11): a short form, then one new project note with status idea.

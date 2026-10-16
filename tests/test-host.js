@@ -38,7 +38,7 @@ class Plugin extends Component {
 }
 class Notice { constructor(m) { notices.push(m); } }
 // Settings page stand-ins: a Setting records what it shows; an element records what is put in it.
-const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, text: '', on: {}, addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, fire(t) { return Promise.all((this.on[t] || []).map((f) => f())); }, empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, toggleClass(c, on) { this.cls = this.cls.filter((x) => x !== c); if (on) this.cls.push(c); },
+const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, dataset: {}, text: '', on: {}, addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, fire(t) { return Promise.all((this.on[t] || []).map((f) => f())); }, empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, toggleClass(c, on) { this.cls = this.cls.filter((x) => x !== c); if (on) this.cls.push(c); },
   setAttr(k, v) { this.attr[k] = v; }, setText(t) { this.text = t; }, createDiv(o) { return this.createEl('div', o); },
   createEl(t, o) { const d = fakeEl(t); if (o && o.text) d.text = o.text; if (o && o.attr) Object.assign(d.attr, o.attr); this.kids.push(d); return d; } });
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = fakeEl(); } }
@@ -94,7 +94,7 @@ const adapter = {
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
 let openTabs = {}; // tab type -> leaves already open when LifeWorld starts
-const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { onLayoutReady: (f) => f(), detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -483,8 +483,6 @@ const start = async (data) => {
   eq(vaultRows(owner.host).find((r) => r.name === 'Property names').desc, 'status, due, scheduled, priority, projects, reminders', 'preset: property names row');
   eq(T.renderTemplate('# {{title}}', oct3), '# 2026-10-03', 'template title: the daily note name (defaults here)');
   eq(T.renderTemplate('# {{title}}', oct3, null, '10-03-2026'), '# 10-03-2026', 'template title: the name it is given');
-  ok(T.isScratchpadPath('00 Daily Scratchpad/10-04-2026.md', jdn) && !T.isScratchpadPath('03 WiP/x.md', jdn) && T.isScratchpadPath('2026-10-04.md', { folder: '' }) && !T.isScratchpadPath('a/2026-10-04.md', { folder: '' }), 'scratchpad notes: in the daily notes folder');
-  ok(T.isScratchpadPath('2026/10/2026-10-04.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }) && !T.isScratchpadPath('2026-10-04.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }) && T.isScratchpadPath('2026-10-04.md', { folder: '', format: 'YYYY-MM-DD' }), 'scratchpad notes at the top with a nested date format: as deep as the format (review p2-s5)');
   await owner.parts['a4-today'].saveData({ layout: ['x'] }); await owner.host.saving;
   eq(JSON.parse(disk[owner.dir]).lifeworld, fixJson('plugins/lifeworld/data.json').lifeworld, 'preset: saving a part leaves the Your vault settings as they were');
   // Phase 2 section 5: the calendar and weather notes the old code had built in come from the preset.
@@ -764,10 +762,6 @@ const start = async (data) => {
   VLT.brand = 'My Place'; sv.syncTitle(); sv.syncTitle();
   eq(hdr, ['title My Place', 'header'], 'tab title: a changed Sidebar name updates the tab header once');
   VLT.brand = brand0;
-  // Daily notes at the vault's top with a nested format: the name must read as that date format.
-  const nest = { folder: '', format: 'YYYY/MM/YYYY-MM-DD' };
-  eq([T.isScratchpadPath('2026/10/2026-10-04.md', nest), T.isScratchpadPath('Work/Clients/Acme.md', nest), T.isScratchpadPath('2026/13/2026-13-04.md', nest), T.isScratchpadPath('Notes.md', { folder: '' }), T.isScratchpadPath('2026-10-04.md', { folder: '' })],
-    [true, false, false, false, true], 'top-level daily notes: as deep as the format and named by it (review p2-s6)');
   }
 
   // ---- Section 7: the calendar sync hook an add-on sets, true wording without one ----
@@ -837,12 +831,6 @@ const start = async (data) => {
     tab.calHost.isConnected = false; remove();
     eq(drawn, ['picker'], 'Settings closed: no redraw');
     cs.host.unload();
-    // Daily-note formats whose date prints a slash ('L' = 10/15/2026): depth counted from the date.
-    eq([T.isScratchpadPath('10/15/2026.md', { folder: '', format: 'L' }), T.isScratchpadPath('2026-10-15.md', { folder: '', format: 'L' }), T.isScratchpadPath('Daily/Notes 2026-10-15.md', { folder: '', format: '[Daily/Notes] YYYY-MM-DD' })],
-      [true, false, true], "top-level daily notes: a date format that prints slashes, and a bracketed folder");
-    // No moment (logic-only use): the depth check alone, never an error.
-    const m0 = fakeObsidian.moment; fakeObsidian.moment = undefined;
-    try { eq([T.isScratchpadPath('2026/10/x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' }), T.isScratchpadPath('x.md', { folder: '', format: 'YYYY/MM/YYYY-MM-DD' })], [true, false], 'no moment: depth only'); } finally { fakeObsidian.moment = m0; }
   }
 
   // ---- Section 7: the add-on hooks (a Sidebar item, a toolbar button, a Today widget) ----
@@ -973,14 +961,96 @@ const start = async (data) => {
     const rmT = ex.host.addToolbarButton({ id: 'canvas2', label: 'Another canvas', icon: 'layout-dashboard', onClick: () => ran.push('canvas2') });
     chrome.refresh(); chrome.attachTools(files);
     const ids = () => bar.kids.map((k) => k.attr['data-tool']);
-    eq(ids(), ['daily', 'unique', 'canvas', 'graph', 'bases', 'canvas2'], "Files tab: the add-on's button sits after LifeWorld's own");
-    await bar.kids[5].fire('click'); await tick();
+    eq(ids(), ['daily', 'unique', 'graph', 'bases', 'canvas2'], "Files tab: the add-on's button sits after LifeWorld's own");
+    await bar.kids[4].fire('click'); await tick();
     eq(ran, ['canvas2'], "Files tab: the add-on's button runs its click");
     chrome.attachTools(files);
-    eq(bar.kids.length, 6, 'Files tab: drawn once, not again on the next attach');
+    eq(bar.kids.length, 5, 'Files tab: drawn once, not again on the next attach');
     rmT(); chrome.refresh(); chrome.attachTools(files);
-    eq(ids(), ['daily', 'unique', 'canvas', 'graph', 'bases'], 'Files tab: a removed button leaves after the next change');
+    eq(ids(), ['daily', 'unique', 'graph', 'bases'], 'Files tab: a removed button leaves after the next change');
     global.createDiv = gc;
+    ex.host.unload();
+  }
+
+  // ---- The companion add-on job: tab row, Files tab footer, item commands, toolbar place, new-note form, mood, ready ----
+  {
+    const SB = LW.parts['a4-sidebar'].__logic;
+    const V = LW.vault;
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const throwsMsg = (f) => { try { f(); return null; } catch (e) { return e.message; } };
+    const ce = console.error;
+    const ex = await start({});
+    eq([ex.host.ready, ex.app.workspace.fired.map(([nm, x]) => [nm, x === ex.host])], [true, [['lifeworld:ready', true]]], 'LifeWorld says once that it is ready, with itself');
+    ex.host.running['a4-sidebar'].extrasChanged = () => {};
+    // Toolbar place: in front of a built-in button, or after them when it names none (or an unknown one).
+    const rmA = ex.host.addToolbarButton({ id: 'canvas', label: 'New canvas', icon: 'layout-dashboard', onClick() {}, before: 'graph' });
+    const rmB = ex.host.addToolbarButton({ id: 'late', label: 'Late', icon: 'x', onClick() {}, before: 'nope' });
+    eq(SB.toolbarItems().map((t) => t.id), ['daily', 'unique', 'canvas', 'graph', 'bases', 'late'], 'toolbar: "before" puts a button in front of that built-in one; an unknown one goes last');
+    rmA(); rmB();
+    // Tab row: before Settings; the Settings id is taken.
+    ok(/already a Sidebar tab row button "settings"/.test(throwsMsg(() => ex.host.addTabRowButton({ id: 'settings', label: 'S', icon: 'x', onClick() {} }))), "a tab row button cannot take Settings' id");
+    const ran = [];
+    const rmTop = ex.host.addTabRowButton({ id: 'terminal', label: 'Open terminal', icon: 'terminal', onClick: () => ran.push('terminal') });
+    const row = fakeEl('div'); row.querySelector = () => null; row.querySelectorAll = () => [];
+    const doc0 = global.document; global.document = { querySelector: () => row };
+    const chrome = new SB.FilesChrome({ app: { setting: { open: () => ran.push('settings') } } });
+    try { chrome.attachTopButtons(); } finally { global.document = doc0; }
+    eq(row.kids.map((k) => k.attr['aria-label']), ['Open terminal', 'Settings'], "tab row: the add-on's button, then Settings");
+    await row.kids[0].fire('click'); await row.kids[1].fire('click'); await tick();
+    eq(ran, ['terminal', 'settings'], 'tab row: both buttons run');
+    rmTop();
+    // Files tab footer: drawn by the add-on, once per change; a failing draw is logged and the rest still draw.
+    ok(/needs id \(text\) and draw/.test(throwsMsg(() => ex.host.addFilesFooter({ id: 'x' }))), 'a footer without draw is refused');
+    const rmF = ex.host.addFilesFooter({ id: 'badge', draw: (el) => el.createDiv({ text: 'Badge' }) });
+    const rmBad = ex.host.addFilesFooter({ id: 'bad', draw: () => { throw new Error('planted'); } });
+    const files = fakeEl('div'); files.querySelectorAll = () => files.kids.filter((k) => k.attr['data-foot']).map((k) => Object.assign(k, { remove: () => files.kids.splice(files.kids.indexOf(k), 1) }));
+    const errs = []; console.error = (m) => errs.push(m);
+    try { chrome.refresh(); chrome.attachFoot(files); chrome.attachFoot(files); } finally { console.error = ce; }
+    eq([files.kids.map((k) => k.attr['data-foot']), files.kids[0].kids.map((k) => k.text), errs], [['badge', 'bad'], ['Badge'], ['LifeWorld: add-on footer bad failed']], 'Files tab footer: drawn in order, once; a failing one logged');
+    rmBad(); rmF(); chrome.refresh(); chrome.attachFoot(files);
+    eq(files.kids.length, 0, 'Files tab footer: removed after the next change');
+    // Item commands: the item opens the command while it is registered, else its landing note as before.
+    ok(/needs item, command \(text\)$/.test(throwsMsg(() => ex.host.addItemCommand({ item: 'Finance' }))), 'an item command without a command is refused');
+    const rmI = ex.host.addItemCommand({ item: 'Client Analytics', command: 'x:open' });
+    ok(/already a Sidebar item command for "Client Analytics"/.test(throwsMsg(() => ex.host.addItemCommand({ item: 'Client Analytics', command: 'y:open' }))), 'one command per item');
+    const land = (has) => SB.resolveLanding('Client Analytics', 'L/Client Analytics', ['L/Client Analytics/Client Analytics.md'], (id) => has && id === 'x:open');
+    eq([land(true), land(false)], [{ kind: 'command', id: 'x:open' }, { kind: 'file', path: 'L/Client Analytics/Client Analytics.md' }], "an item opens the add-on's command while it is registered, else its landing note");
+    rmI();
+    eq(land(true), { kind: 'file', path: 'L/Client Analytics/Client Analytics.md' }, 'removed: the landing note again');
+    // New-note form: "+" targets and "+ Add project"; none: no "+" and a notice.
+    const pj = ex.host.running['a4-projects'];
+    notices.length = 0;
+    eq([SB.formTargets(), pj.addProject(), notices], [{}, false, ['The new project form comes from an add-on, and none is turned on.']], 'no form: no "+" and "+ Add project" says so');
+    const opened = [];
+    const rmForm = ex.host.setNewNoteForm({ targets: () => [{ navPath: 'Projects', key: 'project', label: 'New project' }], open: (k, pre) => { opened.push([k, pre]); return true; } });
+    eq([Object.keys(SB.formTargets()), pj.addProject(), opened], [['Projects'], true, [['project', undefined]]], 'a form: rows get their "+", "+ Add project" opens it');
+    const errs2 = []; console.error = (m) => errs2.push(m);
+    const rmBroken = ex.host.setNewNoteForm({ targets: () => { throw new Error('planted'); }, open: () => { throw new Error('planted'); } });
+    try { eq([SB.formTargets(), pj.addProject()], [{}, false], 'a failing form: no "+", the page carries on'); } finally { console.error = ce; }
+    eq(errs2.length, 2, 'a failing form is logged');
+    rmForm(); // the older one: the newer (broken) form stays in place
+    const errs3 = []; console.error = (m) => errs3.push(m);
+    try { SB.formTargets(); } finally { console.error = ce; }
+    eq(errs3.length, 1, 'removing an older form leaves the newer one');
+    rmBroken();
+    eq(SB.formTargets(), {}, 'removed: no form');
+    // Mood check-in: shown while the add-on's command is registered.
+    const today = ex.host.running['a4-today'];
+    const runs = [];
+    today.app.commands = { commands: {}, executeCommandById: (id) => runs.push(id) };
+    const rmM = ex.host.setMoodCheckin('h:new-mood');
+    eq(today.moodCheckinOn(), false, 'mood: not shown before the command is registered');
+    today.app.commands.commands['h:new-mood'] = {};
+    today.openMoodCheckin();
+    eq([today.moodCheckinOn(), runs], [true, ['h:new-mood']], 'mood: "Check in" runs the add-on command');
+    rmM();
+    eq(today.moodCheckinOn(), false, 'mood: removed');
+    // The add-on fills the owner's note paths and mood folder (no rows); other saved values stay.
+    await ex.host.setVaultSettings({ feeds: { calendar: 'P/Cal.md' } });
+    await ex.host.setVaultSettings({ feeds: { weather: 'P/W.md' }, folders: { mood: 'L/Mood' } });
+    eq([JSON.parse(disk[ex.dir]).lifeworld.vault.feeds, V.feedNotes.calendar, V.vaultFolders.mood], [{ calendar: 'P/Cal.md', weather: 'P/W.md' }, 'P/Cal.md', 'L/Mood'], 'note paths and the mood folder are saved and read');
+    await ex.host.setVaultSettings({ folders: { mood: '' } });
+    eq(V.vaultFolders.mood, '', 'no mood folder: none (a new install)');
     ex.host.unload();
   }
 

@@ -13,8 +13,8 @@
  *    in a notice. The row must ACCEPT dragover for that case, or the browser
  *    never delivers the drop and the notice is dead code (it was in 0.6.1).
  * 4. (0.7.0, plugin overhaul step 3) the toolbar buttons are Sidebar's own
- *    commands, so they work with ICOR Connect off; the canvas name; the Audrey
- *    badge opens the roster note; nothing calls ICOR Connect any more.
+ *    commands, so they work with ICOR Connect off; nothing calls ICOR Connect
+ *    any more.
  * 5. (0.7.1, 2026-10-07) Scheduled Jobs/Reports lists newest first, like
  *    the Scratchpad and Journal; every other folder stays A to Z.
  * 6. (0.8.0, mockups approved 2026-10-07 / 2026-10-08) sort settings: real
@@ -125,55 +125,53 @@ ok(/isOpenProjectNote\(fm\) \{ return isOpenProject\(readProject\(fm, '', ''\)\)
 ok(/p\.sphere === sp && isOpenProject\(p\)/.test(pjSrc) && /function closedProjects[^\n]*\n[^\n]*\n\s*return projects\.filter\(\(p\) => CLOSED_STATUSES\.includes\(p\.status\)/.test(pjSrc), 'Projects: overview uses the open rule, Closed lists the closed statuses');
 
 /* ---- 4. toolbar and Files tab chrome without ICOR Connect (0.7.0) ---------- */
-eq(S.TOOLS.map((t) => t.id), ['daily', 'unique', 'canvas', 'graph'], 'toolbar: four buttons in the order already known');
-eq(S.TOOLS.map((t) => t.icon), ['calendar-check', 'file-clock', 'layout-dashboard', 'git-fork'], 'toolbar: same icons as before');
-eq(S.TOOLS.map((t) => t.label), ["Open today's daily note", 'New unique note', 'New canvas in the Daily Scratchpad', 'Open graph view'], 'toolbar: same tooltips as before');
+eq(S.TOOLS.map((t) => t.id), ['daily', 'unique', 'graph'], 'toolbar: the built-in buttons in the order already known');
+eq(S.TOOLS.map((t) => t.icon), ['calendar-check', 'file-clock', 'git-fork'], 'toolbar: same icons as before');
+eq(S.TOOLS.map((t) => t.label), ["Open today's daily note", 'New unique note', 'Open graph view'], 'toolbar: same tooltips as before');
 ok(S.TOOLS.every((t) => t.command.startsWith('a4-sidebar:')), 'toolbar: every button runs a Sidebar command');
-for (const t of S.TOOLS) { const id = t.command.split(':')[1]; ok(!!S.CORE_TOOLS[id] || new RegExp(`id: '${id}'`).test(src), `toolbar: command ${id} is registered by the sidebar`); }
+for (const t of S.TOOLS) { const id = t.command.split(':')[1]; ok(!!S.CORE_TOOLS[id], `toolbar: command ${id} is registered by the sidebar`); }
 eq(Object.values(S.CORE_TOOLS).map((c) => c.core), ['daily-notes', 'zk-prefixer', 'graph:open'], 'toolbar: core commands behind daily, unique, graph');
 ok(!/icor-for-life-connect:|micor-/.test(src), 'sidebar: no ICOR Connect command or class used');
 ok(/if \(this\.connectOn\(\)\) \{ this\.clear\(\); return; \}/.test(src), 'sidebar: steps aside if ICOR Connect is switched back on (no doubled buttons)');
-const d = new Date(2026, 9, 6, 13, 5);
-eq(S.canvasPath(d, () => false), '00 Daily Scratchpad/2026-10-06_canvas.canvas', 'canvas: dated name in the Daily Scratchpad');
-const taken2 = new Set(['00 Daily Scratchpad/2026-10-06_canvas.canvas', '00 Daily Scratchpad/2026-10-06_canvas-1.canvas']);
-eq(S.canvasPath(d, (p) => taken2.has(p)), '00 Daily Scratchpad/2026-10-06_canvas-2.canvas', 'canvas: -1, -2 when taken');
-eq(S.canvasPath(new Date(2026, 0, 9), () => false), '00 Daily Scratchpad/2026-01-09_canvas.canvas', 'canvas: zero-padded month and day');
-if (VAULT) ok(fs.existsSync(path.join(VAULT, S.ROSTER)), 'badge: the roster note exists (' + S.ROSTER + ')');
-if (VAULT) ok(fs.existsSync(path.join(VAULT, S.SCRATCHPAD)), 'canvas: the Daily Scratchpad folder exists');
-ok(/'Open the AI Team roster'/.test(src) && /openRoster\(e\)/.test(src), 'badge: clicking opens the roster');
-ok(!/chevron-up|micor-explorer-dot|is-connected/.test(src), 'badge: no arrow and no status dot');
+ok(!/chevron-up|micor-explorer-dot|is-connected/.test(src), 'Files tab: no arrow and no status dot');
 ok(!/'gauge'/.test(src), 'no room-folder gauge icons');
-ok(/stop\(\) \{[\s\S]*?this\.clear\(\);/.test(src) && /document\.querySelectorAll\('\.a4sb-files-tool, \.a4sb-audrey, \.a4sb-top-btn'\)\.forEach\(\(e\) => e\.remove\(\)\)/.test(src), 'turning the plugin off removes what it added');
+ok(/stop\(\) \{[\s\S]*?this\.clear\(\);/.test(src) && /document\.querySelectorAll\('\.a4sb-files-tool, \.a4sb-files-foot, \.a4sb-top-btn'\)\.forEach\(\(e\) => e\.remove\(\)\)/.test(src), 'turning the plugin off removes what it added');
 const zk = path.join(VAULT || '', '.obsidian/zk-prefixer.json');
 if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk, 'utf8')), 'unique notes keep their name format (core setting, not the plugin)');
+
+// The owner's saved sort settings (what the two retired plugins did, 2026-10-08); a new install
+// starts with no folder listed (phase 2: no owner's folders in the code).
+const OWNER_SORT = {
+  dates: 'last', text: 'az', folders: false,
+  newestFirstIn: ['00 Daily Scratchpad', 'Journal', '06 AI Team/Scheduled Jobs/Reports'],
+  perFolder: { '00 Daily Scratchpad': 'newest', '04 Inner World': 'az', '04 Inner World/Library Notes': 'az', '04 Inner World/My Life': 'az', '06 AI Team/Scheduled Jobs/Reports': 'newest' },
+};
 
 // 5. newest-first folders (0.7.1)
 {
   const kids = (names) => names.map((name) => ({ name, isFolder: false }));
-  const order = (folder, names) => S.sortChildren(folder, kids(names)).map((x) => x.name);
+  const order = (folder, names) => S.sortChildren(folder, kids(names), S.normalizeSort(OWNER_SORT)).map((x) => x.name);
   const rep = ['2026-09-12-shop-sync-check.md', '2026-10-06-dream-full.md', '2026-09-30-automation-health.md'];
   eq(order('06 AI Team/Scheduled Jobs/Reports', rep), ['2026-10-06-dream-full.md', '2026-09-30-automation-health.md', '2026-09-12-shop-sync-check.md'], 'sort: Scheduled Jobs/Reports newest first');
   eq(order('04 Inner World/Journal/2026/10', ['2026-10-01.md', '2026-10-05.md']), ['2026-10-05.md', '2026-10-01.md'], 'sort: Journal still newest first');
   eq(order('00 Daily Scratchpad', ['10-01-2026.md', '10-06-2026.md']), ['10-06-2026.md', '10-01-2026.md'], 'sort: Scratchpad still newest first');
   eq(order('06 AI Team/Scheduled Jobs', ['b.md', 'a.md']), ['a.md', 'b.md'], 'sort: Scheduled Jobs itself stays A to Z');
   eq(order('03 WiP', ['b.md', 'a.md']), ['a.md', 'b.md'], 'sort: other folders A to Z');
-  const mixed = S.sortChildren('06 AI Team/Scheduled Jobs/Reports', [{ name: 'z', isFolder: true }, { name: 'a', isFolder: true }, { name: '2026-01-01.md', isFolder: false }]).map((x) => x.name);
+  const mixed = S.sortChildren('06 AI Team/Scheduled Jobs/Reports', [{ name: 'z', isFolder: true }, { name: 'a', isFolder: true }, { name: '2026-01-01.md', isFolder: false }], S.normalizeSort(OWNER_SORT)).map((x) => x.name);
   eq(mixed, ['a', 'z', '2026-01-01.md'], 'sort: subfolders first, A to Z, in a newest-first folder');
 }
 
 // 6. sort settings (0.8.0)
 {
-  const D = S.normalizeSort(undefined);
+  const D = S.normalizeSort(OWNER_SORT);
   const kids = (names) => names.map((name) => ({ name, isFolder: false }));
   const order = (folder, names, sort) => S.sortChildren(folder, kids(names), sort || D).map((x) => x.name);
-  // pre-fill = what the two retired plugins did
-  eq(D.perFolder, { '00 Daily Scratchpad': 'newest', '04 Inner World': 'az', '04 Inner World/Library Notes': 'az', '04 Inner World/My Life': 'az', '06 AI Team/Scheduled Jobs/Reports': 'newest' }, 'pre-fill: folder-by-folder list');
-  eq([D.dates, D.text, D.folders], ['last', 'az', false], 'pre-fill: Newest last, A to Z, folders off');
-  eq(D.newestFirstIn, ['00 Daily Scratchpad', 'Journal', '06 AI Team/Scheduled Jobs/Reports'], 'pre-fill: always newest first in');
+  eq(S.normalizeSort(undefined), { dates: 'last', text: 'az', folders: false, newestFirstIn: [], perFolder: {} }, 'a new install: Newest last, A to Z, folders off, no folder listed');
+  eq(S.normalizeSort(OWNER_SORT), OWNER_SORT, "the owner's saved settings are read as saved");
   eq(order('Team/Agents/Sam/Journal', ['2026-09-02-a.md', '2026-10-08-b.md']), ['2026-10-08-b.md', '2026-09-02-a.md'], 'every Journal folder newest first (nested Journal folders too, as in 0.7)');
   ok(!S.SORT_MODES.includes('own') && !/My own order/.test(src), 'no drag-your-own-order option (2026-10-08)');
   // damaged / partial settings never break the list
-  eq(S.normalizeSort({ dates: 'x', text: 7, perFolder: { a: 'own', b: 'za' }, newestFirstIn: 'x' }), { dates: 'last', text: 'az', folders: false, newestFirstIn: D.newestFirstIn, perFolder: { b: 'za' } }, 'damaged values fall back');
+  eq(S.normalizeSort({ dates: 'x', text: 7, perFolder: { a: 'own', b: 'za' }, newestFirstIn: 'x' }), { dates: 'last', text: 'az', folders: false, newestFirstIn: [], perFolder: { b: 'za' } }, 'damaged values fall back');
   eq(S.normalizeSort({ perFolder: {} }).perFolder, {}, 'an emptied list stays empty (not re-filled)');
   // dates in note names
   eq(S.dateKey('10-08-2026.md'), { day: 20261008, time: -1 }, 'date: daily note');
@@ -234,7 +232,7 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
 // 7. Bases button (0.9.0)
 {
   eq([S.BASES_TOOL.id, S.BASES_TOOL.icon, S.BASES_TOOL.label], ['bases', 'database', 'Open a base'], 'bases: database icon, tooltip "Open a base"');
-  eq(S.TOOLS.length, 4, 'bases: the four older buttons are unchanged');
+  eq(S.TOOLS.length, 3, 'bases: the three older buttons are unchanged');
   // the vault, read-only (the frozen copy unless LIFEWORLD_VAULT)
   const found = [];
   if (VAULT) {
@@ -254,8 +252,9 @@ if (VAULT) ok(fs.existsSync(zk) && /MM-DD-YYYY - h-mm A/.test(fs.readFileSync(zk
   if (VAULT) eq(S.listBases(found.concat('04 Inner World/My Life/Health/Health.base')).map((b) => b.name), ['Companies', 'Documents', 'Health', 'Library Notes', 'People', 'Places'], 'bases: a new base appears in its A to Z place');
   eq(S.baseWhere('04 Inner World/Contacts/People/People.base', 'People'), 'Contacts', 'bases: named after its folder, shows the folder above');
   // wiring
-  ok(/data-tool': BASES_TOOL\.id[\s\S]*?this\.plugin\.showBases\(bb\)[\s\S]*?const sectionIds/.test(src), 'bases: Sidebar tab button sits after the four tools, before collapse-all');
-  ok(/attachTools\(ex\) \{[\s\S]*?for \(const t of TOOLS\)[\s\S]*?a4sb-files-tool', attr: \{ 'aria-label': BASES_TOOL\.label[\s\S]*?bar\.insertBefore\(bb, at\)/.test(src), 'bases: same button on the Files tab, after graph, removed with the others');
+  eq(S.toolbarItems().map((t) => t.id), ['daily', 'unique', 'graph', 'bases'], 'bases: after the three tools');
+  ok(/for \(const t of toolbarItems\(\)\)[\s\S]*?this\.plugin\.showBases\(b\)[\s\S]*?const sectionIds/.test(src), 'bases: Sidebar tab button drawn from the toolbar list, before collapse-all');
+  ok(/attachTools\(ex\) \{[\s\S]*?for \(const t of toolbarItems\(\)\)[\s\S]*?this\.plugin\.showBases\(b\)/.test(src), 'bases: same list on the Files tab, removed with the others');
   ok(/showBases\(btn\) \{\s*const bases = listBases\(this\.app\.vault\.getFiles\(\)/.test(src), 'bases: list read from the vault on every click');
   ok(/menu\.setUseNativeMenu\(false\)/.test(src), "bases: Obsidian's own menu, so the folder names show");
   ok(/menu\.showAtPosition\(\{ x: r\.left, y: r\.bottom \+ 4 \}, btn\.ownerDocument\)/.test(src), "bases: menu drops down under the button, in the button's own window");

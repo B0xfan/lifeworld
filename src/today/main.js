@@ -26,9 +26,6 @@
  *    template when it does not exist yet. Append only; nothing is removed.
  *    A missing '## Quick notes' heading is added at the top of the body,
  *    under the frontmatter (ruling 2026-10-04).
- *  - Display only: in Live Preview, Daily Scratchpad notes hide the Places
- *    machine markers (<!-- places-today:start/end -->, <!-- stay:... -->);
- *    the file is never changed (see buildMarkerHider).
  *  - "Move all N to today" (1.2.3, Overdue card): for each task the card
  *    lists, `due` takes today's day (a time after it is kept) and
  *    `planned_order` puts it at the bottom of its lane; nothing else changes.
@@ -76,18 +73,16 @@
  */
 'use strict';
 
-import { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting, Keymap, Menu, moment, editorInfoField, editorLivePreviewField } from 'obsidian';
+import { Plugin, ItemView, TFile, TFolder, Notice, Modal, setIcon, PluginSettingTab, Setting, Keymap, Menu, moment } from 'obsidian';
 
 /* ========================================================================== *
  * Constants
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-today';
-const MOOD_FOLDER = '04 Inner World/My Life/Mood';
 const SYNC_AFTER_CHANGE_MS = 2500; // a calendar choice is handed to the add-on's sync this long after the last tick
 const QUICK_NOTES_HEADING = '## Quick notes';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old daily planner fallback was dropped 2026-10-05
-const MOOD_COMMAND = 'a4-health:new-mood-checkin';
 const STALE_AFTER_MS = 2 * 60 * 60 * 1000; // mockup: amber after 2 hours
 const OVERDUE_PREVIEW = 5;                  // mockup: first 5, then "Show N more"
 const CALENDAR_DAYS_AHEAD = 7;
@@ -95,7 +90,7 @@ const JOURNAL_EXCERPT_CHARS = 260;
 const CAPTURE_MAX_CHARS = 2000;
 const NARROW_WIDTH = 720;                   // one column + up/down arrows below this
 // What Today redraws for: the weather and calendar notes (when set) and the folders it reads.
-const watches = (p) => p === feedNotes.weather || p === feedNotes.calendar || [vaultFolders.tasks, vaultFolders.archive, vaultFolders.habits, MOOD_FOLDER, vaultFolders.projects, vaultFolders.journal].some((f) => p.startsWith(f + '/'));
+const watches = (p) => p === feedNotes.weather || p === feedNotes.calendar || [vaultFolders.tasks, vaultFolders.archive, vaultFolders.habits, vaultFolders.mood, vaultFolders.projects, vaultFolders.journal].some((f) => f && p.startsWith(f + '/'));
 const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · Undo" line, a few seconds
 
 /* ========================================================================== *
@@ -109,7 +104,7 @@ import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseR
 import { asList } from '../core/lists';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, planInsert, openBlockersOf } from '../core/tasks';
-import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
+import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, dailyNotes, readable, writable } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 
 /* ---- tasks ---------------------------------------------------------------- */
@@ -503,81 +498,6 @@ function insertSectionAtTop(text, fmEnd, section) {
   return `${head}${lead}${section}\n\n${body.endsWith('\n') ? body : `${body}\n`}`;
 }
 
-/* ---- hidden machine markers in Daily Scratchpads (Live Preview) ----------- */
-//
-// The Places detector and the end-of-day review keep their bookkeeping in HTML
-// comments: '<!-- places-today:start -->' / ':end -->' on their own lines and a
-// trailing '<!-- stay:<key> -->' per Places line. Reading view drops HTML
-// comments by itself; Live Preview shows them as text (and the INKLINE theme
-// sets that text in its handwriting font). This hides exactly those markers,
-// for display only, in Live Preview, in Daily Scratchpad notes. The file on
-// disk is never touched, so every script that reads the markers is unaffected.
-// A marker shows again while the cursor or a selection is on its line, so it
-// can still be seen and edited on purpose; Source mode always shows it.
-const MARKER_LINE_RE = /^[ \t]*<!--[ \t]*places-today:(?:start|end)[ \t]*-->[ \t]*$/;
-const MARKER_INLINE_RE = /[ \t]*<!--[ \t]*stay:[^\s>]+[ \t]*-->/g;
-
-// -> [{ from, to, line: true|false }] character offsets into `text`.
-function markerRanges(text) {
-  const out = [];
-  const s = String(text == null ? '' : text);
-  let pos = 0;
-  for (const raw of s.split('\n')) {
-    const l = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    if (MARKER_LINE_RE.test(l)) out.push({ from: pos, to: pos + l.length, line: true });
-    else if (l.includes('<!--')) {
-      MARKER_INLINE_RE.lastIndex = 0;
-      let m; while ((m = MARKER_INLINE_RE.exec(l))) out.push({ from: pos + m.index, to: pos + m.index + m[0].length, line: false });
-    }
-    pos += raw.length + 1;
-  }
-  return out;
-}
-
-// A note in the daily notes folder. shortcut: with the daily notes at the vault's top, every note
-// there counts (the markers it hides only appear in daily notes); upgrade if that ever misfires.
-function isScratchpadPath(p, dn) {
-  const { folder, format } = dn || dailyNotes(null);
-  if (typeof p !== 'string' || !p.endsWith('.md')) return false;
-  if (folder) return p.startsWith(`${folder}/`);
-  // Top-level daily notes: as deep as the date format's own folders (YYYY/MM/YYYY-MM-DD), review p2-s5,
-  // and named by it, read strictly with Obsidian's moment (review p2-s6; the logic tests have no moment).
-  // Depth from a formatted date, not the format text: 'L' prints slashes the format does not hold (review p2-s7).
-  const fmt = format || 'YYYY-MM-DD';
-  const m = moment;
-  return p.split('/').length === (m ? m().format(fmt) : fmt).split('/').length && (!m || m(p.slice(0, -3), fmt, true).isValid());
-}
-
-// The CodeMirror 6 extension ('@codemirror/*' come from Obsidian; the tests use the dev copies).
-function buildMarkerHider(app, { StateField, RangeSetBuilder, Decoration, EditorView }) {
-  const hideLine = Decoration.replace({ block: true });
-  const hideInline = Decoration.replace({});
-  const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
-  const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch { return false; } };
-  const compute = (state) => {
-    if (!isLive(state) || !isScratchpadPath(pathOf(state), dailyNotes(app))) return Decoration.none;
-    const text = state.doc.toString();
-    if (!text.includes('<!--')) return Decoration.none;
-    const sel = state.selection.ranges;
-    const b = new RangeSetBuilder();
-    for (const r of markerRanges(text)) {
-      const ln = state.doc.lineAt(r.from);
-      if (sel.some((s) => s.from <= ln.to && s.to >= ln.from)) continue; // cursor on this line: show it
-      b.add(r.from, r.to, r.line ? hideLine : hideInline);
-    }
-    return b.finish();
-  };
-  return StateField.define({
-    create: (state) => ({ path: pathOf(state), live: isLive(state), deco: compute(state) }),
-    update(v, tr) {
-      const path = pathOf(tr.state); const live = isLive(tr.state);
-      if (tr.docChanged || tr.selection || path !== v.path || live !== v.live) return { path, live, deco: compute(tr.state) };
-      return v;
-    },
-    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
-  });
-}
-
 /* ---- weather, calendar, journal, mood -------------------------------------- */
 
 function weatherAge(updated, now) {
@@ -870,7 +790,7 @@ const logic = {
   normalizeOpenOnStartup, startupOpensToday,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
-  greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, markerRanges, isScratchpadPath, weatherAge, tidesLine,
+  greetingLine, scratchPathFor, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, placeWidget, sameLayout, WIDGETS, LATER_WIDGETS, ZONES, EXTRA_WIDGETS,
   normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
@@ -899,14 +819,6 @@ class A4TodayPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && feedNotes.calendar && file.path === feedNotes.calendar) this.adoptCalendarChoice(); }));
     this.app.workspace.onLayoutReady(() => this.adoptCalendarChoice());
     this.registerEvent(this.app.workspace.on('css-change', () => this.applyLook()));
-
-    // Display-only: hide the Places/stay HTML-comment markers in Live Preview.
-    // CodeMirror loads here, so a missing module turns off only this, never the plugin (review p2-s8 #3).
-    const markerExt = [];
-    this.registerEditorExtension(markerExt);
-    Promise.all([import('@codemirror/state'), import('@codemirror/view')])
-      .then((ms) => { markerExt.push(buildMarkerHider(this.app, Object.assign({}, ...ms))); this.app.workspace.updateOptions(); })
-      .catch((e) => console.warn('LifeWorld: marker hiding unavailable', e));
 
     this.registerView(VIEW_TYPE, (leaf) => new TodayView(leaf, this));
     this.addRibbonIcon('sun', 'Open Today', () => this.openToday());
@@ -1100,9 +1012,12 @@ class A4TodayPlugin extends Plugin {
     new Notice('The planner is not turned on.');
   }
 
+  // An add-on's check-in command (LifeWorld's setMoodCheckin), while it is registered.
+  moodCheckinOn() { const cmds = this.app.commands; return !!(ADDON.moodCheckin && cmds && cmds.commands && cmds.commands[ADDON.moodCheckin]); }
+
   openMoodCheckin() {
     const cmds = this.app.commands;
-    if (cmds && cmds.commands && cmds.commands[MOOD_COMMAND]) cmds.executeCommandById(MOOD_COMMAND);
+    if (this.moodCheckinOn()) cmds.executeCommandById(ADDON.moodCheckin);
     else new Notice('Mood check-in is part of the health add-on, which is not turned on.');
   }
 
@@ -1693,7 +1608,7 @@ class TodayView extends ItemView {
 
     // Mood: the latest check-in, any day
     let mood = null;
-    const mf = app.vault.getAbstractFileByPath(MOOD_FOLDER);
+    const mf = vaultFolders.mood ? app.vault.getAbstractFileByPath(vaultFolders.mood) : null;
     if (mf instanceof TFolder) {
       for (const f of mf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
@@ -2408,7 +2323,7 @@ class TodayView extends ItemView {
     el.addClass('a4t-card');
     const m = this.data.mood;
     const head = this.cardHead(body, 'Mood', m ? `Last check-in · ${m.score}` : 'How are you?');
-    if (this.app.commands && this.app.commands.commands && this.app.commands.commands[MOOD_COMMAND]) {
+    if (this.plugin.moodCheckinOn()) {
       const b = head.createEl('button', { cls: 'a4t-btn a4t-small', text: 'Check in' });
       b.addEventListener('click', () => this.plugin.openMoodCheckin());
     }

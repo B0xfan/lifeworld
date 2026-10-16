@@ -390,16 +390,6 @@ const old = '---\ntype: scratchpad\n---\n\n## WhatsApp\n- w\n\n## Quick notes\n\
 eq(L.insertQuickNote(old, '- b'), old + '- b\n', 'older note: existing bottom section reused, nothing reordered');
 eq(L.insertQuickNote('---\nx: 1\n---\nmy own words\n', '- 1'), '---\nx: 1\n---\n\n## Quick notes\n\n- 1\n\nmy own words\n', "no heading: added above the user's text, text kept");
 eq(L.insertQuickNote('no frontmatter\n', '- 1'), '## Quick notes\n\n- 1\n\nno frontmatter\n', 'no frontmatter: heading first');
-/* hidden markers (display-only) */
-const mk = busy;
-const rs = L.markerRanges(mk);
-eq(rs.map((r) => mk.slice(r.from, r.to)), ['<!-- places-today:start -->', ' <!-- stay:droplet:1 -->', '<!-- places-today:end -->'], 'marker ranges: start, stay, end');
-eq(rs.map((r) => r.line), [true, false, true], 'whole-line vs inline markers');
-eq(L.markerRanges('<!-- my own comment -->\n- a <!-- note to self -->\n%% x %%\n').length, 0, "the user's own comments are never hidden");
-eq(L.markerRanges('text <!-- places-today:start --> more\n').length, 0, 'a start marker inside prose is not a whole-line marker');
-const crlf = 'a\r\n<!-- places-today:end -->\r\n';
-eq(L.markerRanges(crlf).map((r) => crlf.slice(r.from, r.to)), ['<!-- places-today:end -->'], 'CRLF offsets');
-eq([L.isScratchpadPath('00 Daily Scratchpad/10-04-2026.md'), L.isScratchpadPath('03 WiP/x.md'), L.isScratchpadPath('00 Daily Scratchpad/a.png')], [true, false, false], 'only Daily Scratchpad notes');
 const mid = '---\ntype: scratchpad\n---\nmy words\n\n## Quick notes\n\n- 08:00  a\n\n## WhatsApp\n- 08:14  Kim\n';
 const mid2 = L.insertQuickNote(mid, '- 09:00  b');
 eq(mid2, '---\ntype: scratchpad\n---\nmy words\n\n## Quick notes\n\n- 08:00  a\n- 09:00  b\n\n## WhatsApp\n- 08:14  Kim\n', 'insert stays inside its own section');
@@ -619,7 +609,7 @@ async function writeBack() {
 /* ---- Open Today when Obsidian starts (setting, 1.3.1) ---------------------- */
 eq([L.startupOpensToday(undefined), L.startupOpensToday({}), L.startupOpensToday({ openOnStartup: true }), L.startupOpensToday({ openOnStartup: false })], [true, true, true, false], 'startup setting: on unless saved as false');
 eq([L.normalizeOpenOnStartup('false'), L.normalizeOpenOnStartup(0), L.normalizeOpenOnStartup(null)], [true, true, true], 'startup setting: only a real false turns it off (damaged data keeps today\'s behaviour)');
-async function startupRun(saved, noCM) {
+async function startupRun(saved) {
   // Real onload against a stand-in app: count every way Today could be opened,
   // focused or revealed once the layout is ready.
   const ready = []; const touched = []; let stored = saved; const cm = { exts: [], updated: 0 };
@@ -636,19 +626,14 @@ async function startupRun(saved, noCM) {
   };
   Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop,
     registerEditorExtension: (e) => cm.exts.push(e), registerView: nop, addRibbonIcon: nop, addCommand: nop, registerObsidianProtocolHandler: nop });
-  const warn = console.warn; console.warn = nop; // the editor-extension fallback warns outside Obsidian
-  // noCM: Obsidian without @codemirror/view (review p2-s8 #3).
-  const load = Module._load; if (noCM) Module._load = function (r, ...a) { if (r === '@codemirror/view') throw new Error('planted: no module'); return load.call(this, r, ...a); };
-  try { await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0)); } finally { console.warn = warn; Module._load = load; }
+  await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0));
   return { p, touched, stored: () => stored, cm };
 }
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
-  eq([on.cm.exts.length, on.cm.exts[0].length, on.cm.updated], [1, 1, 1], 'startup: the marker hider is added once CodeMirror loads, and the editors are told');
-  const noCM = await startupRun(JSON.parse(JSON.stringify(keep)), true);
-  ok(noCM.touched.includes('setViewState') && noCM.cm.exts[0].length === 0 && noCM.cm.updated === 0, 'startup without a CodeMirror module: Today still starts, only the marker hider is off');
+  eq([on.cm.exts.length, on.cm.updated], [0, 0], 'startup: Today adds no editor extension (the marker hiding left with the companion add-on)');
   const off = await startupRun({ ...JSON.parse(JSON.stringify(keep)), openOnStartup: false });
   eq(off.touched, [], 'startup, setting off: Today is not opened, revealed or focused');
   const fresh = await startupRun(null);

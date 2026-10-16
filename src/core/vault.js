@@ -4,7 +4,9 @@
 'use strict';
 
 // A new install's folders, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
-const FOLDER_DEFAULTS = { tasks: 'Tasks', archive: 'Tasks/Archive', projects: 'Projects', goals: 'Goals', habits: 'Habits', journal: 'Journal' };
+// mood: where the Mood card reads check-ins; no row and '' (none) for a new install, an owner's preset
+// holds it (the built-in mood check-in is phase 4).
+const FOLDER_DEFAULTS = { tasks: 'Tasks', archive: 'Tasks/Archive', projects: 'Projects', goals: 'Goals', habits: 'Habits', journal: 'Journal', mood: '' };
 // Task note properties, LifeWorld's own name for each; a new install uses the same names in the notes.
 const PROPS = ['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'reminders', 'recurrence', 'completedDate', 'planned_day', 'planned_half', 'planned_order',
   'dateCreated', 'dateModified', 'complete_instances', 'skipped_instances', 'blockedBy'];

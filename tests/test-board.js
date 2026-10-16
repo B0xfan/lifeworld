@@ -92,12 +92,10 @@ global.document = { activeElement: null, querySelector: () => null };
   assert.strictEqual(rv.dragPath, null, 'redraw clears the dragged card');
 }
 
-/* ---- phone: "+ Add project" says where it works ---------------------------- */
-fake.Platform.isMobile = true;
+/* ---- "+ Add project" without an add-on's form says so (the form, and its phone wording, are the add-on's) ---- */
 notices.length = 0;
-assert.strictEqual(plugin.prototype.addProject.call({ app: { plugins: { plugins: {} } } }), false);
-assert.ok(/on your computer/.test(notices[0]) && !/turned on/.test(notices[0]), 'phone: no "turn on the plugin" advice');
-fake.Platform.isMobile = false;
+assert.strictEqual(plugin.prototype.addProject.call({}), false);
+assert.ok(/comes from an add-on/.test(notices[0]), 'no form: "+ Add project" says the form comes from an add-on');
 
 (async () => {
   /* ---- description search survives a note change ---------------------------- */

@@ -6,7 +6,7 @@
 'use strict';
 
 import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
-import { PARTS } from './core/parts';
+import { PARTS, ADDON } from './core/parts';
 import * as vault from './core/vault';
 import projectsManifest from './projects/manifest.json';
 import Projects from './projects/main';
@@ -107,6 +107,10 @@ class LifeWorldPlugin extends Plugin {
     // A tab open before the later parts started (Today before the Planner) drew them as off: all open
     // tabs draw again now, or at a cold start once the layout is back (a tab not yet loaded is skipped).
     this.app.workspace.onLayoutReady(() => { if (!this.gone) this.redrawViews(); });
+    // A companion add-on that started first hears that the hooks below are there (one that starts later
+    // checks `ready`); it hears it again after LifeWorld is turned off and on, which drops what it added.
+    this.ready = true;
+    this.app.workspace.trigger('lifeworld:ready', this);
   }
 
   // The Parts switches; a part never switched is on, so an existing setup starts with all four.
@@ -169,22 +173,57 @@ class LifeWorldPlugin extends Plugin {
 
   // For a companion add-on (phase 2 section 7), each -> a function that removes what it added:
   //   addSidebarItem({ id, label, icon, onClick })    a row under Today, Planner and Focus in the Sidebar
-  //   addToolbarButton({ id, label, icon, onClick })  a button on the Sidebar's toolbar and the Files tab's
+  //   addToolbarButton({ id, label, icon, onClick, before })  a button on the Sidebar's toolbar and the Files
+  //     tab's; before = a built-in button's id ('daily', 'unique', 'graph', 'bases') to sit in front of,
+  //     else it goes after them
+  //   addTabRowButton({ id, label, icon, onClick })   a button on the right sidebar's tab row, before Settings
+  //   addFilesFooter({ id, draw(el) })                 a strip at the foot of the Files tab; draw fills el, and
+  //     again whenever Obsidian rebuilds the tab
+  //   addItemCommand({ item, command })                the Sidebar item named item (a folder name) opens this
+  //     command while it is registered, instead of its landing note
   //   addTodayWidget({ id, name, desc, zone, render(body, el) })  a widget on the Today page, placed, moved
   //     and hidden like the others; zone 'c1' | 'c2' | 'c3' (default 'c3'); render draws into a fresh body on
   //     every refresh (el.addClass('a4t-card') for the card look). icon is an Obsidian icon name; an id is
   //     letters, digits, dash and underscore.
-  // Errors in onClick or render are logged and never break the page. Kept while the Sidebar or the
+  // Errors in onClick, draw or render are logged and never break the page. Kept while the Sidebar or the
   // Today page is switched off, shown again when it is back on.
   addSidebarItem(def) { return this.addExtra('a4-sidebar', 'Sidebar item', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('nav', d)); }
   addToolbarButton(def) { return this.addExtra('a4-sidebar', 'toolbar button', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('tools', d)); }
+  addTabRowButton(def) { return this.addExtra('a4-sidebar', 'tab row button', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('top', d)); }
+  addFilesFooter(def) { return this.addExtra('a4-sidebar', 'Files tab footer', def, ['id'], 'draw', (d) => PART_MAIN['a4-sidebar'].addExtra('foot', d)); }
+  addItemCommand(def) { return this.addExtra('a4-sidebar', 'Sidebar item command', def, ['item', 'command'], null, (d) => PART_MAIN['a4-sidebar'].addExtra('items', d)); }
   addTodayWidget(def) { return this.addExtra('a4-today', 'Today widget', def, ['id', 'name'], 'render', (d) => PART_MAIN['a4-today'].addExtraWidget(d)); }
 
+  // For a companion add-on: its new-note form, { targets(), open(key, preset) }. targets() -> [{ navPath, key,
+  // label }]: a folder row whose path is a navPath gets a "+" that calls open(key); "+ Add project" on the
+  // Projects page calls open('project'); open -> true when it handled it. Anything else removes it.
+  // -> a function that removes it.
+  setNewNoteForm(form) {
+    ADDON.form = form && typeof form.targets === 'function' && typeof form.open === 'function' ? form : null;
+    this.extrasChanged('a4-sidebar');
+    return () => { if (ADDON.form === form) this.setNewNoteForm(null); };
+  }
+
+  // For a companion add-on: the command the Today page's Mood card runs for "Check in" (shown while that
+  // command is registered); anything but text removes it. -> a function that removes it.
+  setMoodCheckin(command) {
+    const id = typeof command === 'string' ? command.trim() : '';
+    ADDON.moodCheckin = id;
+    this.extrasChanged('a4-today');
+    return () => { if (id && ADDON.moodCheckin === id) this.setMoodCheckin(null); };
+  }
+
+  // A part redraws after an add-on change (it may be off: then it draws them when it starts).
+  extrasChanged(part) {
+    const p = this.running[part];
+    if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => p.extrasChanged()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e));
+  }
+
   addExtra(part, what, def, texts, fn, add) {
-    const bad = !def || typeof def !== 'object' || texts.some((k) => typeof def[k] !== 'string' || !def[k].trim()) || typeof def[fn] !== 'function';
-    if (bad) throw new TypeError(`LifeWorld: a ${what} needs ${texts.join(', ')} (text) and ${fn} (a function)`);
-    if (!/^[A-Za-z0-9_-]+$/.test(def.id)) throw new TypeError(`LifeWorld: a ${what} id is letters, digits, dash and underscore only`);
-    const changed = () => { const p = this.running[part]; if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => p.extrasChanged()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e)); };
+    const bad = !def || typeof def !== 'object' || texts.some((k) => typeof def[k] !== 'string' || !def[k].trim()) || (fn && typeof def[fn] !== 'function');
+    if (bad) throw new TypeError(`LifeWorld: a ${what} needs ${texts.join(', ')} (text)${fn ? ` and ${fn} (a function)` : ''}`);
+    if (texts.includes('id') && !/^[A-Za-z0-9_-]+$/.test(def.id)) throw new TypeError(`LifeWorld: a ${what} id is letters, digits, dash and underscore only`);
+    const changed = () => this.extrasChanged(part);
     const remove = add({ ...def });
     changed();
     let done = false;
@@ -230,13 +269,15 @@ class LifeWorldPlugin extends Plugin {
     await this.applyParts();
   }
 
-  // Settings › Your vault: change = { folders: {...} } or { names: {...} }, merged into what is saved.
+  // Settings › Your vault: change = { folders: {...} }, { feeds: {...} } or { names: {...} }, merged into what
+  // is saved (feeds: the note paths, set by an owner's companion add-on; no row, build plan section 2).
   // Every part reads the new folders and names from the next time it looks; open views redraw.
   async setVaultSettings(change) {
     const h = this.store[HOST] || {};
     const v = h.vault || {};
     const next = { ...v };
     if (change.folders) next.folders = { ...(v.folders || {}), ...change.folders };
+    if (change.feeds) next.feeds = { ...(v.feeds || {}), ...change.feeds };
     if (change.names) next.names = change.names;
     this.store[HOST] = { ...h, vault: next };
     this.applyVault(next);

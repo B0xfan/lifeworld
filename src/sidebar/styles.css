@@ -148,22 +148,13 @@
 .is-mobile .a4sb-files-tools .clickable-icon { width: 44px; height: 44px; }
 .is-mobile .a4sb-files-tools .clickable-icon svg { width: 20px; height: 20px; }
 
-/* Audrey badge: bottom of the Files tab, opens the team roster. */
-.a4sb-audrey { flex: 0 0 auto; margin-top: auto; padding: 8px 10px 10px; border-top: 1px solid var(--ink-hairline, var(--background-modifier-border)); }
-.a4sb-audrey-btn { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: var(--ink-radius-subtle, 10px); cursor: pointer; color: var(--ink-paper-dim, var(--text-muted)); }
-.a4sb-audrey-btn:hover { background-color: var(--background-modifier-hover); color: var(--ink-paper, var(--text-normal)); }
-.a4sb-audrey-btn:focus-visible { outline: 2px solid var(--ink-marker, #ff5a2d); outline-offset: 2px; }
-.a4sb-audrey-mark { width: 22px; height: auto; aspect-ratio: 112 / 74; flex: none; }
-.a4sb-audrey-mark .a4sb-mark-ink { stroke: #ece8dd; }
-.theme-light .a4sb-audrey-mark .a4sb-mark-ink { stroke: #1f1f1c; }
-.a4sb-audrey-mark .a4sb-mark-bar { stroke: #e8622a; }
-.a4sb-audrey-label { font-family: Fraunces, var(--ink-font-display, var(--font-interface)); font-style: italic; font-weight: 500; font-size: 13px; letter-spacing: 0.01em; color: var(--text-normal); }
+/* An add-on's footer: bottom of the Files tab. */
+.a4sb-files-foot { flex: 0 0 auto; margin-top: auto; padding: 8px 10px 10px; border-top: 1px solid var(--ink-hairline, var(--background-modifier-border)); }
+.a4sb-files-foot + .a4sb-files-foot { margin-top: 0; }
 
-/* Terminal and Settings on the right sidebar's tab row. */
+/* An add-on's buttons and Settings on the right sidebar's tab row. */
 .a4sb-top-btn { align-self: center; color: var(--ink-paper-faint, var(--text-faint)); padding: 4px; margin-right: 2px; }
 .a4sb-top-btn:hover { color: var(--ink-paper, var(--text-normal)); }
-.a4sb-top-terminal { color: var(--ink-marker, #ff5a2d); }
-.a4sb-top-terminal:hover { color: var(--ink-marker-fill-hover, #ff7248); }
 
 /* Bases button drop-down (0.9.0): Obsidian's own menu; the folder each base
  * lives in sits faintly on the right; the title row is a quiet label. */
