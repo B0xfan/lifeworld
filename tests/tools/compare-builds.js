@@ -19,6 +19,7 @@ const load = (root, f) => {
   const p = fs.existsSync(alone) ? alone : path.resolve(root, 'main.js'); delete require.cache[p];
   const mod = require(p); if (!mod.default) return mod.logic;
   const fx = (q) => JSON.parse(fs.readFileSync(path.join(root, 'tests', 'fixtures', 'vault', '.obsidian', q), 'utf8'));
+  if (!ID[f]) throw new Error(`compare-builds: no part id for ${f} (the Sidebar has no shared task helpers to compare)`);
   mod.default.vault.startWith({ ...fx('plugins/lifeworld/data.json').lifeworld.vault, daily: fx('daily-notes.json') });
   return mod.default.parts[ID[f]].logic;
 };
