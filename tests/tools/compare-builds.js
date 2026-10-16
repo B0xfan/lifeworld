@@ -19,7 +19,6 @@ const load = (root, f) => {
   const p = fs.existsSync(alone) ? alone : path.resolve(root, 'main.js'); delete require.cache[p];
   const mod = require(p); if (!mod.default) return mod.logic;
   const fx = (q) => JSON.parse(fs.readFileSync(path.join(root, 'tests', 'fixtures', 'vault', '.obsidian', q), 'utf8'));
-  if (!ID[f]) throw new Error(`compare-builds: no part id for ${f} (the Sidebar has no shared task helpers to compare)`);
   mod.default.vault.startWith({ ...fx('plugins/lifeworld/data.json').lifeworld.vault, daily: fx('daily-notes.json') });
   return mod.default.parts[ID[f]].logic;
 };
@@ -39,7 +38,7 @@ const ALL = ['taskTitleOf', 'taskFromFrontmatter', 'blockerLinks', 'isSomeday', 
 const NOT_EXPOSED = { 'main.js': ['planInsert'], 'dist/a4-today/main.js': ['blockerLinks', 'blockerHolds', 'openBlockersOf'], 'dist/a4-planner/main.js': ['blockerLinks', 'blockerHolds', 'openBlockersOf'] };
 const cl = (x) => (x === undefined ? undefined : x instanceof Date ? new Date(x) : JSON.parse(JSON.stringify(x)));
 const J = (x) => JSON.stringify(x === undefined ? '__undef' : x);
-for (const f of ['main.js', 'dist/a4-today/main.js', 'dist/a4-planner/main.js']) {
+for (const f of Object.keys(ID)) { // only files with a part id (the Sidebar shares no task helpers)
   const A = load(OLD, f); const B = load(NEW, f); const called = new Set();
   const expected = ALL.filter((x) => !NOT_EXPOSED[f].includes(x));
   for (const x of expected) for (const [side, L] of [['old', A], ['new', B]]) if (typeof L[x] !== 'function') diffs.push(`${f} ${side} build does not expose ${x}`);

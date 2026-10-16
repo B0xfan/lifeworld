@@ -11,9 +11,10 @@ exports.STYLES = path.join(ROOT, 'styles.css');
 // follow the owner's folder layout), as it would be after reading them. Require 'obsidian' stand-ins first.
 // The four parts load together now, so a stand-in written for one part gets an empty class for any
 // base class another part extends at load time.
-// shortcut: the base classes and test settings are applied on the first load in a process only, so a
-// test file must install its 'obsidian' stand-in before its first lifeworld() call and keep it; safe
-// because run-all.js runs every test file in its own process. Upgrade if one file needs two stand-ins.
+// shortcut: base classes and test settings are set on the first load only (until main.js leaves
+// require.cache): install the 'obsidian' stand-in before the first lifeworld() call and keep that same
+// object (adding to it later is fine); run-all.js gives each test file its own process. Upgrade if a
+// file ever needs two stand-ins.
 const BASES = ['Plugin', 'ItemView', 'Modal', 'PluginSettingTab', 'SuggestModal', 'FuzzySuggestModal'];
 exports.lifeworld = () => {
   const first = !require.cache[exports.MAIN];
