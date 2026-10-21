@@ -126,7 +126,7 @@ html:not(#a4pl-guard) .a4pl-root .a4pl-tick.is-on { background: var(--pl-marker)
 html:not(#a4pl-guard) .a4pl-root .a4pl-tick svg { width: 11px; height: 11px; stroke-width: 3; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-task-main { flex: 1; min-width: 0; cursor: pointer; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-task-title { font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
-html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-done .a4pl-task-title { color: var(--pl-faint); text-decoration: line-through; text-decoration-color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-done .a4pl-task-title { color: var(--pl-faint); text-decoration: var(--pl-marker) line-through; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-chip { display: inline-flex; align-items: center; gap: 4px; font: 500 10.5px/1.6 var(--pl-f-mono); padding: 0 5px; border: 1px solid var(--pl-hair); border-radius: var(--pl-r-micro); color: var(--pl-dim); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 html:not(#a4pl-guard) .a4pl-root .a4pl-chip.a4pl-proj { border-color: var(--pl-hair2); }

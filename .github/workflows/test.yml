@@ -17,5 +17,7 @@ jobs:
         run: npm run build
       - name: Official Obsidian ESLint (errors fail; warnings are listed for phase 2)
         run: npx eslint .
+      - name: CSS checks from the community review (errors fail)
+        run: npx stylelint "src/**/*.css"
       - name: Self-checks (no vault needed)
         run: node tests/run-all.js

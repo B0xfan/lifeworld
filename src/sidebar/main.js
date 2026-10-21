@@ -1355,6 +1355,11 @@ class FilesChrome {
   attachTools(ex) {
     const bar = /** @type {HTMLElement | null} */ (ex.querySelector('.nav-header .nav-buttons-container'));
     if (!bar) return;
+    // Obsidian's own Sort and Collapse buttons sit after LifeWorld's tools (CSS order); tagged here instead of a CSS :has.
+    bar.querySelectorAll('.clickable-icon').forEach((b) => {
+      b.toggleClass('a4sb-tool-sort', !!b.querySelector('svg.lucide-sort-asc, svg.lucide-sort-desc'));
+      b.toggleClass('a4sb-tool-collapse', !!b.querySelector('svg.lucide-chevrons-down-up, svg.lucide-chevrons-up-down'));
+    });
     const have = bar.querySelector('.a4sb-files-tool');
     if (have && this.fresh(have)) return;
     bar.querySelectorAll('.a4sb-files-tool').forEach((b) => b.remove());
@@ -1409,6 +1414,7 @@ class FilesChrome {
   clear() {
     document.querySelectorAll('.a4sb-files-tool, .a4sb-files-foot, .a4sb-top-btn').forEach((e) => e.remove());
     /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.a4sb-files-tools')).forEach((e) => e.removeClass('a4sb-files-tools'));
+    document.querySelectorAll('.a4sb-tool-sort, .a4sb-tool-collapse').forEach((e) => e.removeClass('a4sb-tool-sort', 'a4sb-tool-collapse'));
   }
 }
 /* ------------------------------------------------------------------ */

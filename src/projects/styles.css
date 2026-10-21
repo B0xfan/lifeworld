@@ -127,7 +127,7 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-closed { margin-top: 8px; border-top: 1px
 html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-bottom: 1px dashed var(--pj-hair); cursor: pointer; flex-wrap: wrap; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row:hover { background: var(--pj-hover); }
 html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row .a4pj-nm { font-weight: 600; font-size: 13.5px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row.is-failed .a4pj-nm { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row.is-failed .a4pj-nm { color: var(--pj-faint); text-decoration: var(--pj-faint) line-through; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-when { margin-left: auto; font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); }
 
 /* sections */
@@ -141,7 +141,7 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-phead { border: 1px solid var(--pj-hair);
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-phead { grid-template-columns: auto 1fr; gap: 10px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--pj-dim); align-items: center; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-fact b { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin-right: 6px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-link { color: var(--pj-paper); text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; cursor: pointer; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-link { color: var(--pj-paper); text-decoration: var(--pj-hair2) underline; text-underline-offset: 3px; cursor: pointer; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-cols { grid-template-columns: 1fr; }
 html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-qa { border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-subtle); padding: 8px 10px; margin-bottom: 12px; background: var(--pj-bg2); }
@@ -171,8 +171,8 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-tick-sm { width: 15px; height: 15px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tmain { flex: 1; min-width: 0; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle.is-link { cursor: pointer; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle.is-link:hover { text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-done .a4pj-ttitle { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle.is-link:hover { text-decoration: var(--pj-hair2) underline; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-done .a4pj-ttitle { color: var(--pj-faint); text-decoration: var(--pj-marker) line-through; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-tmeta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-sched { flex: none; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pj-r-control); color: var(--pj-faint); opacity: 0; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-sched svg { width: 14px; height: 14px; }
@@ -190,7 +190,7 @@ html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-acts .a4pj-btn { padding: 6px 1
 html:not(#a4pj-guard) .a4pj-root .a4pj-steps { padding: 0 0 4px 50px; }
 html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-steps { padding-left: 30px; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-step { display: flex; align-items: flex-start; gap: 9px; padding: 4px; font-size: 13px; }
-html:not(#a4pj-guard) .a4pj-root .a4pj-step.is-done .a4pj-step-t { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-step.is-done .a4pj-step-t { color: var(--pj-faint); text-decoration: var(--pj-marker) line-through; }
 html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-step-add { display: flex; gap: 9px; align-items: center; padding: 4px; color: var(--pj-faint); }
 html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-step-add input { flex: 1; border: 0; outline: none; font-size: 13px; padding: 0; }
 html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-plus { width: 17px; text-align: center; }
@@ -224,12 +224,12 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-ntext { font-size: 13.5px; line-height: 1
 html:not(#a4pj-guard) .a4pj-root .a4pj-ntl .a4pj-more { margin-left: 0; }
 
 /* task card above a task note */
-html:not(#a4pj-guard) .a4pj-hide-props .metadata-container, html:not(#a4pj-guard) .a4pj-task-note .inline-title { display: none !important; }
+html:not(#a4pj-guard) .a4pj-hide-props .metadata-container, html:not(#a4pj-guard) .a4pj-task-note .inline-title { display: none; }
 /* TaskNotes UI on a task note: none (see hideTaskNotesOnTaskNotes in main.js) */
-html:not(#a4pj-guard) .a4pj-task-note :is(.task-card-note-widget, .tasknotes-relationships-widget, .instant-convert-button) { display: none !important; }
-html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card :is(.task-card__status-dot, .task-card__priority-dot, .task-card__metadata, .task-card__context-menu, .task-card__badges) { display: none !important; }
-html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget :is(.task-card, .task-card__main-row, .task-card__content, .task-card__title) { display: inline !important; padding: 0 !important; margin: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; font: inherit !important; }
-html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card__title-text { color: var(--link-color); text-decoration: var(--link-decoration); text-decoration-thickness: var(--link-decoration-thickness); cursor: var(--cursor-link); font: inherit !important; opacity: 1 !important; }
+html:not(#a4pj-guard) .a4pj-task-note :is(.task-card-note-widget, .tasknotes-relationships-widget, .instant-convert-button) { display: none; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card :is(.task-card__status-dot, .task-card__priority-dot, .task-card__metadata, .task-card__context-menu, .task-card__badges) { display: none; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget :is(.task-card, .task-card__main-row, .task-card__content, .task-card__title) { display: inline; padding: 0; margin: 0; border: 0; background: none; box-shadow: none; font: inherit; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card__title-text { color: var(--link-color); text-decoration: var(--link-decoration) var(--link-decoration-thickness, auto); cursor: var(--cursor-link); font: inherit; opacity: 1; }
 html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card__title-text:hover { color: var(--link-color-hover); text-decoration: var(--link-decoration-hover); }
 html:not(#a4pj-guard) .a4pj-card { border: 1px solid var(--pj-hair); border-left: 3px solid var(--pj-proj); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 12px 18px 10px; margin: 8px 0 18px; font-size: 13.5px; line-height: 1.5; user-select: none; -webkit-user-select: none; }
 html:not(#a4pj-guard) .markdown-reading-view .a4pj-card { margin-top: 0; }
@@ -242,7 +242,7 @@ html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick svg { width: 16px; height: 16px; 
 html:not(#a4pj-guard) .a4pj-card .a4pj-tname { flex: 1; min-width: 0; font: 640 clamp(22px, 2.4vw, 30px)/1.2 var(--pj-f-display); letter-spacing: -.01em; outline: none; border-radius: var(--pj-r-control); padding: 2px 4px; margin: 0 -4px; color: var(--pj-paper); user-select: text; -webkit-user-select: text; cursor: text; overflow-wrap: anywhere; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-tname:hover { background: var(--pj-hover); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-tname:focus { background: var(--pj-hover); box-shadow: inset 0 -2px 0 var(--pj-marker); }
-html:not(#a4pj-guard) .a4pj-card .a4pj-tname.is-done { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname.is-done { color: var(--pj-faint); text-decoration: var(--pj-marker) line-through; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-fields { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 14px 0 4px 44px; align-items: center; }
 html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-fields { grid-template-columns: 1fr; gap: 2px 0; margin-left: 0; }
 html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-lab { margin-top: 8px; }
@@ -255,8 +255,8 @@ html:not(#a4pj-guard) :is(.a4pj-card, .a4pj-pop) .a4pj-pick.is-dash { border-sty
 html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-late { color: var(--pj-marker); border-color: var(--pj-marker); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-prisel { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-prisel .a4pj-chip { padding: 1px 7px; font-size: 11px; }
-html:not(#a4pj-guard) .a4pj-card .a4pj-typed { border: 1px solid var(--pj-hair) !important; border-radius: var(--pj-r-control); padding: 3px 8px !important; font-size: 12.5px; width: 170px; outline: none; }
-html:not(#a4pj-guard) .a4pj-card .a4pj-typed:focus { border-color: var(--pj-marker) !important; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed { border: 1px solid var(--pj-hair); border-radius: var(--pj-r-control); padding: 3px 8px; font-size: 12.5px; width: 170px; outline: none; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed:focus { border-color: var(--pj-marker); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-x { color: var(--pj-faint); width: 24px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pj-r-control); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-x:hover { color: var(--pj-marker); background: var(--pj-hover); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-x svg { width: 12px; height: 12px; }
@@ -283,8 +283,8 @@ html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-sep { border-top: 1px solid var(--pj-h
 html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-row { display: grid; grid-template-columns: 58px 1fr; gap: 8px; align-items: center; padding: 4px 8px; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-row label { font: 500 10px var(--pj-f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--pj-faint); }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-note { font-size: 11.5px; color: var(--pj-faint); padding: 4px 8px 2px; }
-html:not(#a4pj-guard) .a4pj-pop .a4pj-input { width: 100%; border: 1px solid var(--pj-hair2) !important; border-radius: var(--pj-r-control); padding: 5px 8px !important; outline: none; font-size: 12.5px; }
-html:not(#a4pj-guard) .a4pj-pop .a4pj-input:focus { border-color: var(--pj-marker) !important; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-input { width: 100%; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 5px 8px; outline: none; font-size: 12.5px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-input:focus { border-color: var(--pj-marker); }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-find { margin-bottom: 6px; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-grp { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin: 6px 8px 2px; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
@@ -328,12 +328,12 @@ html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock { color: 
 html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock:hover, html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock.is-open { color: var(--pj-paper); border-color: var(--pj-warning); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-deps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 1px 2px 1px 9px; font-size: 13px; max-width: 100%; min-width: 0; }
-html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t { color: var(--pj-paper); text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: text; }
-html:not(#a4pj-guard) .a4pj-card span.a4pj-dep-t { cursor: default; text-decoration: none; }
-html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t:hover { text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t { color: var(--pj-paper); --pj-dep-line: underline; --pj-dep-col: var(--pj-hair2); text-decoration: var(--pj-dep-col) var(--pj-dep-line); text-underline-offset: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: text; }
+html:not(#a4pj-guard) .a4pj-card span.a4pj-dep-t { cursor: default; --pj-dep-line: none; --pj-dep-col: currentcolor; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t:hover { --pj-dep-col: var(--pj-marker); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep-st { font: 500 10px var(--pj-f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--pj-warning); white-space: nowrap; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-done .a4pj-dep-st { color: var(--pj-success); }
-html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-done .a4pj-dep-t, html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-missing .a4pj-dep-t { color: var(--pj-faint); text-decoration-line: line-through; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-done .a4pj-dep-t, html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-missing .a4pj-dep-t { color: var(--pj-faint); --pj-dep-line: line-through; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-missing .a4pj-dep-st { color: var(--pj-faint); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep-add { font-size: 13px; color: var(--pj-faint); border: 1px dashed var(--pj-hair2); border-radius: var(--pj-r-control); padding: 3px 10px; }
 html:not(#a4pj-guard) .a4pj-card .a4pj-dep-add:hover { color: var(--pj-paper); border-color: var(--pj-marker); }
@@ -383,7 +383,7 @@ html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-wheel { position: relative; display: fl
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col { height: 78px; width: 52px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; position: relative; z-index: 1; outline: none; overscroll-behavior: contain; -webkit-mask-image: linear-gradient(rgba(0,0,0,.3), #000 33%, #000 67%, rgba(0,0,0,.3)); mask-image: linear-gradient(rgba(0,0,0,.3), #000 33%, #000 67%, rgba(0,0,0,.3)); }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col::-webkit-scrollbar { display: none; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col:focus-visible { outline: none; }
-html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col:focus-visible .a4pj-wp-it.is-sel { text-decoration: underline; text-decoration-color: var(--pj-marker); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col:focus-visible .a4pj-wp-it.is-sel { text-decoration: var(--pj-marker) calc(2px) underline; text-underline-offset: 3px; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-pad { height: 26px; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-it { height: 26px; line-height: 26px; text-align: center; font-size: 14px; color: var(--pj-faint); scroll-snap-align: center; cursor: pointer; user-select: none; -webkit-user-select: none; }
 html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-it.is-sel { color: var(--pj-paper); font-weight: 600; font-size: 15.5px; }
@@ -641,7 +641,7 @@ html:not(#a4pj-guard) .a4pj-root.is-narrow :is(.a4pj-bacts, .a4pj-bacts2) button
 
 /* Text to task: the project box rows (mockup-text-to-task.html) */
 html:not(#a4pj-guard) .a4pj-ttt { --pj-faint: var(--ink-paper-faint, var(--text-faint)); } /* the box sits outside .a4pj-root, so the token is set here */
-html:not(#a4pj-guard) .a4pj-ttt-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; }
+html:not(#a4pj-guard) .a4pj-ttt-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 12px; }
 html:not(#a4pj-guard) .a4pj-ttt-row .a4pj-ttt-name { min-width: 0; overflow-wrap: anywhere; }
 /* Narrow box: the hint drops under the name instead of squeezing it. */
 html:not(#a4pj-guard) .a4pj-ttt-row .a4pj-ttt-hint { color: var(--pj-faint); font-size: var(--font-ui-smaller); white-space: nowrap; } /* space-between: right of the name on one line, under it (left) when wrapped */

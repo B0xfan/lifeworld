@@ -18,12 +18,12 @@
   --a4sb-line: var(--background-modifier-border);
   --a4sb-room-0: #c2a35c; --a4sb-room-1: #c2765a; --a4sb-room-2: #ff5a2d; --a4sb-room-3: #7a99a1;
   --a4sb-room-4: #7d9a7f; --a4sb-room-5: #a87795; --a4sb-room-6: #8087a6;
-  padding: 0 !important;
   display: flex;
   flex-direction: column;
   font-family: var(--a4sb-body);
   color: var(--a4sb-ink);
 }
+html:not(#a4sb-guard) .a4sb { padding: 0; } /* outranks the view's own padding */
 .theme-light .a4sb {
   --a4sb-marker: #d43f16;
   --a4sb-hover: rgba(23, 26, 32, .05);
@@ -142,8 +142,8 @@
 .a4sb-files-tools .clickable-icon:hover { color: var(--ink-paper, var(--icon-color-hover)); background: var(--ink-hover-wash, var(--background-modifier-hover)); transition: color 140ms var(--ink-ease-draw, ease), background 140ms var(--ink-ease-draw, ease); }
 .a4sb-files-tools .clickable-icon:focus-visible { outline: 2px solid var(--ink-marker, #ff5a2d); outline-offset: 2px; }
 .a4sb-files-tools .clickable-icon svg { width: 16px; height: 16px; }
-.a4sb-files-tools .clickable-icon:has(svg.lucide-sort-asc), .a4sb-files-tools .clickable-icon:has(svg.lucide-sort-desc) { order: 1; }
-.a4sb-files-tools .clickable-icon:has(svg.lucide-chevrons-down-up), .a4sb-files-tools .clickable-icon:has(svg.lucide-chevrons-up-down) { order: 2; }
+.a4sb-files-tools .a4sb-tool-sort { order: 1; }
+.a4sb-files-tools .a4sb-tool-collapse { order: 2; }
 .is-mobile .a4sb-files-tools { height: 44px; gap: 2px; }
 .is-mobile .a4sb-files-tools .clickable-icon { width: 44px; height: 44px; }
 .is-mobile .a4sb-files-tools .clickable-icon svg { width: 20px; height: 20px; }

@@ -167,7 +167,7 @@ html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-tick svg { display: block;
 html:not(#a4t-guard) .a4t-root .a4t-task.is-busy { opacity: .7; }
 html:not(#a4t-guard) .a4t-root .a4t-task-main { flex: 1; min-width: 0; cursor: pointer; }
 html:not(#a4t-guard) .a4t-root .a4t-task-title { font-size: 13.5px; line-height: 1.4; color: var(--a4t-paper); overflow-wrap: anywhere; }
-html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-task-title { color: var(--a4t-faint); text-decoration: line-through; text-decoration-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-task.is-done .a4t-task-title { color: var(--a4t-faint); text-decoration: var(--a4t-marker) line-through; }
 html:not(#a4t-guard) .a4t-root .a4t-task-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 html:not(#a4t-guard) .a4t-root .a4t-chip { display: inline-flex; align-items: center; gap: 4px; font: 500 11px/1.6 var(--a4t-f-mono); padding: 0 6px; border: 1px solid var(--a4t-hair); border-radius: var(--a4t-r-micro); color: var(--a4t-dim); white-space: nowrap; }
 html:not(#a4t-guard) .a4t-root .a4t-chip .a4t-ic svg { width: 11px; height: 11px; }
