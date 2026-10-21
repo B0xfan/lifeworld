@@ -12,6 +12,7 @@ import { vaultFolders, planning, readable } from './vault';
 
 const DEFAULT_COMPLETED_STATUSES = ['done', 'closed'];
 
+/** @param {unknown} link */
 function wikilinkTarget(link) {
   if (link == null) return null;
   let s = String(link).trim();
@@ -19,6 +20,7 @@ function wikilinkTarget(link) {
   return s.split('|', 1)[0].trim() || null;
 }
 
+/** @param {unknown} link */
 function wikilinkLabel(link) {
   if (link == null) return null;
   let s = String(link).trim();
@@ -35,6 +37,7 @@ function wikilinkLabel(link) {
 // TaskNotes 4.12.5 reads it (mapFromFrontmatter): a list is joined with ", ",
 // a number or yes/no is written out, a blank or anything else falls back.
 // Runs of spaces and line breaks become one space. Shown as text only.
+/** @param {Fm | null | undefined} fm @param {unknown} basename @param {string} [key] */
 function taskTitleOf(fm, basename, key) {
   const v = fm && typeof fm === 'object' ? fm[key || 'title'] : undefined;
   let s = '';
@@ -50,6 +53,7 @@ function taskTitleOf(fm, basename, key) {
 // 'YYYY-MM-DDTHH:MM', wall-clock time with no zone. A date with no time stays
 // a date. Before 1 PM is Morning, 1 PM or later Afternoon: the same split as
 // Today's lanes ("Before one") and the Planner's 13:00 line.
+/** @param {unknown} v */
 function timeOf(v) {
   if (v == null || v instanceof Date) return null;
   const m = /^\s*\d{4}-\d{2}-\d{2}[T ](\d{2}):(\d{2})/.exec(String(v));
@@ -59,6 +63,7 @@ function timeOf(v) {
 // A repeating task's time when `scheduled` has none: its DTSTART's clock
 // (TaskNotes writes the local clock there, e.g. DTSTART:20261012T090000Z).
 // Midnight counts as none, as in TaskNotes' own "timed" check.
+/** @param {unknown} raw */
 function ruleTimeOf(raw) {
   const m = /DTSTART(?:;[^:\n]*)?[:=]\d{8}T(\d{2})(\d{2})/i.exec(String(raw || ''));
   if (!m || (m[1] === '00' && m[2] === '00') || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
@@ -66,6 +71,7 @@ function ruleTimeOf(raw) {
 }
 
 // A stored date put on `day`; whatever follows the day (a time) is kept as written.
+/** @param {unknown} v @param {string} day */
 function onDay(v, day) {
   const s = v == null || v instanceof Date ? '' : String(v);
   const m = /^(\s*)\d{4}-\d{2}-\d{2}/.exec(s);
@@ -74,6 +80,7 @@ function onDay(v, day) {
 
 // The date a move writes: the time goes along while the task stays in its half
 // of the day; moved into the other half (or Any time), the time comes off.
+/** @param {unknown} v @param {string} day @param {string | null} [half] */
 function movedDate(v, day, half) {
   const t = timeOf(v);
   return t && halfOfTime(t) === (half || null) ? onDay(v, day) : day;
@@ -81,11 +88,13 @@ function movedDate(v, day, half) {
 
 // Timed tasks sort first, in clock order, so a drop position counts only the
 // untimed tasks of the lane: -> { list: the untimed others, idx: in that list }.
+/** @template {{ time?: string | null }} T @param {T[]} others @param {number | null} [idx] */
 function untimedSlot(others, idx) {
   const i = Math.max(0, Math.min(idx == null ? others.length : idx, others.length));
   return { list: others.filter((x) => !x.time), idx: i - others.slice(0, i).filter((x) => x.time).length };
 }
 
+/** @param {Fm | null | undefined} fm @param {string} path @param {string} [basename] @returns {TaskItem | null} */
 function taskFromFrontmatter(fm, path, basename) {
   if (!fm || typeof fm !== 'object') return null;
   const tags = asList(fm.tags).map(String);
@@ -125,6 +134,7 @@ function taskFromFrontmatter(fm, path, basename) {
   };
 }
 
+/** @param {TaskItem} item @param {string} day @param {string[] | null} [completedStatuses] */
 function isTaskDone(item, day, completedStatuses) {
   if (item.recurrenceRaw) return item.completeInstances.includes(day);
   return (completedStatuses || DEFAULT_COMPLETED_STATUSES).includes(item.status);
@@ -132,11 +142,13 @@ function isTaskDone(item, day, completedStatuses) {
 
 // Overdue, the one rule for every page and both Planning settings: a one-off, unfinished task whose
 // due date has passed; an undated one by its planned day.
+/** @param {TaskItem} item @param {string} today @param {string[] | null} [completedStatuses] */
 function isOverdue(item, today, completedStatuses) {
   const day = item.due || item.plannedDay;
   return !item.recurrenceRaw && !!day && day < today && !isSomeday(item) && !isTaskDone(item, today, completedStatuses);
 }
 
+/** @param {TaskItem} item @param {string} day */
 function taskOnDay(item, day) {
   if (isSomeday(item)) return false; // kept for later: on no day, repeating or not
   if (item.recurrenceRaw) return occursOn(item.recurrence, day) && !item.skippedInstances.includes(day);
@@ -146,12 +158,14 @@ function taskOnDay(item, day) {
 // Someday (mockup approved 2026-10-06; GL-002 task status `someday`):
 // a task kept for later with no day. Not finished, but never on a day, never
 // due or overdue, never rung. Takes a task item or its frontmatter.
-function isSomeday(x) { return !!x && typeof x === 'object' && String(x.status) === 'someday'; }
+/** @param {unknown} x */
+function isSomeday(x) { return !!x && typeof x === 'object' && String(/** @type {{ status?: unknown }} */ (x).status) === 'someday'; }
 
 // Setting Someday. A one-off task's day comes off (due too: the caller asks
 // first). A repeating task only changes status: its rule, start, due and done
 // days stay exactly as they are, so its repeat picks up again when it comes
 // back. Mutates and returns `fm`.
+/** @param {Fm} fm */
 function applySomeday(fm) {
   fm.status = 'someday';
   if (typeof fm.recurrence === 'string' && fm.recurrence.trim()) return fm;
@@ -160,12 +174,14 @@ function applySomeday(fm) {
   return fm;
 }
 
+/** @template {{ time?: string | null, plannedOrder: number, path: string }} T @param {T[]} list */
 function sortByOrder(list) {
   return [...list].sort((a, b) => (!a.time - !b.time) || String(a.time || '').localeCompare(String(b.time || '')) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
 }
 
 // Planner's orderForInsert: midpoint of the neighbours at the drop index;
 // 10 in an empty lane, first - 10 at the top, last + 10 at the end.
+/** @param {number[]} orders @param {number} idx */
 function orderForInsert(orders, idx) {
   if (!orders.length) return 10;
   if (idx <= 0) return orders[0] - 10;
@@ -176,6 +192,7 @@ function orderForInsert(orders, idx) {
 // Planner's assignItem, field for field: a dated task moves its `due`
 // ("due always wins"), an undated one gets `planned_day`; both get
 // `planned_half` and `planned_order`. Mutates and returns `fm`.
+/** @param {Fm} fm @param {string} day @param {string | null} half @param {number} order */
 function applyMove(fm, day, half, order) {
   if (isSomeday(fm)) fm.status = 'open'; // given a day: a normal task again
   if (fm.due) fm.due = movedDate(fm.due, day, half);
@@ -188,6 +205,7 @@ function applyMove(fm, day, half, order) {
 // Placing a task on a day (a drop, a Schedule or When pick, Today's move menu). setsDue (Settings ›
 // Planning, the default since 0.1.14): Due becomes that day (a clock time kept by the move rule) and
 // no planned_day is left to disagree with it. Off ("just plan it", 0.1.18): planned_day only, Due never changes.
+/** @param {Fm} fm @param {string} day @param {string | null} half @param {number} order @param {boolean} setsDue */
 function applyPlacement(fm, day, half, order, setsDue) {
   if (!setsDue) {
     if (isSomeday(fm)) fm.status = 'open';
@@ -203,6 +221,7 @@ function applyPlacement(fm, day, half, order, setsDue) {
 // Taking a task off the calendar: its day comes off, and with "Set its due date" Due too (kept
 // empty, 0.1.3), or a task placed with a due date could never go back; "just plan it" (setsDue
 // false) keeps Due. Callers offer Undo.
+/** @param {Fm} fm @param {boolean} [setsDue] */
 function applyUnschedule(fm, setsDue) {
   delete fm.planned_day; delete fm.planned_half; delete fm.planned_order;
   if (fm.due && setsDue !== false) fm.due = null;
@@ -216,6 +235,7 @@ function applyUnschedule(fm, setsDue) {
 // when the new order is not strictly between its neighbours, the whole lane
 // is renumbered 10, 20, 30... in the new shown order.
 // -> { order, others: null | [new order for each other task, same positions] }
+/** @param {number[]} orders @param {number | null} [idx] */
 function planInsert(orders, idx) {
   const i = Math.max(0, Math.min(idx == null ? orders.length : idx, orders.length));
   const order = orderForInsert(orders, i);
@@ -229,10 +249,12 @@ function planInsert(orders, idx) {
 // each entry { uid: "[[Task]]", reltype: FINISHTOSTART } or a bare link.
 // Returns the link targets, in order, without repeats. "Blocks" is never
 // stored: it is the other tasks' blockedBy, read the other way round.
+/** @param {Fm | null | undefined} fm */
 function blockerLinks(fm) {
+  /** @type {string[]} */
   const out = [];
   for (const e of asList(fm && fm.blockedBy)) {
-    const raw = typeof e === 'string' ? e : (e && typeof e === 'object' && typeof e.uid === 'string' ? e.uid : null);
+    const raw = typeof e === 'string' ? e : (e && typeof e === 'object' && typeof /** @type {Fm} */ (e).uid === 'string' ? /** @type {string} */ (/** @type {Fm} */ (e).uid) : null);
     const t = raw ? wikilinkTarget(raw) : null;
     const link = t ? t.split('#')[0].trim() : '';
     if (link && !out.includes(link)) out.push(link);
@@ -242,6 +264,7 @@ function blockerLinks(fm) {
 
 // A blocker holds while its note is a task that is not finished (TaskNotes'
 // rule: the status, also for a repeating task) and not archived.
+/** @param {Fm | null | undefined} fm @param {unknown} path @param {string[] | null} [completedStatuses] */
 function blockerHolds(fm, path, completedStatuses) {
   if (!fm || typeof fm !== 'object') return false;
   const tags = asList(fm.tags).map(String);
@@ -252,7 +275,9 @@ function blockerHolds(fm, path, completedStatuses) {
 
 // The blockers of `item` that still hold: [{ path, title }]. A link that no
 // longer leads to a note (the blocker was deleted) blocks nothing.
+/** @param {import('obsidian').App | null | undefined} app @param {TaskItem | null | undefined} item @param {string[] | null} [completedStatuses] */
 function openBlockersOf(app, item, completedStatuses) {
+  /** @type {{ path: string, title: string }[]} */
   const out = [];
   const mc = app && app.metadataCache;
   if (!mc || !item) return out;

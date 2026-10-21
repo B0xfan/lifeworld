@@ -5,7 +5,9 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 
 const SECURITY = ['no-eval', 'no-implied-eval', 'no-unsanitized/method', 'no-unsanitized/property', 'obsidianmd/regex-lookbehind', 'obsidianmd/no-forbidden-elements'];
-const OFF = ['no-undef', '@typescript-eslint/no-unsafe-member-access', '@typescript-eslint/no-unsafe-assignment', '@typescript-eslint/no-unsafe-argument', '@typescript-eslint/no-unsafe-call', '@typescript-eslint/no-unsafe-return', '@typescript-eslint/restrict-template-expressions', '@typescript-eslint/no-base-to-string', 'import/no-unresolved', 'obsidianmd/validate-manifest', 'obsidianmd/validate-license', 'obsidianmd/commands/no-command-in-command-id', 'obsidianmd/commands/no-plugin-id-in-command-id'];
+// The scanner's type-aware "unsafe any" warnings (review of 1.0.0); errors here, so npm test (eslint --quiet) keeps them at zero.
+const UNSAFE = ['no-unsafe-argument', 'no-unsafe-member-access', 'no-unsafe-assignment', 'no-unsafe-call', 'no-unsafe-return'].map((r) => `@typescript-eslint/${r}`);
+const OFF = ['no-undef', '@typescript-eslint/restrict-template-expressions', '@typescript-eslint/no-base-to-string', 'import/no-unresolved', 'obsidianmd/validate-manifest', 'obsidianmd/validate-license', 'obsidianmd/commands/no-command-in-command-id', 'obsidianmd/commands/no-plugin-id-in-command-id'];
 
 // The scanner downgrades every non-security rule to warn; do the same to the recommended set.
 const warnOnly = (sev) => (sev === 'error' || sev === 2 ? 'warn' : sev);
@@ -20,7 +22,7 @@ export default defineConfig([
   ...recommended,
   {
     files: ['**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}'],
-    rules: { ...Object.fromEntries(SECURITY.map((r) => [r, 'error'])), ...Object.fromEntries(OFF.map((r) => [r, 'off'])) },
+    rules: { ...Object.fromEntries(UNSAFE.map((r) => [r, 'error'])), ...Object.fromEntries(SECURITY.map((r) => [r, 'error'])), ...Object.fromEntries(OFF.map((r) => [r, 'off'])) },
   },
   // What the scanner ignores (build output, tests, build scripts), plus this repo's frozen test vault.
   globalIgnores(['node_modules', 'dist', 'build', 'main.js', 'tests/**', '**/*.mjs', '**/*.cjs']),

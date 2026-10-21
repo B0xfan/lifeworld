@@ -106,8 +106,10 @@ LifeWorld connects to the internet only for features you switch on:
 | Todoist tasks | Todoist (`api.todoist.com`) with your token | Your token; reads your tasks and writes the changes you make |
 | ClickUp tasks | ClickUp (`api.clickup.com`) with your token | Your token; reads your tasks and writes the changes you make |
 
-With these off, LifeWorld makes no network requests. If you pick Things 3, LifeWorld talks to the
-Things app on your Mac through AppleScript (macOS asks you to allow it once); nothing goes online.
+With these off, LifeWorld makes no network requests. If you pick Things 3 (macOS desktop only),
+LifeWorld reads and updates your Things to-dos by running Things' own AppleScript, because Things
+offers no other way to read them. macOS asks you to allow it once, and nothing goes online. This is
+the only reason LifeWorld runs an outside command.
 
 ## Support
 

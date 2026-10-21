@@ -13,9 +13,11 @@ import { asList } from './lists';
 // time (0 = at the time). A task with no clock time never rings.
 const REMINDER_CHOICES = [0, 5, 15, 30, 60, 1440];
 
+/** @param {Fm | null | undefined} fm */
 function ringField(fm) { return fm && typeof fm.recurrence === 'string' && fm.recurrence.trim() ? 'scheduled' : 'due'; }
 
 // ISO 8601 duration -> minutes before (a negative offset is before; a positive one, after).
+/** @param {unknown} iso */
 function offsetMinutes(iso) {
   const m = /^\s*([-+])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?\s*$/i.exec(String(iso == null ? '' : iso));
   if (!m || !/\d/.test(m[0])) return null;
@@ -24,6 +26,7 @@ function offsetMinutes(iso) {
 }
 
 // Minutes before -> the offset TaskNotes writes ('PT0M', '-PT15M', '-PT1H', '-P1D', '-PT1H30M').
+/** @param {number} before */
 function offsetIso(before) {
   const n = Math.abs(Math.round(Number(before) || 0));
   if (!n) return 'PT0M';
@@ -34,9 +37,10 @@ function offsetIso(before) {
 }
 
 // The task's reminder: minutes before its time, or null (no reminder).
+/** @param {Fm | null | undefined} fm */
 function reminderOf(fm) {
   const field = ringField(fm);
-  for (const r of asList(fm && fm.reminders)) {
+  for (const r of /** @type {Fm[]} */ (asList(fm && fm.reminders))) {
     if (!r || typeof r !== 'object' || r.type !== 'relative' || r.relatedTo !== field) continue;
     const n = offsetMinutes(r.offset);
     if (n != null) return n;
@@ -45,6 +49,7 @@ function reminderOf(fm) {
 }
 
 // The small mark after the bell: '' at the time, else '15m', '1h', '1d', '1h30m'.
+/** @param {number | null} before */
 function reminderShort(before) {
   if (!before) return '';
   const n = Math.abs(before); const d = Math.floor(n / 1440); const h = Math.floor((n % 1440) / 60); const mi = n % 60;
@@ -52,6 +57,7 @@ function reminderShort(before) {
 }
 
 // 'At the time', '15 min before', '1 hour before', '2 hours 30 min before', '1 day before'.
+/** @param {number | null} before */
 function reminderWords(before) {
   if (!before) return 'At the time';
   const n = Math.abs(before); const d = Math.floor(n / 1440); const h = Math.floor((n % 1440) / 60); const mi = n % 60;

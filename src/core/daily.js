@@ -9,26 +9,35 @@ import { dailyNotes } from './vault';
 
 // Minimal moment-style formatter for template tokens (used when Obsidian's
 // moment isn't available, e.g. in tests).
+/** @typedef {(d: Date, pattern: string) => string} DateFmt */
+/** @param {Date} d @param {string} fmt */
 function formatDateTokens(d, fmt) {
+  /** @type {Record<string, string>} */
   const map = { YYYY: String(d.getFullYear()), MM: pad2(d.getMonth() + 1), DD: pad2(d.getDate()), HH: pad2(d.getHours()), mm: pad2(d.getMinutes()) };
   return fmt.replace(/YYYY|MM|DD|HH|mm/g, (t) => map[t]);
 }
 // Obsidian's moment, when there is one (not in the logic tests).
-function momentFormat() { return moment ? (d, p) => moment(d).format(p) : null; }
+/** @returns {DateFmt | null} */
+function momentFormat() { return moment ? (d, p) => /** @type {MomentFn} */ (/** @type {unknown} */ (moment))(d).format(p) : null; }
 
 // The daily note's name and path for a Date. `fmt` formats a date the moment way.
+/** @typedef {{ folder: string, format: string, template: string }} DailySettings */
+/** @param {Date} d @param {DailySettings | null} [dn] @param {DateFmt | null} [fmt] */
 function scratchNameFor(d, dn, fmt) { return (fmt || formatDateTokens)(d, (dn || dailyNotes(null)).format); }
+/** @param {Date} d @param {DailySettings | null} [dn] @param {DateFmt | null} [fmt] */
 function scratchPathFor(d, dn, fmt) {
   const folder = (dn || dailyNotes(null)).folder;
   return `${folder ? folder + '/' : ''}${scratchNameFor(d, dn, fmt)}.md`;
 }
 
+/** @param {unknown} tpl @param {Date} d @param {DateFmt | null} [fmt] @param {string | null} [title] */
 function renderTemplate(tpl, d, fmt, title) {
+  /** @type {DateFmt} */
   const f = fmt || ((date, pattern) => formatDateTokens(date, pattern));
   const name = title == null ? scratchNameFor(d, null, f) : title;
   return String(tpl)
-    .replace(/\{\{\s*date\s*:\s*([^}]+?)\s*\}\}/g, (_, p) => f(d, p))
-    .replace(/\{\{\s*time\s*:\s*([^}]+?)\s*\}\}/g, (_, p) => f(d, p))
+    .replace(/\{\{\s*date\s*:\s*([^}]+?)\s*\}\}/g, (_, /** @type {string} */ p) => f(d, p))
+    .replace(/\{\{\s*time\s*:\s*([^}]+?)\s*\}\}/g, (_, /** @type {string} */ p) => f(d, p))
     .replace(/\{\{\s*date\s*\}\}/g, f(d, 'YYYY-MM-DD'))
     .replace(/\{\{\s*time\s*\}\}/g, f(d, 'HH:mm'))
     .replace(/\{\{\s*title\s*\}\}/g, name);
@@ -37,6 +46,7 @@ function renderTemplate(tpl, d, fmt, title) {
 // Adds `line` at the end of the section under the heading `## <name>` (any level, the first one found),
 // before any blank lines that close it; a missing heading is added at the end of the note. Nothing
 // else in the note changes.
+/** @param {string | null | undefined} text @param {string} name @param {string} line */
 function insertUnderHeading(text, name, line) {
   text = String(text == null ? '' : text).replace(/\r\n/g, '\n');
   const lines = text.split('\n');
@@ -64,6 +74,7 @@ function insertUnderHeading(text, name, line) {
 
 // A new daily note's text: the Daily notes template filled in, or empty without one (as Obsidian's own
 // Daily notes makes it; no type line, launch section 3).
+/** @param {import('obsidian').App} app @param {Date} now @param {DailySettings} [dn] */
 async function newDailyContent(app, now, dn) {
   const d = dn || dailyNotes(app);
   // Obsidian stores the template without '.md'.
@@ -78,6 +89,7 @@ async function newDailyContent(app, now, dn) {
 
 // The daily note of `now` (a Date) changed by fn(text) -> text; made from the template (folders on the
 // way too) when it is missing. -> its path.
+/** @param {import('obsidian').App} app @param {Date} now @param {(text: string) => string} fn */
 async function writeDailyNote(app, now, fn) {
   const dn = dailyNotes(app);
   const path = scratchPathFor(now, dn, momentFormat());

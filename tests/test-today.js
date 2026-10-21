@@ -499,7 +499,7 @@ eq(L.insertUnderHeading('# Journal\nfirst\n## sub\nx\n# Next\n', 'Journal', '- b
   const srcText = require('fs').readFileSync(SRC, 'utf8');
   ok(srcText.includes("Today's daily note"), 'the wording check reads the real source');
   const plannerText = require('fs').readFileSync(source('a4-planner'), 'utf8'); const projectsText = require('fs').readFileSync(source('a4-projects'), 'utf8');
-  ok((plannerText.match(/err && err\.plain \? err\.plain :/g) || []).length === 2 && /e && e\.plain \? e\.plain :/.test(projectsText) && projectsText.includes('e.plain || e.message') && /t\.ext && t\.ext\.recurring\) rep\+\+/.test(srcText),
+  ok((plannerText.match(/String\(errField\(err, 'plain'\) \|\| /g) || []).length === 2 && /'plain' in e \? e\.plain :/.test(projectsText) && projectsText.includes('er.plain || er.message') && /t\.ext && t\.ext\.recurring\) rep\+\+/.test(srcText),
     'a repeating Todoist task that stays put says why in the Planner, Projects and "Move all to today" (review r2)');
   const visible = srcText.match(/(["'`])(?:(?!\1)[^\n])*scratchpad(?:(?!\1)[^\n])*\1/gi) || [];
   eq(visible, [], 'no "scratchpad" in any text the Today page shows');

@@ -250,7 +250,7 @@ const VAULT = {
     eq(view.areasOf('work').map((f) => f.basename), ['Acme Co'], 'Work: its areas');
     eq(view.areasOf('personal').map((f) => f.basename), ['Home'], 'Personal: its areas');
     const fs = require('fs'); const src = fs.readFileSync(require('./lib/paths').source('a4-sidebar'), 'utf8');
-    ok(/for \(const m of \[\.\.\.areas\.map\(\(file\) => \(\{ file, area: true \}\)\), \.\.\.members\]\)/.test(src), 'areas are listed before the projects');
+    ok(/for \(const m of (?:\/\*\* @type \{[^\n]*?\} \*\/ \()?\[\.\.\.areas\.map\(\(file\) => \(\{ file, area: true \}\)\), \.\.\.members\]\)/.test(src), 'areas are listed before the projects');
     ok(/count: openProjectCount\(members\)/.test(src), 'the count stays open projects only');
   }
 

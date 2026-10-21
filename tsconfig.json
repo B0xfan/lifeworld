@@ -1,5 +1,5 @@
 {
-  "//": "Only for the type-aware lint rules (eslint.config.mjs); nothing is compiled. The source is plain JS bundled by esbuild.",
-  "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true, "target": "es2020", "module": "commonjs", "moduleResolution": "node", "lib": ["es2020", "dom"], "types": [] },
-  "include": ["src/**/*.js"]
+  "//": "Only for the type-aware lint rules (eslint.config.mjs); nothing is compiled. The source is plain JS bundled by esbuild, typed with JSDoc and src/types.d.ts.",
+  "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true, "target": "es2020", "module": "commonjs", "moduleResolution": "node", "ignoreDeprecations": "6.0", "allowSyntheticDefaultImports": true, "resolveJsonModule": true, "lib": ["es2020", "dom", "dom.iterable"], "types": [] },
+  "include": ["src/**/*.js", "src/**/*.d.ts"]
 }

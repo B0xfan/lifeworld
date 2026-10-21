@@ -12,6 +12,7 @@
 import ICAL from 'ical.js';
 import { requestUrl } from 'obsidian';
 import { dayOf, addDays, pad2 } from './dates';
+import { errStatus } from './sources';
 
 const LINKS_KEY = 'lifeworld-calendar-links';
 const REFRESH_MS = 30 * 60 * 1000;
@@ -21,26 +22,36 @@ const KEEP_MS = 2 * 24 * 3600 * 1000; // a link that keeps failing shows its las
 const MAX_STEPS = 20000; // repeat steps walked per event, from its first day (a daily event since 1970 fits)
 
 // Saved links: [{ id, url, name }]. An old http:// link stays saved (never erased) but is never fetched.
+/** @param {{ url: string }} l */
 const isHttp = (l) => /^http:\/\//i.test(l.url);
+/** @param {unknown} raw @returns {CalLink[]} */
 function normalizeLinks(raw) {
-  return Array.isArray(raw) ? raw.filter((l) => l && typeof l.url === 'string' && /^(https?|webcal):\/\//i.test(l.url.trim()) && typeof l.id === 'string')
-    .map((l) => ({ id: l.id, url: l.url.trim(), name: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 60) : 'Calendar', ...(l.named ? { named: true } : {}) })) : [];
+  return Array.isArray(raw) ? /** @type {Fm[]} */ (raw).filter((l) => l && typeof l.url === 'string' && /^(https?|webcal):\/\//i.test(l.url.trim()) && typeof l.id === 'string')
+    .map((l) => ({ id: /** @type {string} */ (l.id), url: /** @type {string} */ (l.url).trim(), name: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 60) : 'Calendar', ...(l.named ? { named: true } : {}) })) : [];
 }
+/** @param {import('obsidian').App | null | undefined} app */
 function linksOf(app) { try { return normalizeLinks(app && app.loadLocalStorage ? app.loadLocalStorage(LINKS_KEY) : null); } catch { return []; } }
+/** @param {import('obsidian').App | null | undefined} app @param {unknown} list */
 function saveLinks(app, list) { if (app && app.saveLocalStorage) app.saveLocalStorage(LINKS_KEY, normalizeLinks(list).length ? normalizeLinks(list) : null); }
 // webcal:// is the same address over https.
+/** @param {string} url */
 const fetchUrl = (url) => url.replace(/^webcal:\/\//i, 'https://');
 
 // A JS Date -> the note feed's local 'YYYY-MM-DD' and 'HH:MM'.
+/** @param {Date} d */
 const hhmm = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 
 // ICS text -> { name, events: [{ date, time, end, all_day, summary, calendar }] } for occurrences between
 // `from` and `to` ('YYYY-MM-DD', inclusive), each at local time. Pure (no Obsidian), unit-tested.
+/** @param {unknown} text @param {string | null} calName @param {string} from @param {string} to */
 function eventsFromIcs(text, calName, from, to) {
-  const root = new ICAL.Component(ICAL.parse(String(text)));
+  const jcal = /** @type {unknown} */ (ICAL.parse(String(text))); // ical.js types its answer as any
+  const root = new ICAL.Component(/** @type {unknown[]} */ (jcal));
   for (const tz of root.getAllSubcomponents('vtimezone')) { try { ICAL.TimezoneService.register(tz); } catch { /* a zone it cannot read: times there read as local */ } }
-  const name = calName || root.getFirstPropertyValue('x-wr-calname') || 'Calendar';
+  const name = calName || /** @type {string | null} */ (root.getFirstPropertyValue('x-wr-calname')) || 'Calendar';
+  /** @type {CalEvent[]} */
   const out = [];
+  /** @param {ICAL.Time} start @param {ICAL.Time | null | undefined} end @param {unknown} summary */
   const push = (start, end, summary) => {
     const allDay = start.isDate;
     const s = start.toJSDate();
@@ -71,9 +82,11 @@ function eventsFromIcs(text, calName, from, to) {
 }
 
 // The fetched calendars, kept for this Obsidian session: one copy for Today and the Planner.
+/** @type {{ at: number, day: string, events: CalEvent[], byLink: Record<string, { at: number, events: CalEvent[] }>, errors: Record<string, string>, loading: Promise<void> | null, stale: boolean }} */
 const cache = { at: 0, day: '', events: [], byLink: {}, errors: {}, loading: null, stale: false };
 
 // Today's events from every link (refetched every 30 minutes and at a new day). onChange: told after a fetch.
+/** @param {import('obsidian').App} app @param {() => void} [onChange] */
 function calendarEvents(app, onChange) {
   const today = dayOf(new Date());
   if (!linksOf(app).some((l) => !isHttp(l))) return []; // none set: nothing to fetch (the owner's setup, a new install)
@@ -81,6 +94,7 @@ function calendarEvents(app, onChange) {
   return cache.events;
 }
 
+/** @param {import('obsidian').App} app @returns {Promise<void>} */
 function refreshCalendars(app) {
   // A reset during a running fetch (a link added or removed): wait it out, then fetch once more.
   if (cache.loading) return cache.stale ? cache.loading.then(() => refreshCalendars(app)) : cache.loading;
@@ -88,7 +102,10 @@ function refreshCalendars(app) {
   const links = linksOf(app).filter((l) => !isHttp(l));
   cache.loading = (async () => {
     const today = dayOf(new Date());
-    const errors = {}; const names = {};
+    /** @type {Record<string, string>} */
+    const errors = {};
+    /** @type {Record<string, string>} */
+    const names = {};
     for (const l of links) {
       try {
         const r = await requestUrl({ url: fetchUrl(l.url), method: 'GET', throw: false });
@@ -98,7 +115,8 @@ function refreshCalendars(app) {
         if (!l.named && got.name !== l.name) names[l.id] = got.name;
       } catch (e) {
         // The link itself is never logged (it is a private address).
-        errors[l.id] = e && e.status ? `The calendar answered with an error (${e.status}).` : 'Could not read this calendar. Check the link and the internet connection.';
+        const status = errStatus(e);
+        errors[l.id] = status ? `The calendar answered with an error (${String(status)}).` : 'Could not read this calendar. Check the link and the internet connection.';
         console.warn(`LifeWorld: calendar "${l.name}" could not be read`);
       }
     }

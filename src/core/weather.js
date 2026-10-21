@@ -9,35 +9,44 @@
 'use strict';
 
 import { requestUrl } from 'obsidian';
-import { keyOf } from './sources';
+import { keyOf, errStatus } from './sources';
 import { dayOf } from './dates';
 
 const REFRESH_MS = 30 * 60 * 1000;
 const SG_KEY = 'lifeworld-tides-stormglass'; // the kept Stormglass answer (not a secret: times and heights)
+/** @type {[number, string][]} */
 const WMO_WORDS = [[0, 'Clear'], [1, 'Mostly clear'], [2, 'Partly cloudy'], [3, 'Cloudy'], [45, 'Fog'], [48, 'Fog'], [51, 'Light drizzle'], [53, 'Drizzle'], [55, 'Heavy drizzle'], [56, 'Freezing drizzle'], [57, 'Freezing drizzle'], [61, 'Light rain'], [63, 'Rain'], [65, 'Heavy rain'], [66, 'Freezing rain'], [67, 'Freezing rain'], [71, 'Light snow'], [73, 'Snow'], [75, 'Heavy snow'], [77, 'Snow grains'], [80, 'Showers'], [81, 'Showers'], [82, 'Heavy showers'], [85, 'Snow showers'], [86, 'Snow showers'], [95, 'Thunderstorm'], [96, 'Thunderstorm, hail'], [99, 'Thunderstorm, hail']];
+/** @param {unknown} c */
 const wmoWords = (c) => { const hit = WMO_WORDS.find(([k]) => k === Number(c)); return hit ? hit[1] : ''; };
 
 // Saved settings: { place: { name, lat, lon } | null, span: 'hours' | 'days', units: 'c' | 'f', tides, tideSrc: 'om' | 'sg' }.
+/** @param {unknown} raw @returns {WeatherSettings} */
 function normalizeWeather(raw) {
-  const r = raw && typeof raw === 'object' ? raw : {};
-  const p = r.place && typeof r.place === 'object' && Number.isFinite(r.place.lat) && Number.isFinite(r.place.lon) ? { name: String(r.place.name || 'Your town').slice(0, 80), lat: r.place.lat, lon: r.place.lon } : null;
+  const r = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
+  const rp = /** @type {Fm | null} */ (r.place && typeof r.place === 'object' ? r.place : null);
+  const p = rp && Number.isFinite(rp.lat) && Number.isFinite(rp.lon) ? { name: String(rp.name || 'Your town').slice(0, 80), lat: /** @type {number} */ (rp.lat), lon: /** @type {number} */ (rp.lon) } : null;
   return { place: p, span: r.span === 'days' ? 'days' : 'hours', units: r.units === 'f' ? 'f' : 'c', tides: r.tides !== false, tideSrc: r.tideSrc === 'sg' ? 'sg' : 'om' };
 }
 
 // 'YYYY-MM-DDTHH:MM' (a place's own clock) -> '6:05 AM'.
+/** @param {unknown} iso */
 function clock12(iso) { const m = /T(\d{2}):(\d{2})/.exec(String(iso || '')); if (!m) return ''; const h = Number(m[1]); return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`; }
+/** @param {unknown} iso */
 const hourWord = (iso) => { const m = /T(\d{2})/.exec(String(iso || '')); if (!m) return ''; const h = Number(m[1]); return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`; };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** @param {string} d */
 const dayWord = (d) => DAYS[new Date(`${d}T12:00:00Z`).getUTCDay()];
 
 // Open-Meteo's forecast answer -> the weather note's shape, plus `next` (the hours or days line).
+/** @param {OpenMeteoForecast} j @param {string} span @param {number} [now] @returns {WeatherData} */
 function fromOpenMeteo(j, span, now) {
   const c = j.current || {}; const d = j.daily || {}; const h = j.hourly || {};
   const today = String(c.time || '').slice(0, 10) || (d.time && d.time[0]);
   const i = Math.max(0, (d.time || []).indexOf(today));
+  /** @type {string[]} */
   let next = [];
-  if (span === 'days') next = (d.time || []).slice(i + 1, i + 7).map((day, k) => `${dayWord(day)} ${Math.round(d.temperature_2m_max[i + 1 + k])}°/${Math.round(d.temperature_2m_min[i + 1 + k])}°`);
-  else { const start = (h.time || []).findIndex((t) => t > String(c.time || '')); if (start >= 0) next = h.time.slice(start, start + 6).map((t, k) => `${hourWord(t)} ${Math.round(h.temperature_2m[start + k])}°`); }
+  if (span === 'days') next = (d.time || []).slice(i + 1, i + 7).map((day, k) => `${dayWord(day)} ${Math.round(/** @type {number[]} */ (d.temperature_2m_max)[i + 1 + k])}°/${Math.round(/** @type {number[]} */ (d.temperature_2m_min)[i + 1 + k])}°`);
+  else { const start = (h.time || []).findIndex((t) => t > String(c.time || '')); if (start >= 0) next = /** @type {string[]} */ (h.time).slice(start, start + 6).map((t, k) => `${hourWord(t)} ${Math.round(/** @type {number[]} */ (h.temperature_2m)[start + k])}°`); }
   return {
     temp: c.temperature_2m, weathercode: c.weather_code, description: wmoWords(c.weather_code),
     high: d.temperature_2m_max ? d.temperature_2m_max[i] : null, low: d.temperature_2m_min ? d.temperature_2m_min[i] : null,
@@ -49,7 +58,9 @@ function fromOpenMeteo(j, span, now) {
 
 // Hourly sea level (Open-Meteo marine) -> today's high and low tides: each turn of the curve, its time
 // refined between the hours by a parabola through the three points. -> [{ type, time }]
+/** @param {string[]} times @param {number[]} levels @param {string} day */
 function tidesFromSeaLevel(times, levels, day) {
+  /** @type {{ type: string, time: string }[]} */
   const out = [];
   for (let k = 1; k < levels.length - 1; k++) {
     const [a, b, c] = [levels[k - 1], levels[k], levels[k + 1]];
@@ -67,34 +78,41 @@ function tidesFromSeaLevel(times, levels, day) {
 }
 
 // Stormglass extremes -> [{ type, time }] for `day` in the place's time zone.
+/** @param {unknown} data @param {string} day @param {string | null} [timeZone] */
 function tidesFromStormglass(data, day, timeZone) {
   const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || undefined, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  return (Array.isArray(data) ? data : []).map((x) => {
+  return (Array.isArray(data) ? /** @type {Fm[]} */ (data) : []).map((x) => {
     const p = Object.fromEntries(fmt.formatToParts(new Date(String(x.time).replace(' ', 'T'))).map((y) => [y.type, y.value]));
     return { type: x.type === 'high' ? 'high' : 'low', at: `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}` };
   }).filter((x) => x.at.slice(0, 10) === day).map((x) => ({ type: x.type, time: clock12(x.at) }));
 }
 
+/** @param {string} url @param {Record<string, string>} [headers] @returns {Promise<unknown>} */
 async function getJson(url, headers) {
   let r;
   try { r = await requestUrl({ url, method: 'GET', headers, throw: false }); } catch { throw new Error('network'); }
   if (r.status >= 400) throw Object.assign(new Error('http'), { status: r.status });
-  return r.json;
+  const json = /** @type {unknown} */ (r.json);
+  return json;
 }
 
 // Town search (Settings): -> [{ name, lat, lon, tz, short }]. tz: the result's IANA time zone; short: the
 // name without the country (World clock). Weather keeps only name, lat and lon (normalizeWeather).
 // The typed text is cut to 80 characters: a long paste would only be refused by the service (review 2026-10-20).
 // Cut by whole characters, not 16-bit units: half an emoji makes encodeURIComponent throw (review s1).
+/** @param {unknown} text @returns {Promise<{ name: string, lat: number, lon: number, tz: string, short: string }[]>} */
 async function findPlaces(text) {
-  const j = await getJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(Array.from(String(text).trim()).slice(0, 80).join(''))}&count=8&language=en&format=json`);
+  const j = /** @type {{ results?: { name?: string, admin1?: string, country?: string, latitude: number, longitude: number, timezone?: string }[] } | null} */ (await getJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(Array.from(String(text).trim()).slice(0, 80).join(''))}&count=8&language=en&format=json`));
+  /** @param {(string | undefined)[]} a */
   const join = (a) => a.filter(Boolean).filter((v, k, l) => l.indexOf(v) === k).join(', ');
   return ((j && j.results) || []).map((x) => ({ name: join([x.name, x.admin1, x.country]), lat: x.latitude, lon: x.longitude, tz: x.timezone || '', short: join([x.name, x.admin1]) }));
 }
 
+/** @type {{ key: string, at: number, day: string, data: WeatherData | null, error: string, loading: Promise<void> | null }} */
 const cache = { key: '', at: 0, day: '', data: null, error: '', loading: null };
 
 // The weather for the saved settings (fetched every 30 minutes; the last good one kept). null: no place yet.
+/** @param {import('obsidian').App} app @param {unknown} settings */
 function weatherFor(app, settings) {
   const s = normalizeWeather(settings);
   if (!s.place) return null;
@@ -105,19 +123,21 @@ function weatherFor(app, settings) {
 function weatherError() { return cache.error; }
 
 // again: a fetch already running is waited out, then one more is made (a Stormglass key pasted mid-fetch).
+/** @param {import('obsidian').App} app @param {WeatherSettings} s @param {boolean} [again] @returns {Promise<void>} */
 function refreshWeather(app, s, again) {
   if (cache.loading) return again ? cache.loading.then(() => refreshWeather(app, s)) : cache.loading;
   const key = JSON.stringify(s);
   cache.loading = (async () => {
     try {
-      const { lat, lon } = s.place;
-      const j = await getJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&hourly=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=7${s.units === 'f' ? '&temperature_unit=fahrenheit' : ''}`);
+      const { lat, lon } = /** @type {{ lat: number, lon: number }} */ (s.place);
+      const j = /** @type {OpenMeteoForecast} */ (await getJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&hourly=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&timezone=auto&forecast_days=7${s.units === 'f' ? '&temperature_unit=fahrenheit' : ''}`));
       const w = fromOpenMeteo(j, s.span);
       if (s.tides) w.tides_today = await tidesFor(app, s, w.day, w.timezone);
       cache.data = w; cache.error = '';
     } catch (e) {
       if (cache.key !== key) cache.data = null; // never another town's forecast under this one
-      cache.error = e && e.status ? `The forecast answered with an error (${e.status}).${cache.data ? ' Showing the last one.' : ''}` : 'Could not reach the forecast. Check the internet connection.';
+      const status = errStatus(e);
+      cache.error = status ? `The forecast answered with an error (${String(status)}).${cache.data ? ' Showing the last one.' : ''}` : 'Could not reach the forecast. Check the internet connection.';
       console.warn('LifeWorld: the weather could not be read');
     }
     cache.key = key; cache.at = Date.now(); cache.day = dayOf(new Date()); cache.loading = null;
@@ -127,26 +147,29 @@ function refreshWeather(app, s, again) {
 }
 
 // Tides: Stormglass when chosen and a key is set (once a day per place, kept on the device), else Open-Meteo.
+/** @param {import('obsidian').App} app @param {WeatherSettings & { place: { lat: number, lon: number } }} s @param {string} day @param {string | null} [timeZone] */
 async function tidesFor(app, s, day, timeZone) {
   if (s.tideSrc === 'sg' && keyOf(app, 'stormglass')) {
     const place = `${s.place.lat},${s.place.lon}`;
-    const kept = app.loadLocalStorage ? app.loadLocalStorage(SG_KEY) : null;
+    const stored = /** @type {unknown} */ (app.loadLocalStorage ? app.loadLocalStorage(SG_KEY) : null);
+    const kept = /** @type {{ day?: string, place?: string, tides?: { type: string, time: string }[] } | null} */ (stored);
     const keptToday = kept && kept.day === day && kept.place === place;
     if (keptToday && Array.isArray(kept.tides)) return kept.tides;
     // A refused call is kept too (bad key, free plan used up): no second try until tomorrow or a new key.
     if (!keptToday) try {
       const start = Math.floor(Date.now() / 1000) - 36 * 3600; const end = start + 72 * 3600;
       const j = await getJson(`https://api.stormglass.io/v2/tide/extremes/point?lat=${s.place.lat}&lng=${s.place.lon}&start=${start}&end=${end}`, { Authorization: keyOf(app, 'stormglass') });
-      const tides = tidesFromStormglass(j && j.data, day, timeZone);
+      const tides = tidesFromStormglass(j && typeof j === 'object' && 'data' in j ? j.data : undefined, day, timeZone);
       if (app.saveLocalStorage) app.saveLocalStorage(SG_KEY, { day, place, tides });
       return tides;
     } catch (e) {
       console.warn('LifeWorld: Stormglass tides could not be read; using Open-Meteo');
-      if ([401, 402, 403, 429].includes(e && e.status) && app.saveLocalStorage) app.saveLocalStorage(SG_KEY, { day, place, failed: true }); // a network blip tries again next refresh
+      const status = errStatus(e);
+      if (typeof status === 'number' && [401, 402, 403, 429].includes(status) && app.saveLocalStorage) app.saveLocalStorage(SG_KEY, { day, place, failed: true }); // a network blip tries again next refresh
     }
   }
   try {
-    const m = await getJson(`https://marine-api.open-meteo.com/v1/marine?latitude=${s.place.lat}&longitude=${s.place.lon}&hourly=sea_level_height_msl&timezone=auto&past_days=1&forecast_days=2`);
+    const m = /** @type {{ hourly?: { time?: string[], sea_level_height_msl?: number[] } } | null} */ (await getJson(`https://marine-api.open-meteo.com/v1/marine?latitude=${s.place.lat}&longitude=${s.place.lon}&hourly=sea_level_height_msl&timezone=auto&past_days=1&forecast_days=2`));
     return tidesFromSeaLevel((m && m.hourly && m.hourly.time) || [], (m && m.hourly && m.hourly.sea_level_height_msl) || [], day);
   } catch { return []; } // inland, or the sea level could not be read: no tides line
 }

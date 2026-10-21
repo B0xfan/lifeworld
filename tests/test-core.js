@@ -21,7 +21,7 @@ const EXPORTS = {
   calendars: ['isHttp', 'normalizeLinks', 'linksOf', 'saveLinks', 'fetchUrl', 'eventsFromIcs', 'calendarEvents', 'refreshCalendars', 'calendarErrors', 'resetCalendars'],
   weather: ['SG_KEY', 'normalizeWeather', 'wmoWords', 'fromOpenMeteo', 'tidesFromSeaLevel', 'tidesFromStormglass', 'findPlaces', 'weatherFor', 'weatherError', 'refreshWeather'],
   daily: ['formatDateTokens', 'momentFormat', 'scratchNameFor', 'scratchPathFor', 'renderTemplate', 'insertUnderHeading', 'newDailyContent', 'writeDailyNote'],
-  sources: ['parseCheckbox', 'setDateSign', 'toggleCheckboxLine', 'cleanTag', 'hasTag', 'newCheckboxLine', 'extItem', 'isExtPath', 'fromTodoist', 'fromClickUp', 'fromThings', 'parseThings', 'keyOf', 'setKey', 'SOURCE_NAMES', 'thingsOffered', 'makeSource', 'CheckboxSource', 'TodoistSource', 'ClickUpSource', 'ThingsSource', 'THINGS_READ'],
+  sources: ['errField', 'errStatus', 'parseCheckbox', 'setDateSign', 'toggleCheckboxLine', 'cleanTag', 'hasTag', 'newCheckboxLine', 'extItem', 'isExtPath', 'fromTodoist', 'fromClickUp', 'fromThings', 'parseThings', 'keyOf', 'setKey', 'SOURCE_NAMES', 'thingsOffered', 'makeSource', 'CheckboxSource', 'TodoistSource', 'ClickUpSource', 'ThingsSource', 'THINGS_READ'],
   quickadd: ['DOW_NAMES', 'DOW_CODES', 'MON_NAMES', 'dowIndex', 'nextDow', 'validDay', 'parseDayWord', 'DAY_RE', 'repeatRule', 'REPEAT_RE', 'understand', 'parseClock', 'whenValue', 'firstOccurrence', 'DOW_LONG', 'joinWords', 'ordinal', 'repeatWords', 'shortDay', 'halfWord', 'quickAddChips', 'quickAddPlan'],
 };
 let n = 0;
@@ -31,6 +31,8 @@ for (const [mod, names] of Object.entries(EXPORTS)) {
   core[mod] = fromSrc(`core/${mod}`);
   check(() => assert.deepStrictEqual(Object.keys(core[mod]).sort(), [...names].sort(), `src/core/${mod}.js exports exactly its helpers`));
 }
+// A thrown value's field is read off any object, as `e && e.message` did in 1.0.0 (review of 1.0.1).
+check(() => assert.deepStrictEqual([core.sources.errField({ message: 'm' }, 'message'), core.sources.errField(new Error('x'), 'message'), core.sources.errField(null, 'plain'), core.sources.errField('text', 'message'), core.sources.errStatus({ status: 429 })], ['m', 'x', undefined, undefined, 429], 'errField reads any object, nothing else'));
 check(() => assert.deepStrictEqual(fs.readdirSync(CORE).sort(), Object.keys(EXPORTS).map((m) => `${m}.js`).sort(), 'every core file is listed here'));
 
 // Each plugin and each core file: no own copy of a core name, every core name it uses is

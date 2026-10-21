@@ -18,6 +18,8 @@ import sidebarManifest from './sidebar/manifest.json';
 import Sidebar from './sidebar/main';
 
 // Start order: Projects first (the task engine the others use).
+/** @typedef {[import('obsidian').PluginManifest, new (app: import('obsidian').App, manifest: import('obsidian').PluginManifest) => PartPlugin]} PartEntry */
+/** @type {PartEntry[]} */
 const PART_LIST = [
   [projectsManifest, Projects],
   [todayManifest, Today],
@@ -44,6 +46,7 @@ const MANUAL_URL = 'https://github.com/B0xfan/lifeworld/blob/HEAD/docs/LifeWorld
 
 // Settings › Your vault, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
 // The mockup's "Found on first run" line under the task notes folder comes with the first-run screen.
+/** @type {[string, string, string][]} */
 const FOLDER_ROWS = [
   ['tasks', 'Task notes folder', ''],
   ['archive', 'Finished tasks folder', 'Archived tasks move here'],
@@ -54,6 +57,7 @@ const FOLDER_ROWS = [
   ['mood', 'Mood folder', 'Your mood check-ins'],
 ];
 // The Property names dialog: [LifeWorld's name, row label, what it holds]; MORE fold away.
+/** @type {[string, string, string][]} */
 const PROP_ROWS = [
   ['title', 'Title', 'The name a task shows, when it differs from the file name'],
   ['status', 'Status', 'Open, in progress, done...'],
@@ -68,6 +72,7 @@ const PROP_ROWS = [
   ['planned_half', 'Planned half', 'Morning or afternoon'],
   ['planned_order', 'Planned order', 'Its place in that half'],
 ];
+/** @type {[string, string, string][]} */
 const MORE_PROP_ROWS = [
   ['dateCreated', 'Created', ''],
   ['dateModified', 'Last changed', ''],
@@ -79,19 +84,25 @@ const MORE_PROP_ROWS = [
 const PROP_SUMMARY = ['status', 'due', 'scheduled', 'priority', 'projects', 'reminders'];
 
 // A copy each way, as the old disk read and write gave each part its own object.
-const copy = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+/** @param {unknown} v @returns {unknown} */
+const copy = (v) => { const c = /** @type {unknown} */ (v === undefined ? null : JSON.parse(JSON.stringify(v))); return c; };
 
+/** @typedef {Record<string, Fm>} LwStore */
 class LifeWorldPlugin extends Plugin {
   async onload() {
+    /** @type {Promise<void>} */
     this.saving = Promise.resolve();
     this.gone = false;
     const found = await this.readStore();
     if (!found) await this.setAsideDamaged();
     // A damaged file starts on defaults with carry-over marked done, so a part that saves nothing
     // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
+    /** @type {LwStore} */
     this.store = found || { [HOST]: { carriedOver: true } };
-    this.ondisk = copy(this.store); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
+    /** @type {LwStore} */
+    this.ondisk = /** @type {LwStore} */ (copy(this.store)); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
+    /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
     // A part with no corner yet takes its old plugin's settings file once (read only, left as it
     // was), so switching over needs no script and works for anyone who had the old plugins.
@@ -104,8 +115,11 @@ class LifeWorldPlugin extends Plugin {
       console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
       new Notice('LifeWorld: your old settings were taken over but could not be saved yet. LifeWorld will try again at the next change.', 0);
     });
+    /** @type {Record<string, PartPlugin>} */
     this.running = {};
+    /** @type {Record<string, string[]>} */
     this.views = {};
+    /** @type {Promise<void>} */
     this.applying = Promise.resolve();
     for (const entry of PART_LIST) if (this.wanted(entry[0].id)) await this.startPart(entry);
     this.addSettingTab(new LifeWorldSettingTab(this.app, this));
@@ -120,18 +134,22 @@ class LifeWorldPlugin extends Plugin {
   }
 
   // The Parts switches; a part never switched is on, so an existing setup starts with all four.
+  /** @param {string} id */
   isOn(id) {
     const h = this.store[HOST];
-    return !(h && h.parts && h.parts[id] === false);
+    const parts = /** @type {Fm | undefined} */ (h && h.parts);
+    return !(h && parts && parts[id] === false);
   }
 
   // Whether a part runs: its switch, except the task engine (the Projects part), which also runs for
   // Today and the Planner, then without its pages (pagesOff).
+  /** @param {string} id */
   wanted(id) {
     if (id === 'a4-projects') return ['a4-projects', 'a4-today', 'a4-planner'].some((x) => this.isOn(x));
     return this.isOn(id);
   }
 
+  /** @param {PartEntry} entry */
   async startPart([manifest, Part]) {
     if (this.gone) return;
     const id = manifest.id;
@@ -141,18 +159,19 @@ class LifeWorldPlugin extends Plugin {
     // The Projects switch off while Today or the Planner is on: the task engine only, no pages (section 1).
     if (id === 'a4-projects') part.pagesOff = !this.isOn('a4-projects');
     part.loadData = async () => copy(this.store[id]);
-    part.saveData = (data) => { this.store[id] = copy(data); return this.writeStore(); };
+    part.saveData = (data) => { this.store[id] = /** @type {Fm} */ (copy(data)); return this.writeStore(); };
     // Kept for LifeWorld's one settings page instead of a page of its own.
-    part.addSettingTab = (tab) => {
+    part.addSettingTab = (/** @type {PartSettingTab} */ tab) => {
       this.tabs[id] = tab; part.settingTab = tab;
       part.register(() => { if (typeof tab.hide === 'function') tab.hide(); if (this.tabs[id] === tab) delete this.tabs[id]; part.settingTab = null; });
     };
     // Its tab types, so switching it off can close its tabs (the mockup: Sidebar off gives back
     // Obsidian's file list). Turning LifeWorld itself off leaves tabs alone, as Obsidian asks.
+    /** @type {string[]} */
     const views = (this.views[id] = []);
     const addView = part.registerView.bind(part);
-    part.registerView = (type, make) => { views.push(type); return addView(type, make); };
-    PARTS[id] = part;
+    part.registerView = (/** @type {string} */ type, /** @type {import('obsidian').ViewCreator} */ make) => { views.push(type); return addView(type, make); };
+    /** @type {Record<string, unknown>} */ (PARTS)[id] = part;
     // Started one after the other and waited for, as Obsidian started the four plugins; added
     // as a child after, so turning LifeWorld off stops every part (addChild skips a started one).
     // A part that fails to start is logged, stopped and left out (the others see it as off, as a
@@ -160,11 +179,11 @@ class LifeWorldPlugin extends Plugin {
     try { await part.load(); } catch (e) {
       console.error(`LifeWorld: ${manifest.name} did not start`, e);
       try { part.unload(); } catch (e2) { console.error(`LifeWorld: ${manifest.name} did not stop cleanly`, e2); }
-      delete PARTS[id];
+      delete /** @type {Record<string, unknown>} */ (PARTS)[id];
       return;
     }
     // LifeWorld was turned off while this part was starting: stop it, or it would run on alone.
-    if (this.gone) { part.unload(); delete PARTS[id]; return; }
+    if (this.gone) { part.unload(); delete /** @type {Record<string, unknown>} */ (PARTS)[id]; return; }
     this.running[id] = part;
     // An add-on's sync, kept across a switch. Set after Today's onload, which runs no sync (review p2-s7).
     if (id === 'a4-today') part.calendarSync = this.calendarSync || null;
@@ -174,6 +193,7 @@ class LifeWorldPlugin extends Plugin {
   // For a companion add-on (phase 2 section 7): the calendar sync the Today page runs after a calendar
   // tick and for "Refresh list", (refresh) => Promise<boolean>; anything but a function removes it.
   // Kept here, so it survives the Today page being switched off and on. -> a function that removes it.
+  /** @param {unknown} fn */
   setCalendarSync(fn) {
     this.calendarSync = typeof fn === 'function' ? fn : null;
     if (this.running['a4-today']) this.running['a4-today'].calendarSync = this.calendarSync;
@@ -197,25 +217,34 @@ class LifeWorldPlugin extends Plugin {
   //     letters, digits, dash and underscore.
   // Errors in onClick, draw or render are logged and never break the page. Kept while the Sidebar or the
   // Today page is switched off, shown again when it is back on.
-  addSidebarItem(def) { return this.addExtra('a4-sidebar', 'Sidebar item', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('nav', d)); }
-  addToolbarButton(def) { return this.addExtra('a4-sidebar', 'toolbar button', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('tools', d)); }
-  addTabRowButton(def) { return this.addExtra('a4-sidebar', 'tab row button', def, ['id', 'label', 'icon'], 'onClick', (d) => PART_MAIN['a4-sidebar'].addExtra('top', d)); }
-  addFilesFooter(def) { return this.addExtra('a4-sidebar', 'Files tab footer', def, ['id'], 'draw', (d) => PART_MAIN['a4-sidebar'].addExtra('foot', d)); }
-  addItemCommand(def) { return this.addExtra('a4-sidebar', 'Sidebar item command', def, ['item', 'command'], null, (d) => PART_MAIN['a4-sidebar'].addExtra('items', d)); }
-  addTodayWidget(def) { return this.addExtra('a4-today', 'Today widget', def, ['id', 'name'], 'render', (d) => PART_MAIN['a4-today'].addExtraWidget(d)); }
+  /** @param {unknown} def */
+  addSidebarItem(def) { return this.addExtra('a4-sidebar', 'Sidebar item', def, ['id', 'label', 'icon'], 'onClick', (d) => /** @type {typeof Sidebar} */ (PART_MAIN['a4-sidebar']).addExtra('nav', d)); }
+  /** @param {unknown} def */
+  addToolbarButton(def) { return this.addExtra('a4-sidebar', 'toolbar button', def, ['id', 'label', 'icon'], 'onClick', (d) => /** @type {typeof Sidebar} */ (PART_MAIN['a4-sidebar']).addExtra('tools', d)); }
+  /** @param {unknown} def */
+  addTabRowButton(def) { return this.addExtra('a4-sidebar', 'tab row button', def, ['id', 'label', 'icon'], 'onClick', (d) => /** @type {typeof Sidebar} */ (PART_MAIN['a4-sidebar']).addExtra('top', d)); }
+  /** @param {unknown} def */
+  addFilesFooter(def) { return this.addExtra('a4-sidebar', 'Files tab footer', def, ['id'], 'draw', (d) => /** @type {typeof Sidebar} */ (PART_MAIN['a4-sidebar']).addExtra('foot', d)); }
+  /** @param {unknown} def */
+  addItemCommand(def) { return this.addExtra('a4-sidebar', 'Sidebar item command', def, ['item', 'command'], null, (d) => /** @type {typeof Sidebar} */ (PART_MAIN['a4-sidebar']).addExtra('items', d)); }
+  /** @param {unknown} def */
+  addTodayWidget(def) { return this.addExtra('a4-today', 'Today widget', def, ['id', 'name'], 'render', (d) => /** @type {typeof Today} */ (PART_MAIN['a4-today']).addExtraWidget(/** @type {Parameters<typeof Today.addExtraWidget>[0]} */ (d))); }
 
   // For a companion add-on: its new-note form, { targets(), open(key, preset) }. targets() -> [{ navPath, key,
   // label }]: a folder row whose path is a navPath gets a "+" that calls open(key); "+ Add project" on the
   // Projects page calls open('project'); open -> true when it handled it. Anything else removes it.
   // -> a function that removes it.
+  /** @param {unknown} form */
   setNewNoteForm(form) {
-    ADDON.form = form && typeof form.targets === 'function' && typeof form.open === 'function' ? form : null;
+    const f = /** @type {{ targets?: unknown, open?: unknown } | null | undefined} */ (form);
+    ADDON.form = f && typeof f.targets === 'function' && typeof f.open === 'function' ? /** @type {typeof ADDON.form} */ (f) : null;
     this.extrasChanged('a4-sidebar');
     return () => { if (ADDON.form === form) this.setNewNoteForm(null); };
   }
 
   // For a companion add-on: the command the Today page's Mood card runs for "Check in" (shown while that
   // command is registered); anything but text removes it. -> a function that removes it.
+  /** @param {unknown} command */
   setMoodCheckin(command) {
     const id = typeof command === 'string' ? command.trim() : '';
     ADDON.moodCheckin = id;
@@ -224,15 +253,18 @@ class LifeWorldPlugin extends Plugin {
   }
 
   // A part redraws after an add-on change (it may be off: then it draws them when it starts).
+  /** @param {string} part */
   extrasChanged(part) {
     const p = this.running[part];
-    if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => p.extrasChanged()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e));
+    if (p && typeof p.extrasChanged === 'function') Promise.resolve().then(() => /** @type {() => unknown} */ (p.extrasChanged)()).catch((e) => console.error(`LifeWorld: ${part} did not redraw`, e));
   }
 
-  addExtra(part, what, def, texts, fn, add) {
-    const bad = !def || typeof def !== 'object' || texts.some((k) => typeof def[k] !== 'string' || !def[k].trim()) || (fn && typeof def[fn] !== 'function');
+  /** @param {string} part @param {string} what @param {unknown} defIn @param {string[]} texts @param {string | null} fn @param {(d: SidebarExtra) => () => void} add */
+  addExtra(part, what, defIn, texts, fn, add) {
+    const def = /** @type {Record<string, unknown> & SidebarExtra} */ (defIn);
+    const bad = !def || typeof def !== 'object' || texts.some((k) => { const v = def[k]; return typeof v !== 'string' || !v.trim(); }) || (fn && typeof def[fn] !== 'function');
     if (bad) throw new TypeError(`LifeWorld: a ${what} needs ${texts.join(', ')} (text)${fn ? ` and ${fn} (a function)` : ''}`);
-    if (texts.includes('id') && !/^[A-Za-z0-9_-]+$/.test(def.id)) throw new TypeError(`LifeWorld: a ${what} id is letters, digits, dash and underscore only`);
+    if (texts.includes('id') && !/^[A-Za-z0-9_-]+$/.test(/** @type {string} */ (def.id))) throw new TypeError(`LifeWorld: a ${what} id is letters, digits, dash and underscore only`);
     const changed = () => this.extrasChanged(part);
     const remove = add({ ...def });
     changed();
@@ -250,6 +282,7 @@ class LifeWorldPlugin extends Plugin {
 
   // Brings the running parts in line with the switches: the ones that use Projects stop first,
   // Projects starts first. One change at a time.
+  /** @returns {Promise<void>} */
   applyParts() {
     this.applying = this.applying.catch(() => {}).then(async () => {
       if (this.gone) return;
@@ -273,8 +306,9 @@ class LifeWorldPlugin extends Plugin {
   }
 
   // A switch in Settings › Parts. Each part on its own (section 1); the task engine follows wanted().
+  /** @param {string} id @param {boolean} on */
   async setPart(id, on) {
-    const parts = { ...((this.store[HOST] && this.store[HOST].parts) || {}), [id]: on };
+    const parts = { .../** @type {Fm} */ ((this.store[HOST] && this.store[HOST].parts) || {}), [id]: on };
     this.store[HOST] = { ...(this.store[HOST] || {}), parts };
     await this.writeStore();
     await this.applyParts();
@@ -283,12 +317,14 @@ class LifeWorldPlugin extends Plugin {
   // Settings › Your vault (and Planning): change = { folders: {...} }, { feeds: {...} }, { names: {...} } or { placeOnDay }, merged into what
   // is saved (feeds: the note paths, set by an owner's companion add-on; no row, build plan section 2).
   // Every part reads the new folders and names from the next time it looks; open views redraw.
+  /** @param {{ folders?: Record<string, string>, feeds?: Record<string, string>, names?: Record<string, string>, placeOnDay?: string }} change */
   async setVaultSettings(change) {
     const h = this.store[HOST] || {};
-    const v = h.vault || {};
+    const v = /** @type {Fm} */ (h.vault || {});
+    /** @type {Fm} */
     const next = { ...v };
-    if (change.folders) next.folders = { ...(v.folders || {}), ...change.folders };
-    if (change.feeds) next.feeds = { ...(v.feeds || {}), ...change.feeds };
+    if (change.folders) next.folders = { .../** @type {Fm} */ (v.folders || {}), ...change.folders };
+    if (change.feeds) next.feeds = { .../** @type {Fm} */ (v.feeds || {}), ...change.feeds };
     if (change.names) next.names = change.names;
     if (change.placeOnDay) next.placeOnDay = change.placeOnDay;
     this.store[HOST] = { ...h, vault: next };
@@ -298,6 +334,7 @@ class LifeWorldPlugin extends Plugin {
 
   // New Your vault settings: every part reads them from now on, open views redraw, and a part that
   // acts on a changed note path hears it (Today adopts the calendar choice, review p2-s5).
+  /** @param {unknown} v */
   applyVault(v) {
     vault.setVault(v);
     this.redrawViews();
@@ -307,12 +344,13 @@ class LifeWorldPlugin extends Plugin {
   // Each open LifeWorld tab draws again (Today, Planner, Projects schedule their own redraw; the Sidebar draws now),
   // and so do Projects' task cards on open task notes (review p2-s6). One that fails is logged; the rest still draw.
   redrawViews() {
+    /** @param {string} what @param {() => unknown} fn */
     const draw = (what, fn) => { try { fn(); } catch (e) { console.error(`LifeWorld: ${what} did not redraw`, e); } };
     for (const types of Object.values(this.views || {})) for (const type of types) for (const leaf of this.app.workspace.getLeavesOfType(type)) {
-      const v = leaf.view;
-      if (v && typeof v.scheduleRefresh === 'function') draw(type, () => v.scheduleRefresh());
-      else if (v && typeof v.scheduleRender === 'function') draw(type, () => v.scheduleRender());
-      else if (v && typeof v.render === 'function') draw(type, () => v.render()); // the Sidebar
+      const v = /** @type {{ scheduleRefresh?: () => void, scheduleRender?: () => void, render?: () => void }} */ (leaf.view);
+      if (v && typeof v.scheduleRefresh === 'function') draw(type, () => /** @type {() => void} */ (v.scheduleRefresh)());
+      else if (v && typeof v.scheduleRender === 'function') draw(type, () => /** @type {() => void} */ (v.scheduleRender)());
+      else if (v && typeof v.render === 'function') draw(type, () => /** @type {() => void} */ (v.render)()); // the Sidebar
     }
     const cards = this.running['a4-projects'] && this.running['a4-projects'].cards;
     if (cards) draw('task cards', () => cards.refreshAll());
@@ -322,16 +360,17 @@ class LifeWorldPlugin extends Plugin {
     this.gone = true; // a switch or outside change still under way starts nothing more
     this.ready = false; // its hooks are gone with it
     this.running = {};
-    for (const [m] of PART_LIST) delete PARTS[m.id];
+    for (const [m] of PART_LIST) delete /** @type {Record<string, unknown>} */ (PARTS)[m.id];
   }
 
   // -> the settings file's contents, {} when there is none yet, or null when it is damaged.
   // Obsidian's loadData gives null for a missing file and undefined for one it cannot read or
   // parse (it logs and does not throw; checked in Obsidian 1.14.4's own code).
+  /** @returns {Promise<LwStore | null>} */
   async readStore() {
     const d = await this.loadData();
     if (d === null) return {};
-    if (d && typeof d === 'object' && !Array.isArray(d)) return d;
+    if (d && typeof d === 'object' && !Array.isArray(d)) return /** @type {LwStore} */ (d);
     return null;
   }
 
@@ -339,6 +378,7 @@ class LifeWorldPlugin extends Plugin {
   // exists nothing is written, so the original can never be overwritten unbacked.
   async setAsideDamaged() {
     const file = `${this.manifest.dir}/data.json`;
+    /** @param {number} x */
     const p2 = (x) => String(x).padStart(2, '0');
     const d = new Date();
     const backup = `${this.manifest.dir}/data.damaged-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.json`;
@@ -353,23 +393,25 @@ class LifeWorldPlugin extends Plugin {
   }
 
   // -> true when the old plugin's settings were taken. Missing or unreadable: defaults, old file untouched.
+  /** @param {string} id */
   async carryOver(id) {
     const file = `${this.app.vault.configDir}/plugins/${id}/data.json`;
     let text;
     try { text = await this.app.vault.adapter.read(file); } catch { return false; }
     try {
-      const d = JSON.parse(text);
-      if (d && typeof d === 'object' && !Array.isArray(d)) { this.store[id] = d; return true; }
+      const d = /** @type {unknown} */ (JSON.parse(text));
+      if (d && typeof d === 'object' && !Array.isArray(d)) { this.store[id] = /** @type {Fm} */ (d); return true; }
     } catch { /* unreadable, below */ }
     console.warn(`LifeWorld: could not read ${file}; that part starts on defaults (the file is left as it is).`);
     return false;
   }
 
   // One write at a time, each with every part's newest settings, so a slower write never lands last.
+  /** @returns {Promise<void>} */
   writeStore() {
     if (this.noWrites) return Promise.resolve();
     this.saving = this.saving.catch(() => {}).then(async () => {
-      const snap = copy(this.store);
+      const snap = /** @type {LwStore} */ (copy(this.store));
       this.writing = true;
       try {
         await this.saveData(snap);
@@ -379,7 +421,7 @@ class LifeWorldPlugin extends Plugin {
         const s = this.syncedDuring;
         this.ondisk = snap;
         if (s) {
-          this.ondisk = copy(s.now);
+          this.ondisk = /** @type {LwStore} */ (copy(s.now));
           for (const k of s.kept) if (k in snap) this.ondisk[k] = snap[k]; else delete this.ondisk[k];
         }
       } finally { this.writing = false; this.syncedDuring = null; }
@@ -402,7 +444,9 @@ class LifeWorldPlugin extends Plugin {
     // A corner changed here and not yet on disk (its save queued or under way) keeps the change
     // made here; every other corner takes the file's. A write under way carries the corners from
     // before this change, so one more write follows it.
+    /** @type {LwStore} */
     const merged = { ...now };
+    /** @type {string[]} */
     const kept = [];
     for (const k of new Set([...Object.keys(before), ...Object.keys(was)])) {
       if (JSON.stringify(before[k]) === JSON.stringify(was[k])) continue;
@@ -411,7 +455,8 @@ class LifeWorldPlugin extends Plugin {
     }
     this.ondisk = now;
     this.store = merged;
-    if (this.writing) this.syncedDuring = { now: copy(now), kept };
+    /** @type {{ now: LwStore, kept: string[] } | null | undefined} */
+    if (this.writing) this.syncedDuring = { now: /** @type {LwStore} */ (copy(now)), kept };
     // After a save that ended during the read, write only if the file does not already hold the
     // result (review p2-s4: no write when nothing changed).
     if (this.writing || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
@@ -424,7 +469,7 @@ class LifeWorldPlugin extends Plugin {
       const p = this.running[m.id];
       if (!p || typeof p.onExternalSettingsChange !== 'function') continue;
       if (JSON.stringify(before[m.id]) === JSON.stringify(this.store[m.id])) continue;
-      await p.onExternalSettingsChange();
+      await /** @type {() => Promise<unknown>} */ (p.onExternalSettingsChange)();
       const tab = this.tabs[m.id];
       if (tab && tab.containerEl && tab.containerEl.isConnected) tab.display();
     }
@@ -442,6 +487,7 @@ class LifeWorldPlugin extends Plugin {
 // LifeWorld's one settings page: Parts, then each running part's own settings, drawn by the part's
 // own settings page into a section here (so every part's page works exactly as before).
 class LifeWorldSettingTab extends PluginSettingTab {
+  /** @param {import('obsidian').App} app @param {LifeWorldPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
 
   display() {
@@ -472,6 +518,7 @@ class LifeWorldSettingTab extends PluginSettingTab {
   taskSource() { const pj = this.plugin.running['a4-projects']; return pj && pj.settings ? pj.settings.source : 'builtin'; }
 
   // Planning: one choice every part follows when a task is put on a day (0.1.16).
+  /** @param {HTMLElement} el */
   drawPlanning(el) {
     new Setting(el).setName('Planning').setHeading();
     new Setting(el).setName('When you place a task on a day')
@@ -482,6 +529,7 @@ class LifeWorldSettingTab extends PluginSettingTab {
   }
 
   // Your vault: the six folders, Daily notes (Obsidian's own setting), Property names.
+  /** @param {HTMLElement} el */
   drawVault(el) {
     new Setting(el).setName('Your vault').setHeading();
     for (const [key, name, desc] of FOLDER_ROWS) {
@@ -513,6 +561,7 @@ class LifeWorldSettingTab extends PluginSettingTab {
 // only by Done; an empty, repeated or unusable name keeps Done off and says why. Renaming here
 // never renames anything in the notes.
 class PropertyNamesModal extends Modal {
+  /** @param {import('obsidian').App} app @param {LifeWorldPlugin} plugin @param {() => void} onDone */
   constructor(app, plugin, onDone) { super(app); this.plugin = plugin; this.onDone = onDone; }
 
   onOpen() {
@@ -521,7 +570,9 @@ class PropertyNamesModal extends Modal {
     el.addClass('lw-names');
     this.setTitle('Property names');
     el.createEl('p', { cls: 'lw-names-intro', text: 'The properties LifeWorld reads and writes on your task notes. Change a name only if your notes already use a different one. This does not rename anything in your notes.' });
+    /** @type {{ key: string, label: string, t: import('obsidian').TextComponent }[]} */
     this.inputs = [];
+    /** @param {HTMLElement} parent @param {[string, string, string]} r */
     const row = (parent, [key, label, desc]) => new Setting(parent).setName(label).setDesc(desc).addText((t) => {
       t.setValue(vault.propNames[key]).onChange(() => this.check());
       t.inputEl.setAttr('aria-label', `${label} property name`);
@@ -543,6 +594,7 @@ class PropertyNamesModal extends Modal {
   // The mockup's checks, on every keystroke: the first problem shows, its row is marked, Done is off.
   check() {
     const msg = vault.namesProblem(this.inputs.map((x) => [x.label, x.t.getValue()]));
+    /** @type {Record<string, number>} */
     const count = {};
     for (const x of this.inputs) { const v = x.t.getValue().trim(); count[v] = (count[v] || 0) + 1; }
     for (const x of this.inputs) { const v = x.t.getValue().trim(); x.t.inputEl.toggleClass('lw-bad', !v || count[v] > 1 || vault.BAD_NAME.test(v) || vault.isReserved(v)); }
@@ -553,6 +605,7 @@ class PropertyNamesModal extends Modal {
 
   async save() {
     if (!this.check()) return;
+    /** @type {Record<string, string>} */
     const names = {};
     for (const x of this.inputs) { const v = x.t.getValue().trim(); if (v !== x.key) names[x.key] = v; }
     await this.plugin.setVaultSettings({ names });

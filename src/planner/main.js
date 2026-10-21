@@ -110,6 +110,7 @@ import { asList } from '../core/lists';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { understand, parseClock, quickAddChips, quickAddPlan } from '../core/quickadd';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, openBlockersOf } from '../core/tasks';
+import { errField } from '../core/sources';
 import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
 import { calendarEvents } from '../core/calendars'; // calendar links (launch section 6)
 import { vaultFolders, feedNotes, planning, inTaskFolders, readable, writable } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
@@ -117,10 +118,13 @@ import { vaultFolders, feedNotes, planning, inTaskFolders, readable, writable } 
 // One frontmatter write that remembers what the keys it changed held before;
 // the returned undo() puts exactly those back (a key that was absent is
 // removed again), through the frontmatter API too.
+/** @param {import('obsidian').App} app @param {TFile} file @param {(fm: Fm) => unknown} fn */
 async function writeWithUndo(app, file, fn) {
+  /** @type {Record<string, { v: unknown } | null>} */
   let before = {};
   await app.fileManager.processFrontMatter(file, (fm) => {
-    const copy = JSON.parse(JSON.stringify(fm || {}));
+    const parsed = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm || {})));
+    const copy = /** @type {Fm} */ (parsed);
     writable(fm, fn);
     before = {};
     for (const k of new Set([...Object.keys(copy), ...Object.keys(fm)])) {
@@ -135,6 +139,7 @@ async function writeWithUndo(app, file, fn) {
 }
 
 // An Obsidian notice with an Undo button (a move that took a clock time off).
+/** @param {string} text @param {() => Promise<unknown>} undo */
 function undoNotice(text, undo) {
   const frag = document.createDocumentFragment();
   const box = frag.createDiv({ cls: 'a4-undo-notice' });
@@ -151,12 +156,14 @@ function undoNotice(text, undo) {
 
 // The "Blocked" marker (lock chip). Hover names the blockers; a click or tap
 // lists them in a menu that opens each one. Not shared code: it renders.
+/** @param {HTMLElement} meta @param {{ path: string, title: string }[]} blockers @param {(path: string) => void} open @param {string} pre */
 function blockedChip(meta, blockers, open, pre) {
   const c = meta.createSpan({ cls: `${pre}-chip ${pre}-lock` });
   setIcon(c.createSpan({ cls: `${pre}-ic` }), 'lock');
   c.appendText(blockers.length > 1 ? `blocked · ${blockers.length}` : 'blocked');
   const names = `Blocked by: ${blockers.map((b) => b.title).join(', ')}`;
   c.setAttr('aria-label', names); c.setAttr('title', names); c.setAttr('role', 'button'); c.tabIndex = 0;
+  /** @param {Event} e */
   const show = (e) => {
     e.preventDefault(); e.stopPropagation();
     const m = new Menu();
@@ -173,6 +180,7 @@ function blockedChip(meta, blockers, open, pre) {
 // tab on Cmd/Ctrl-click; the note itself (a new tab, as before) when Projects
 // is off or has no page for it. `ref`: a project note's path, or a task's
 // project link or name. Resolves 'page', 'note', or false.
+/** @param {import('obsidian').App} app @param {unknown} ref @param {MouseEvent | KeyboardEvent | null | undefined} e @param {string} [sourcePath] */
 async function openProjectPage(app, ref, e, sourcePath) {
   if (ref == null || ref === '') return false;
   const newTab = !!(e && Keymap && Keymap.isModEvent(e));
@@ -193,14 +201,19 @@ async function openProjectPage(app, ref, e, sourcePath) {
  * the dropdown (projectNames). understand() never sees a picked "+text": it
  * comes out of the box on the pick. An unpicked "+text" stays in the name. */
 const PROJECT_HITS_MAX = 8;
+/** @param {string} ch */
 const isWordChar = (ch) => /[\p{L}\p{N}'’]/u.test(ch);
 // Projects a typed "+text" can mean, best first: names that start with it,
 // then names with a later word that starts with it (each group in the list's
 // own A to Z order). -> [{ name, at, len }] (at/len: the matched part)
+/** @param {unknown} query @param {string[] | null | undefined} names */
 function projectMatches(query, names) {
   const q = String(query || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!q) return [];
-  const first = []; const later = [];
+  /** @type {{ name: string, at: number, len: number }[]} */
+  const first = [];
+  /** @type {{ name: string, at: number, len: number }[]} */
+  const later = [];
   for (const name of names || []) {
     const lo = String(name).toLowerCase();
     if (lo.startsWith(q)) { first.push({ name, at: 0, len: q.length }); continue; }
@@ -214,6 +227,7 @@ function projectMatches(query, names) {
 // "+" starts the box or follows a space; the query runs from it to the caret
 // and may hold a space only while it still fits a project ("+garden plan").
 // `end` takes in the rest of the word after the caret, so a pick removes it all.
+/** @param {unknown} text @param {number | null | undefined} caret @param {string[]} names */
 function projectToken(text, caret, names) {
   const s = String(text || ''); const c = caret == null ? s.length : Math.min(caret, s.length);
   for (let i = c - 1; i >= 0; i--) {
@@ -221,11 +235,12 @@ function projectToken(text, caret, names) {
     const query = s.slice(i + 1, c);
     if (!query || /^\s/.test(query) || query.includes('+')) return null;
     if (/\s/.test(query) && !projectMatches(query, names).length) return null;
-    return { start: i, end: c + /^\S*/.exec(s.slice(c))[0].length, query };
+    return { start: i, end: c + /** @type {RegExpExecArray} */ (/^\S*/.exec(s.slice(c)))[0].length, query };
   }
   return null;
 }
 // A pick takes the "+text" out of the box -> { text, caret }.
+/** @param {unknown} text @param {{ start: number, end: number }} tok */
 function pickProjectText(text, tok) {
   const s = String(text || '');
   const before = s.slice(0, tok.start); let after = s.slice(tok.end);
@@ -233,7 +248,9 @@ function pickProjectText(text, tok) {
   return { text: before + after, caret: before.length };
 }
 // "+word"s that fit no project: they stay in the name, and the box says so.
+/** @param {unknown} text @param {string[]} names */
 function unmatchedProjectWords(text, names) {
+  /** @type {string[]} */
   const out = []; const re = /(^|\s)\+([^\s+]+)/g; let m;
   while ((m = re.exec(String(text || '')))) if (!projectMatches(m[2], names).length) out.push(`+${m[2]}`);
   return out;
@@ -243,35 +260,42 @@ function unmatchedProjectWords(text, names) {
  * Planner pure logic (unit-tested in tests/test-planner.js)
  * ========================================================================== */
 
+/** @param {string} day */
 function mondayOf(day) { return addDays(day, -((weekdayOf(day) + 6) % 7)); }
+/** @param {string} day */
 function weekOf(day) { const m = mondayOf(day); return [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(m, i)); }
 
 // Project grouping key = the project note's basename, so [[Name]] and
 // [[full/path/Name]] land in one group (checked 2026-09-07).
+/** @param {unknown} link */
 function projectKeyOf(link) {
   const t = wikilinkTarget(link);
-  return t ? (t.split('#')[0].split('/').pop().replace(/\.md$/i, '').trim() || null) : null;
+  return t ? (/** @type {string} */ (t.split('#')[0].split('/').pop()).replace(/\.md$/i, '').trim() || null) : null;
 }
 
+/** @param {Fm | null | undefined} fm @param {string} path @param {string} basename @returns {PlanItem | null} */
 function plannerItem(fm, path, basename) {
-  const it = taskFromFrontmatter(fm, path, basename);
-  if (!it) return null;
+  const it = /** @type {PlanItem | null} */ (taskFromFrontmatter(fm, path, basename));
+  if (!it || !fm) return null;
   it.projectKey = projectKeyOf(asList(fm.projects)[0]);
-  it.projectLink = asList(fm.projects)[0] || null;
+  it.projectLink = /** @type {string | null} */ (asList(fm.projects)[0] || null);
   it.weeklyGoal = fm.weekly_goal === true;
   return it;
 }
 
 // TaskNotes priorities -> { value, label, weight, bars (0-3), top }.
+/** @param {unknown} custom @returns {PlanPriority[]} */
 function priorityTable(custom) {
+  /** @type {(PriorityDef & Partial<PlanPriority>)[]} */
   const list = Array.isArray(custom) && custom.length
-    ? custom.filter((p) => p && p.value != null).map((p) => ({ value: String(p.value), label: String(p.label || p.value), weight: Number(p.weight) || 0 }))
+    ? /** @type {Fm[]} */ (custom).filter((p) => p && p.value != null).map((p) => ({ value: String(p.value), label: String(p.label || p.value), weight: Number(p.weight) || 0 }))
     : DEFAULT_PRIORITIES.map((p) => ({ ...p }));
   const sorted = [...list].sort((a, b) => a.weight - b.weight);
   const n = sorted.length;
   sorted.forEach((p, i) => { p.bars = n > 1 ? Math.round((3 * i) / (n - 1)) : 3; p.top = i === n - 1; p.rank = i; });
-  return sorted;
+  return /** @type {PlanPriority[]} */ (sorted);
 }
+/** @param {unknown} value @param {PlanPriority[]} table @returns {PlanPriority} */
 function priorityOf(value, table) {
   const v = value == null ? '' : String(value);
   const hit = table.find((p) => p.value === v);
@@ -280,14 +304,18 @@ function priorityOf(value, table) {
   return { value: v, label: v, weight: -1, bars: 0, top: false, rank: -1 }; // a value TaskNotes doesn't list: shown as written
 }
 
+/** @param {PlanItem} it @param {string[]} completed */
 function isUnscheduled(it, completed) { return !it.recurrenceRaw && !it.plannedDay && !isSomeday(it) && !isTaskDone(it, null, completed); }
+/** @param {PlanItem[]} items @param {string[]} completed */
 function unscheduledOf(items, completed) { return items.filter((it) => isUnscheduled(it, completed)); }
 // Overdue: a one-off task that is not done and sits on a past day (its due
 // date, or the day it was planned for). Oldest first.
+/** @param {PlanItem[]} items @param {string} today @param {string[]} completed */
 function overdueOf(items, today, completed) {
   return items.filter((it) => isOverdue(it, today, completed))
-    .sort((a, b) => (a.due || a.plannedDay).localeCompare(b.due || b.plannedDay) || a.title.localeCompare(b.title));
+    .sort((a, b) => /** @type {string} */ (a.due || a.plannedDay).localeCompare(/** @type {string} */ (b.due || b.plannedDay)) || a.title.localeCompare(b.title));
 }
+/** @param {PlanItem[]} items @param {string} today @param {string[]} completed */
 function weeklyGoalsOf(items, today, completed) {
   return items.filter((it) => it.weeklyGoal && !isSomeday(it) && !isTaskDone(it, today, completed)).sort((a, b) => a.title.localeCompare(b.title));
 }
@@ -295,10 +323,12 @@ function weeklyGoalsOf(items, today, completed) {
 // the one folded group at the bottom of the list. Repeating ones too (they
 // show here, off their days, until they are set back to open). Same order as
 // a project group: blocked last, highest priority first, then A to Z.
+/** @param {PlanItem[]} items @param {string[]} completed @param {PlanPriority[]} table */
 function somedayOf(items, completed, table) {
   return items.filter((it) => isSomeday(it) && !(!it.recurrenceRaw && isTaskDone(it, null, completed)))
     .sort((a, b) => (!!(a.blockers && a.blockers.length) - !!(b.blockers && b.blockers.length)) || priorityOf(b.priority, table).weight - priorityOf(a.priority, table).weight || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || a.path.localeCompare(b.path));
 }
+/** @param {PlanItem[]} items @param {string} day @param {string | null} [half] */
 function laneOf(items, day, half) {
   return sortByOrder(items.filter((it) => taskOnDay(it, day) && (it.plannedHalf || null) === (half || null)));
 }
@@ -308,6 +338,7 @@ function laneOf(items, day, half) {
 // `after` = the last task shown above it. With a project filter on, tasks of
 // other projects sit in the same lane unseen, so a screen index is not a lane
 // index. No neighbours given (Schedule button, empty lane) = the end.
+/** @param {{ path: string }[]} others @param {{ before?: string | null, after?: string | null } | null | undefined} at */
 function insertIndexOf(others, at) {
   const paths = others.map((x) => x.path);
   if (at && at.before) { const i = paths.indexOf(at.before); if (i >= 0) return i; }
@@ -317,14 +348,18 @@ function insertIndexOf(others, at) {
 
 // Unscheduled list -> [{ key, label, items }]: projects A to Z (case-insensitive),
 // "No project" last; inside a group, highest priority first, then A to Z.
+/** @param {PlanPriority[]} table @returns {(a: PlanItem, b: PlanItem) => number} */
 const groupOrder = (table) => (a, b) => (!!(a.blockers && a.blockers.length) - !!(b.blockers && b.blockers.length)) || priorityOf(b.priority, table).weight - priorityOf(a.priority, table).weight || a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || a.path.localeCompare(b.path);
+/** @param {PlanItem[]} list @param {PlanPriority[]} table */
 function groupUnscheduled(list, table) {
+  /** @type {Map<string, PlanItem[]>} */
   const by = new Map();
+  /** @type {Map<string, string>} */
   const labels = new Map();
   for (const it of list) {
     const k = it.projectKey || NO_PROJECT;
     if (!by.has(k)) by.set(k, []);
-    by.get(k).push(it);
+    /** @type {PlanItem[]} */ (by.get(k)).push(it);
     if (k && !labels.has(k) && it.project && it.project !== k) labels.set(k, it.project);
   }
   const keys = [...by.keys()].filter((k) => k !== NO_PROJECT).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }) || a.localeCompare(b));
@@ -332,29 +367,32 @@ function groupUnscheduled(list, table) {
   return keys.map((k) => ({
     key: k,
     label: k === NO_PROJECT ? 'No project' : (labels.get(k) || k),
-    items: by.get(k).sort(groupOrder(table)),
+    items: /** @type {PlanItem[]} */ (by.get(k)).sort(groupOrder(table)),
   }));
 }
 // Group by: Area (areas mockup screen 5). ix = Projects' areaIndex(): { areas: [{ key, name }],
 // of: { projectKey or areaKey: areaKey } }. One group per area A to Z, holding its loose tasks
 // and its projects' tasks, then "No area" last; same order inside a group as above. `area` is the
 // group's area key (null for No area); fold keys never meet project names.
+/** @param {PlanItem[]} list @param {PlanPriority[]} table @param {{ areas: { key: string, name: string }[], of: Record<string, string> }} ix */
 function groupByArea(list, table, ix) {
   const names = new Map(ix.areas.map((a) => [a.key, a.name]));
+  /** @type {Map<string, PlanItem[]>} */
   const by = new Map();
   for (const it of list) {
     const k = (it.projectKey && ix.of[it.projectKey]) || NO_PROJECT;
     if (!by.has(k)) by.set(k, []);
-    by.get(k).push(it);
+    /** @type {PlanItem[]} */ (by.get(k)).push(it);
   }
   const keys = [...by.keys()].filter((k) => k !== NO_PROJECT).sort((a, b) => String(names.get(a) || a).localeCompare(String(names.get(b) || b), undefined, { sensitivity: 'base' }));
   if (by.has(NO_PROJECT)) keys.push(NO_PROJECT);
-  return keys.map((k) => ({ key: k ? `§area:${k}` : '§area-none', area: k || null, label: k ? (names.get(k) || k) : 'No area', items: by.get(k).sort(groupOrder(table)) }));
+  return keys.map((k) => ({ key: k ? `§area:${k}` : '§area-none', area: k || null, label: k ? (names.get(k) || k) : 'No area', items: /** @type {PlanItem[]} */ (by.get(k)).sort(groupOrder(table)) }));
 }
 
 // The one fold/open button over the Unscheduled list, like the file explorer's:
 // true when every project group is folded and Someday (if there is one) is shut,
 // so the next click opens all. No groups and no open Someday = false (click folds).
+/** @param {{ key: string }[]} groups @param {Record<string, unknown> | null | undefined} collapsed @param {unknown} somedayOpen @param {boolean} hasSomeday */
 function allUnscheduledFolded(groups, collapsed, somedayOpen, hasSomeday) {
   const sOpen = !!hasSomeday && somedayOpen === true;
   if (!groups.length) return false;
@@ -362,30 +400,40 @@ function allUnscheduledFolded(groups, collapsed, somedayOpen, hasSomeday) {
 }
 
 // Calendar Events.md rows for one day, all-day first, then by start time.
+/** @param {unknown} events @param {string} day @returns {PlanEvent[]} */
 function eventsForDay(events, day) {
-  return asList(events).filter((e) => e && toDayStr(e.date) === day)
+  return /** @type {Fm[]} */ (asList(events)).filter((e) => e && toDayStr(e.date) === day)
     .map((e) => ({ date: toDayStr(e.date), time: e.time ? String(e.time) : null, end: e.end ? String(e.end) : null, allDay: e.all_day === true || !e.time, summary: String(e.summary || '(untitled)'), calendar: e.calendar ? String(e.calendar) : '' }))
     .sort((a, b) => (a.allDay === b.allDay ? 0 : a.allDay ? -1 : 1) || String(a.time || '').localeCompare(String(b.time || '')) || a.summary.localeCompare(b.summary));
 }
+/** @param {PlanEvent} ev */
 function eventKey(ev) { return `${ev.date}|${ev.time || ''}|${ev.summary}`; }
+/** @param {PlanEvent} ev */
 function eventWhen(ev) { return ev.allDay ? 'All day' : `${ev.time}${ev.end ? '–' + ev.end : ''}`; }
+/** @param {string} day @param {Intl.DateTimeFormatOptions} opts */
 function fmtDay(day, opts) { return new Date(utcOf(day)).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' }); }
+/** @param {PlanEvent} ev */
 function eventDetails(ev) {
-  return `From your calendar${ev.calendar ? ` (${ev.calendar})` : ''}: ${fmtDay(ev.date, { weekday: 'short', month: 'short', day: 'numeric' })}, ${eventWhen(ev)}.`;
+  return `From your calendar${ev.calendar ? ` (${ev.calendar})` : ''}: ${fmtDay(/** @type {string} */ (ev.date), { weekday: 'short', month: 'short', day: 'numeric' })}, ${eventWhen(ev)}.`;
 }
 // What a new task made from an event (or "+ add") writes besides TaskNotes' own fields.
+/** @param {string | null | undefined} day @param {string | null | undefined} half @param {number} order @returns {Fm} */
 function plannedFields(day, half, order) {
   if (!day) return {};
+  /** @type {Fm} */
   const out = { planned_day: day };
   if (half) out.planned_half = half;
   out.planned_order = order;
   return out;
 }
+/** @param {Record<string, unknown> | null | undefined} made @param {string} today */
 function pruneMade(made, today) {
+  /** @type {Record<string, string>} */
   const out = {};
   for (const [k, v] of Object.entries(made || {})) if (isDayStr(v) && daysBetween(v, today) <= MADE_KEEP_DAYS) out[k] = v;
   return out;
 }
+/** @param {PlanItem} item @param {string} today @param {string[]} completed */
 function dueChipOf(item, today, completed) {
   if (!item.due || item.recurrenceRaw || isSomeday(item)) return null;
   const diff = daysBetween(item.due, today);
@@ -394,13 +442,18 @@ function dueChipOf(item, today, completed) {
   return { cls: '', text: 'due ' + fmtDay(item.due, { month: 'short', day: 'numeric' }) };
 }
 // Month grid (Monday first, 6 weeks) for the Schedule popover's calendar.
+/** @param {string} month */
 function monthGrid(month) { const first = mondayOf(`${month}-01`); return Array.from({ length: 42 }, (_, i) => addDays(first, i)); }
+/** @param {string} month @param {number} n */
 function shiftMonth(month, n) { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`; }
 // The saved Planner view (Day | Week | Month), Week for anything else.
+/** @param {unknown} m @returns {'day' | 'week' | 'month'} */
 function viewModeOf(m) { return m === 'day' || m === 'month' ? m : 'week'; }
 // A drop on a Month day keeps the task's half of the day (so its clock time
 // stays); an event lands in the half its start time is in.
-function monthDropHalf(d) { return d.ev ? (d.ev.allDay ? null : halfOfTime(d.ev.time)) : (d.item.plannedHalf || null); }
+/** @param {{ ev?: PlanEvent | null, item?: PlanItem | null }} d */
+function monthDropHalf(d) { return d.ev ? (d.ev.allDay ? null : halfOfTime(d.ev.time)) : (/** @type {PlanItem} */ (d.item).plannedHalf || null); }
+/** @param {string} day @param {string | null} half @param {string} today */
 function moveLabel(day, half, today) {
   const d = day === today ? 'today' : day === addDays(today, 1) ? 'tomorrow' : fmtDay(day, { weekday: 'long', month: 'short', day: 'numeric' });
   return `${d}, ${half === 'am' ? 'morning' : half === 'pm' ? 'afternoon' : 'any time'}`;
@@ -410,11 +463,14 @@ function moveLabel(day, half, today) {
  * Plugin
  * ========================================================================== */
 
+/** @typedef {{ collapsed: Record<string, boolean>, mode: string, made: Record<string, string>, somedayOpen: boolean, groupBy: string, [key: string]: unknown }} PlannerData */
+/** @type {PlannerData} */
 const DEFAULT_DATA = { collapsed: {}, mode: 'week', made: {}, somedayOpen: false, groupBy: 'project' };
 
 class PlannerPlugin extends Plugin {
   async onload() {
-    const saved = (await this.loadData().catch(() => null)) || {};
+    const saved = /** @type {Partial<PlannerData>} */ ((await this.loadData().catch(() => null)) || {});
+    /** @type {PlannerData} */
     this.data = { ...DEFAULT_DATA, ...saved, collapsed: { ...(saved.collapsed || {}) }, made: { ...(saved.made || {}) } };
     this.registerView(VIEW_TYPE, (leaf) => new PlannerView(leaf, this));
     this.addRibbonIcon('calendar-days', 'Open Planner', () => this.openPlanner());
@@ -436,7 +492,7 @@ class PlannerPlugin extends Plugin {
   async openPlanner() {
     const ws = this.app.workspace;
     const existing = ws.getLeavesOfType(VIEW_TYPE);
-    if (existing.length) { ws.revealLeaf(existing[0]); ws.setActiveLeaf(existing[0], { focus: true }); if (existing[0].view.goToday) existing[0].view.goToday(); return; }
+    if (existing.length) { ws.revealLeaf(existing[0]); ws.setActiveLeaf(existing[0], { focus: true }); const v = /** @type {PlannerView} */ (existing[0].view); if (v.goToday) v.goToday(); return; }
     const leaf = ws.getLeaf('tab');
     await leaf.setViewState({ type: VIEW_TYPE, active: true });
     ws.revealLeaf(leaf);
@@ -476,17 +532,20 @@ class PlannerPlugin extends Plugin {
   // The chosen task source when it is not task notes (checkboxes, ClickUp, Todoist, Things), or null.
   ext() { const own = this.projectsPlugin(); return own && typeof own.extSource === 'function' ? own.extSource() : null; }
 
+  /** @returns {PlanItem[]} */
   collectItems() {
     const ext = this.ext();
     if (ext) return ext.items().map((it) => ({ ...it, weeklyGoal: false }));
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.tasks);
+    /** @type {PlanItem[]} */
     const out = [];
+    /** @param {TFolder} folder */
     const walk = (folder) => {
       for (const c of folder.children || []) {
         if (c instanceof TFolder) walk(c);
         else if (c instanceof TFile && c.extension === 'md') {
           const cache = this.app.metadataCache.getFileCache(c);
-          const it = plannerItem(readable(cache && cache.frontmatter), c.path, c.basename);
+          const it = plannerItem(readable(/** @type {Fm | null} */ (cache && cache.frontmatter)), c.path, c.basename);
           if (it) out.push(it);
         }
       }
@@ -498,7 +557,7 @@ class PlannerPlugin extends Plugin {
   // The calendar note's events (when set) and the calendar links' (launch section 6), the same shape.
   calendarEvents() {
     const f = feedNotes.calendar ? this.app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
-    const fm = f instanceof TFile ? (this.app.metadataCache.getFileCache(f) || {}).frontmatter : null;
+    const fm = /** @type {Fm | null | undefined} */ (f instanceof TFile ? (this.app.metadataCache.getFileCache(f) || {}).frontmatter : null);
     const linked = calendarEvents(this.app); // the module's, not this method
     return (fm ? asList(fm.events) : []).concat(linked);
   }
@@ -509,25 +568,28 @@ class PlannerPlugin extends Plugin {
     try { return own && typeof own.areaIndex === 'function' ? own.areaIndex() : null; } catch (e) { console.error('LifeWorld: the area list failed', e); return null; }
   }
 
+  /** @param {PlanItem[]} items */
   projectNames(items) {
     const names = new Set(items.map((i) => i.projectKey).filter(Boolean));
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (root instanceof TFolder) {
       for (const c of root.children || []) {
         if (!(c instanceof TFile) || c.extension !== 'md') continue;
-        const fm = (this.app.metadataCache.getFileCache(c) || {}).frontmatter || {};
+        const fm = /** @type {Fm} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter || {});
         if (fm.type === 'area' || !fm.status || /active|in-progress|open/i.test(String(fm.status))) names.add(c.basename); // areas take tasks too
       }
     }
-    return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    return /** @type {string[]} */ ([...names]).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }
 
+  /** @param {string} path */
   fileOf(path) { const f = this.app.vault.getAbstractFileByPath(path); return f instanceof TFile ? f : null; }
 
   // The one move: same writes and order rule as a4-today (planInsert).
   // `at` = { before, after } neighbour paths from the drop, or null for the end.
+  /** @param {PlanItem} item @param {string} day @param {string | null} half @param {{ before?: string | null, after?: string | null } | null} at @param {PlanItem[]} items @returns {Promise<{ undo: (() => Promise<void>) | null, dropsTime: boolean } | false>} */
   async moveTask(item, day, half, at, items) {
-    if (item.ext) { await this.ext().place(item, day, half); return { undo: null, dropsTime: false }; }
+    if (item.ext) { await /** @type {NonNullable<ReturnType<PlannerPlugin['ext']>>} */ (this.ext()).place(/** @type {ExtItem} */ (item), day, half); return { undo: null, dropsTime: false }; }
     if (item.recurrenceRaw) { new Notice('Repeating tasks follow their schedule.'); return false; }
     const file = this.fileOf(item.path);
     if (!file) { new Notice('That task note is gone.'); return false; }
@@ -544,22 +606,26 @@ class PlannerPlugin extends Plugin {
       for (let k = 0; k < others.length; k++) {
         if (others[k].plannedOrder === plan.others[k]) continue;
         const f = this.fileOf(others[k].path);
-        if (f) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = plan.others[k]; }));
+        const others2 = plan.others;
+        if (f) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = others2[k]; }));
       }
     }
     return { undo, dropsTime };
   }
 
   // "Moved to ..." after a move; when the move took the clock time off, with Undo.
+  /** @param {PlanItem} item @param {string} day @param {string | null} half @param {{ undo: (() => Promise<void>) | null, dropsTime: boolean } | false | null} res @param {() => void} [onUndo] */
   movedNotice(item, day, half, res, onUndo) {
     const text = `Moved to ${moveLabel(day, half, dayOf(new Date()))}`;
-    if (res && res.dropsTime) undoNotice(`${text}. The ${timeText(item.time)} time was taken off.`, async () => { await res.undo(); if (onUndo) onUndo(); });
+    const u = res && res.undo;
+    if (res && res.dropsTime && u) undoNotice(`${text}. The ${timeText(item.time)} time was taken off.`, async () => { await u(); if (onUndo) onUndo(); });
     else new Notice(text);
   }
 
   // Someday (mockup approved 2026-10-06): through Projects' engine
   // when it is on (it stamps dateModified, as a status change in TaskNotes
   // does), else the frontmatter API. -> { undo }
+  /** @param {PlanItem} item */
   async somedayTask(item) {
     if (item.ext) throw new Error('Someday is for LifeWorld tasks. This one stays where it is.');
     const own = partOf(this.app, 'a4-projects');
@@ -569,8 +635,9 @@ class PlannerPlugin extends Plugin {
     return { undo: await writeWithUndo(this.app, file, (fm) => { applySomeday(fm); }) };
   }
 
+  /** @param {PlanItem} item */
   async unscheduleTask(item) {
-    if (item.ext) { if (!item.plannedDay) return false; await this.ext().place(item, null, null); new Notice('Back to unscheduled'); return true; }
+    if (item.ext) { if (!item.plannedDay) return false; await /** @type {NonNullable<ReturnType<PlannerPlugin['ext']>>} */ (this.ext()).place(/** @type {ExtItem} */ (item), null, null); new Notice('Back to unscheduled'); return true; }
     if (isSomeday(item)) { // dragged out of Someday onto the list: an open task again, still with no day
       const file = this.fileOf(item.path);
       if (!file) return false;
@@ -589,8 +656,9 @@ class PlannerPlugin extends Plugin {
     return true;
   }
 
+  /** @param {PlanItem} item @param {string} day */
   async toggleTask(item, day) {
-    if (item.ext) { await this.ext().toggle(item, day); return; }
+    if (item.ext) { await /** @type {NonNullable<ReturnType<PlannerPlugin['ext']>>} */ (this.ext()).toggle(/** @type {ExtItem} */ (item), day); return; }
     const file = this.fileOf(item.path);
     if (!file) throw new Error('That task note is gone.');
     const wasDone = isTaskDone(item, day, this.completedStatuses());
@@ -611,6 +679,7 @@ class PlannerPlugin extends Plugin {
     }));
   }
 
+  /** @param {PlanItem} item */
   async toggleWeeklyGoal(item) {
     if (item.ext) { new Notice('Weekly goals are for LifeWorld tasks.'); return; }
     const file = this.fileOf(item.path);
@@ -621,6 +690,7 @@ class PlannerPlugin extends Plugin {
   // New task through Projects' engine (its folder, filename, id, dates and defaults).
   // `time` (a calendar event's start, 'HH:MM') goes on Due as the engine writes
   // it when the task lands in that time's half of the day (the move rule).
+  /** @param {{ title: unknown, project?: string | null, day?: string | null, half?: string | null, details?: string, time?: string | null }} arg @param {PlanItem[]} items */
   async createTask({ title, project, day, half, details, time }, items) {
     const ext = this.ext();
     if (ext) return ext.create({ title: String(title).trim(), day: day || null, half, time: time && day ? time : null, project: project || null });
@@ -628,6 +698,7 @@ class PlannerPlugin extends Plugin {
     if (!api) { new Notice('Adding tasks needs the projects and tasks part turned on.'); return null; }
     const lane = day ? laneOf(items, day, half) : [];
     const order = orderForInsert(lane.map((x) => x.plannedOrder), lane.length);
+    /** @type {NewTaskInput & { customFrontmatter: Fm }} */
     const data = { title: String(title).trim(), customFrontmatter: plannedFields(day, half, order) };
     // A day goes on Due (Settings › Planning), with the event's time when it kept it; else planned_day.
     const timed = day && time ? movedDate(`${day}T${time}`, day, half) : null;
@@ -642,13 +713,14 @@ class PlannerPlugin extends Plugin {
   // Quick add: plain words through the shared parser, saved the way
   // Projects' quick add saves them (quickAddPlan; planned_order at the end of
   // the lane's untimed tasks, as Projects' laneOrders).
+  /** @param {string} text @param {string | null} project @param {PlanItem[]} items @param {string} today */
   async createTyped(text, project, items, today) {
     const ext = this.ext();
     if (ext) {
       const r = understand(text, today);
       if (!r.title) return null;
       const day = r.due || r.plannedDay || null;
-      return ext.create({ title: r.title, day, time: day && r.time ? r.time : null, project: project || null });
+      return ext.create({ title: r.title, day, time: day && r.time ? r.time : null, project: project || null }); // each source takes what it uses
     }
     const api = this.tasksApi();
     if (!api) { new Notice('Adding tasks needs the projects and tasks part turned on.'); return null; }
@@ -656,11 +728,12 @@ class PlannerPlugin extends Plugin {
     if (!r.title) return null;
     const { input, lane } = quickAddPlan(r, today);
     if (project) input.projects = [`[[${project}]]`];
-    if (lane) { const l = laneOf(items, lane.day, lane.half).filter((x) => !x.time); input.customFrontmatter.planned_order = orderForInsert(l.map((x) => x.plannedOrder), l.length); }
-    if (!Object.keys(input.customFrontmatter).length) delete input.customFrontmatter;
+    if (lane) { const l = laneOf(items, lane.day, lane.half).filter((x) => !x.time); /** @type {Fm} */ (input.customFrontmatter).planned_order = orderForInsert(l.map((x) => x.plannedOrder), l.length); }
+    if (!Object.keys(/** @type {Fm} */ (input.customFrontmatter)).length) delete input.customFrontmatter;
     return api.tasks.create(input);
   }
 
+  /** @param {PlanEvent} ev @param {string} today */
   async markEventMade(ev, today) {
     this.data.made = pruneMade(this.data.made, today);
     this.data.made[eventKey(ev)] = today;
@@ -672,12 +745,32 @@ class PlannerPlugin extends Plugin {
  * View
  * ========================================================================== */
 
+/** @type {Set<SchedulePopover>} */
 const openPopovers = new Set();
 function closeOpenPopovers() { for (const p of [...openPopovers]) p.close(false); }
 
+/** @type {<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement | null, tag: K, cls?: string | null, text?: string | null) => HTMLElementTagNameMap[K]} */
 const h = (parent, tag, cls, text) => { const e = (parent ? parent.createEl(tag) : document.createElement(tag)); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
+/** @typedef {HTMLElement & { _dragged?: boolean }} PlanRow */
+/** @typedef {{ item?: PlanItem, ev?: PlanEvent, row: PlanRow, x0: number, y0: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
+/** @typedef {{ day?: string | null, side?: boolean, drag?: boolean, compact?: boolean, hideProject?: boolean }} PlanRowOpts */
 class PlannerView extends ItemView {
+  // Set on every render (no value before the first one).
+  /** @type {string} */ renderedToday;
+  /** @type {PlanItem[]} */ items;
+  /** @type {PlanItem[]} */ visible;
+  /** @type {string[]} */ completed;
+  /** @type {PlanPriority[]} */ ptable;
+  /** @type {ReturnType<PlannerPlugin['areaIndex']>} */ areaIx;
+  /** @type {Set<string>} */ areaNames;
+  /** @type {unknown[]} */ events;
+  /** @type {boolean} */ mid;
+  /** @type {boolean | undefined} */ editing;
+  /** @type {number | null | undefined} */ timer;
+  /** @type {ResizeObserver | undefined} */ ro;
+
+  /** @param {import('obsidian').WorkspaceLeaf} leaf @param {PlannerPlugin} plugin */
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -686,7 +779,9 @@ class PlannerView extends ItemView {
     this.tab = 'tasks';
     this.project = '';
     this.sheetOpen = false;
+    /** @type {PlanDrag | null} */
     this.drag = null;
+    /** @type {SchedulePopover | null} */
     this.pop = null;
     this.pendingRender = false;
     this.narrow = false;
@@ -701,7 +796,9 @@ class PlannerView extends ItemView {
     this.contentEl.addClass('a4pl-root');
     this.anchor = dayOf(new Date());
     // The task folders, the calendar note (when set), and the projects folder (which project is in which area).
+    /** @param {unknown} p */
     const watched = (p) => typeof p === 'string' && ((!!feedNotes.calendar && p === feedNotes.calendar) || inTaskFolders(p) || p.startsWith(`${vaultFolders.projects}/`));
+    /** @param {import('obsidian').TAbstractFile | null | undefined} f */
     const relevant = (f) => f && watched(f.path);
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (relevant(f)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (relevant(f)) this.scheduleRender(); }));
@@ -740,7 +837,8 @@ class PlannerView extends ItemView {
   render() {
     // Typing holds redraws back, except in an EMPTY quick add box (just saved):
     // the new task then shows at once and the box keeps the focus (data-focus).
-    const idleAdd = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.focus === 'quick-add' && !document.activeElement.value;
+    const ae = /** @type {HTMLInputElement | null} */ (document.activeElement);
+    const idleAdd = ae && ae.dataset && ae.dataset.focus === 'quick-add' && !ae.value;
     if (this.drag || this.pop || (this.editing && !idleAdd)) { this.pendingRender = true; return; }
     this.pendingRender = false;
     const root = this.contentEl;
@@ -794,18 +892,19 @@ class PlannerView extends ItemView {
       sb.scrollTop = scrollSheet;
     }
     scroll.scrollTop = scrollMain;
-    if (focusKey) { const el = root.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`); if (el) el.focus({ preventScroll: true }); }
+    if (focusKey) { const el = /** @type {HTMLElement | null} */ (root.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`)); if (el) el.focus({ preventScroll: true }); }
   }
 
   // Obsidian's phone toolbar floats over the bottom of the view; keep the drawer above it.
   navbarOverlap() {
-    const nav = document.querySelector('.mobile-navbar');
+    const nav = /** @type {HTMLElement | null} */ (document.querySelector('.mobile-navbar'));
     if (!nav || !nav.offsetParent) return 0;
     const nb = nav.getBoundingClientRect(); const rb = this.contentEl.getBoundingClientRect();
     const over = Math.round(rb.bottom - nb.top);
     return nb.height > 0 && over > 0 && over < 240 ? over : 0;
   }
 
+  /** @param {HTMLElement} page @param {string} mode @param {string[]} days @param {string} today */
   renderHead(page, mode, days, today) {
     const head = h(page, 'div', 'a4pl-head');
     const left = h(head, 'div');
@@ -818,14 +917,15 @@ class PlannerView extends ItemView {
     if (!this.narrow) {
       const sel = h(act, 'select', 'a4pl-select dropdown');
       sel.setAttr('aria-label', 'Show one project');
-      const opts = [['', 'All projects'], ...this.plugin.projectNames(this.items).map((p) => [p, this.areaNames.has(p) ? `${p} (area)` : p]), ['-', 'No project']];
+      /** @type {[string, string][]} */
+      const opts = [['', 'All projects'], ...this.plugin.projectNames(this.items).map((p) => /** @type {[string, string]} */ ([p, this.areaNames.has(p) ? `${p} (area)` : p])), ['-', 'No project']];
       for (const [v, l] of opts) { const o = h(sel, 'option', null, l); o.value = v; }
       sel.value = this.project;
       sel.addEventListener('change', () => { this.project = sel.value; this.render(); });
     }
     // Day | Week | Month, remembered; the phone has no Week (it shows one day).
     const seg = h(act, 'div', 'a4pl-seg');
-    for (const [m, l] of [['day', 'Day'], ['week', 'Week'], ['month', 'Month']]) {
+    for (const [m, l] of /** @type {['day' | 'week' | 'month', string][]} */ ([['day', 'Day'], ['week', 'Week'], ['month', 'Month']])) {
       if (this.narrow && m === 'week') continue;
       const b = h(seg, 'button', mode === m ? 'is-on' : '', l);
       b.addEventListener('click', async () => { this.mode = m; this.plugin.data.mode = m; this.render(); await this.plugin.save(); });
@@ -833,6 +933,7 @@ class PlannerView extends ItemView {
     const nav = h(act, 'div', 'a4pl-nav');
     const step = mode === 'week' ? 7 : 1;
     const unit = mode === 'month' ? 'month' : mode === 'week' ? 'week' : 'day';
+    /** @param {number} n */
     const go = (n) => { this.anchor = mode === 'month' ? `${shiftMonth(this.anchor.slice(0, 7), n)}-01` : addDays(this.anchor, n * step); this.render(); };
     const prev = h(nav, 'button', 'a4pl-icon-btn'); setIcon(prev, 'chevron-left'); prev.setAttr('aria-label', `Previous ${unit}`);
     prev.addEventListener('click', () => go(-1));
@@ -847,6 +948,7 @@ class PlannerView extends ItemView {
 
   /* ---- left panel ------------------------------------------------------- */
 
+  /** @param {HTMLElement} side @param {string[]} days @param {string} today */
   renderSide(side, days, today) {
     const tabs = h(side, 'div', 'a4pl-tabs');
     for (const [k, l] of [['tasks', 'Tasks'], ['agenda', 'Agenda'], ['goals', 'Goals']]) {
@@ -881,6 +983,7 @@ class PlannerView extends ItemView {
   }
 
   // Group by: Project / Area (remembered; Project is today's list).
+  /** @param {HTMLElement} host */
   groupSwitch(host) {
     if (!this.areaIx) return;
     const seg = h(host, 'div', 'a4pl-seg a4pl-groupby'); seg.setAttr('role', 'group'); seg.setAttr('aria-label', 'Group by');
@@ -892,6 +995,7 @@ class PlannerView extends ItemView {
     }
   }
 
+  /** @param {HTMLElement} side @param {string} key @param {string} title @param {PlanItem[]} list @param {boolean} warn @param {string} today */
   renderSection(side, key, title, list, warn, today) {
     const folded = !!this.plugin.data.collapsed[key];
     const s = h(side, 'div', 'a4pl-sec' + (folded ? ' is-folded' : ''));
@@ -907,15 +1011,18 @@ class PlannerView extends ItemView {
     for (const it of list) l.appendChild(this.taskRow(it, { side: true, drag: true, day: it.plannedDay || today }));
   }
 
+  /** @param {HTMLElement} host @param {string} today */
   renderPool(host, today) {
     const pool = h(host, 'div', 'a4pl-pool');
     pool.dataset.drop = 'pool';
     if (this.narrow) this.groupSwitch(pool); // the phone drawer has no Unscheduled title row
     const groups = this.unscheduledGroups();
-    const byArea = groups.some((g) => 'area' in g);
+    /** @type {{ key: string, label: string, items: PlanItem[], area?: string | null }[]} */
+    const grouped = groups;
+    const byArea = grouped.some((g) => 'area' in g);
     const someday = somedayOf(this.visible, this.completed, this.ptable);
     if (!groups.length) h(pool, 'div', 'a4pl-empty', 'everything has a home');
-    for (const g of groups) {
+    for (const g of grouped) {
       const key = g.key || '§none';
       const folded = !!this.plugin.data.collapsed[key];
       const none = byArea ? !g.area : !g.key;
@@ -953,6 +1060,7 @@ class PlannerView extends ItemView {
     }
   }
 
+  /** @param {HTMLElement} side */
   renderQuickAdd(side) {
     const qa = h(side, 'div', 'a4pl-quick');
     h(qa, 'div', 'a4pl-kicker', 'New task');
@@ -971,6 +1079,7 @@ class PlannerView extends ItemView {
       if (!inp.value.trim()) {
         // 1.4.1: the line SHOWS the typing (keys in bold), not just names it.
         const hint = h(parse, 'span', 'a4pl-hint', 'Dates, times (friday 3pm), mornings and afternoons, repeats (every monday), priority (');
+        /** @param {string} t */
         const bit = (t) => hint.appendChild(document.createTextNode(t));
         h(hint, 'span', 'a4pl-hint-key', '!high'); bit(', ');
         h(hint, 'span', 'a4pl-hint-key', '!low'); bit(') and projects (');
@@ -983,19 +1092,26 @@ class PlannerView extends ItemView {
       h(parse, 'span', 'a4pl-hint', '· Enter');
     };
     const ps = h(qa, 'select', 'a4pl-select dropdown');
-    for (const [v, l] of [['', 'No project'], ...names.map((p) => [p, this.areaNames.has(p) ? `${p} (area)` : p])]) { const o = h(ps, 'option', null, l); o.value = v; }
+    for (const [v, l] of /** @type {[string, string][]} */ ([['', 'No project'], ...names.map((p) => [p, this.areaNames.has(p) ? `${p} (area)` : p])])) { const o = h(ps, 'option', null, l); o.value = v; }
     if (this.project && this.project !== '-') ps.value = this.project;
     // The suggestion list under the box while a "+text" is typed.
-    let list = null; let shown = null; let sel = 0; let dismissed = null;
+    /** @type {HTMLElement | null} */
+    let list = null;
+    /** @type {{ tok: { start: number, end: number, query: string }, hits: { name: string, at: number, len: number }[], key: string | null } | null} */
+    let shown = null;
+    let sel = 0;
+    /** @type {string | null} */
+    let dismissed = null;
     const closeList = () => { if (list) list.remove(); list = null; shown = null; };
     const drawList = () => {
       const opening = !list;
       if (!list) list = h(anchor, 'div', 'a4pl-pop a4pl-sugg');
-      list.empty();
-      list.setAttr('role', 'listbox');
-      h(list, 'div', 'a4pl-pop-title', `Projects matching “${shown.tok.query.trim()}”`);
-      shown.hits.forEach((m, i) => {
-        const b = h(list, 'button', 'a4pl-pop-q' + (i === sel ? ' is-active' : ''));
+      const box = /** @type {HTMLElement} */ (list); const sh = /** @type {NonNullable<typeof shown>} */ (shown);
+      box.empty();
+      box.setAttr('role', 'listbox');
+      h(box, 'div', 'a4pl-pop-title', `Projects matching “${sh.tok.query.trim()}”`);
+      sh.hits.forEach((m, i) => {
+        const b = h(box, 'button', 'a4pl-pop-q' + (i === sel ? ' is-active' : ''));
         b.type = 'button'; b.tabIndex = -1; b.setAttr('role', 'option'); b.setAttr('aria-selected', String(i === sel));
         const label = h(b, 'span');
         label.appendChild(document.createTextNode(m.name.slice(0, m.at)));
@@ -1006,10 +1122,10 @@ class PlannerView extends ItemView {
         b.addEventListener('mousedown', (e) => e.preventDefault()); // keep the focus in the box
         b.addEventListener('click', (e) => { e.preventDefault(); pick(m.name); });
       });
-      h(list, 'div', 'a4pl-pop-sep');
-      h(list, 'div', 'a4pl-pop-note', '↑ ↓ to move · Enter, Tab or click picks · Esc closes');
+      h(box, 'div', 'a4pl-pop-sep');
+      h(box, 'div', 'a4pl-pop-note', '↑ ↓ to move · Enter, Tab or click picks · Esc closes');
       // The box sits low in the side panel: bring the whole list into view as it opens.
-      if (opening && typeof list.scrollIntoView === 'function') list.scrollIntoView({ block: 'nearest' });
+      if (opening && typeof box.scrollIntoView === 'function') box.scrollIntoView({ block: 'nearest' });
     };
     const refreshList = () => {
       const tok = activeDocument.activeElement === inp && inp.selectionStart === inp.selectionEnd ? projectToken(inp.value, inp.selectionStart, names) : null;
@@ -1020,6 +1136,7 @@ class PlannerView extends ItemView {
       shown = { tok, hits, key };
       drawList();
     };
+    /** @param {string} name */
     const pick = (name) => {
       if (!shown) return;
       const r = pickProjectText(inp.value, shown.tok);
@@ -1051,6 +1168,7 @@ class PlannerView extends ItemView {
     });
   }
 
+  /** @param {HTMLElement} side @param {string[]} days @param {string} today */
   renderAgenda(side, days, today) {
     let any = false;
     for (const d of days) {
@@ -1063,24 +1181,27 @@ class PlannerView extends ItemView {
     if (!any) h(side, 'div', 'a4pl-empty', 'nothing planned in this range');
   }
 
+  /** @param {HTMLElement} side @param {string} today */
   renderGoals(side, today) {
+    /** @type {TFile[]} */
     const goals = [];
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.goals);
     if (root instanceof TFolder) for (const c of root.children || []) if (c instanceof TFile && c.extension === 'md') goals.push(c);
     goals.sort((a, b) => a.basename.localeCompare(b.basename));
+    /** @type {Record<string, string>} */
     const projectGoal = {};
     const proot = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (proot instanceof TFolder) {
       for (const c of proot.children || []) {
         if (!(c instanceof TFile) || c.extension !== 'md') continue;
-        const fm = (this.app.metadataCache.getFileCache(c) || {}).frontmatter || {};
+        const fm = /** @type {Fm} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter || {});
         const g = projectKeyOf(asList(fm.goal)[0]);
         if (g) projectGoal[c.basename] = g;
       }
     }
     if (!goals.length) { h(side, 'div', 'a4pl-empty', 'no goal notes yet'); return; }
     for (const f of goals) {
-      const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+      const fm = /** @type {Fm} */ ((this.app.metadataCache.getFileCache(f) || {}).frontmatter || {});
       const linked = this.items.filter((it) => it.projectKey && projectGoal[it.projectKey] === f.basename);
       const open = linked.filter((it) => !isTaskDone(it, today, this.completed)).length;
       const late = linked.filter((it) => isOverdue(it, today, this.completed)).length;
@@ -1095,12 +1216,14 @@ class PlannerView extends ItemView {
     }
   }
 
+  /** @param {string} key */
   async toggleFold(key) {
     if (this.plugin.data.collapsed[key]) delete this.plugin.data.collapsed[key]; else this.plugin.data.collapsed[key] = true;
     this.render();
     await this.plugin.save();
   }
 
+  /** @param {boolean} fold */
   async setAll(fold) {
     for (const g of this.unscheduledGroups()) {
       const k = g.key || '§none';
@@ -1113,6 +1236,7 @@ class PlannerView extends ItemView {
 
   /* ---- day columns ------------------------------------------------------- */
 
+  /** @param {HTMLElement} grid @param {string} day @param {string} mode @param {string} today */
   renderDay(grid, day, mode, today) {
     const col = h(grid, 'div', 'a4pl-day' + (day === today ? ' is-today' : '') + (day < today ? ' is-past' : ''));
     col.dataset.day = day;
@@ -1139,6 +1263,7 @@ class PlannerView extends ItemView {
     this.renderSlot(col, day, 'pm', laneOf(this.visible, day, 'pm'), mode);
   }
 
+  /** @param {PlanEvent} ev */
   eventRow(ev) {
     const r = h(null, 'div', 'a4pl-ev');
     r.setAttr('title', 'Drag onto Morning, Afternoon or the Unscheduled list to make a task. The event itself stays in Apple Calendar.');
@@ -1150,13 +1275,16 @@ class PlannerView extends ItemView {
   }
 
   // A day's tasks in the Day/Week lane order: Any time, Morning, Afternoon.
+  /** @param {string} day */
   dayTasks(day) { return [null, 'am', 'pm'].flatMap((half) => laneOf(this.visible, day, half)); }
 
+  /** @param {string} day */
   openDay(day) { this.mode = 'day'; this.plugin.data.mode = 'day'; this.anchor = day; this.render(); this.plugin.save(); }
 
   // Month (0.1.15): each day lists its events, then its tasks, four lines and
   // "+N more" (opens that Day). Phone width: dots, and a tap lists the picked
   // day (the anchor) under the grid, its rows dragged by the grip as in the drawer.
+  /** @param {HTMLElement} grid @param {string[]} days @param {string} today */
   renderMonth(grid, days, today) {
     const month = this.anchor.slice(0, 7);
     const mg = h(grid, 'div', 'a4pl-mgrid');
@@ -1178,8 +1306,9 @@ class PlannerView extends ItemView {
       }
       if (day === today) h(head, 'span', 'a4pl-today-tag', 'today');
       dn.addEventListener('click', () => this.openDay(day));
+      /** @type {{ ev?: PlanEvent, it?: PlanItem }[]} */
       const all = [...evs.map((ev) => ({ ev })), ...tasks.map((it) => ({ it }))];
-      for (const x of all.slice(0, 4)) c.appendChild(x.ev ? this.eventRow(x.ev) : this.taskRow(x.it, { day, drag: !x.it.recurrenceRaw, compact: true }));
+      for (const x of all.slice(0, 4)) { const it = /** @type {PlanItem} */ (x.it); c.appendChild(x.ev ? this.eventRow(x.ev) : this.taskRow(it, { day, drag: !it.recurrenceRaw, compact: true })); }
       if (all.length > 4) { const more = h(c, 'button', 'a4pl-more', `+${all.length - 4} more`); more.addEventListener('click', () => this.openDay(day)); }
     }
     if (!this.narrow) return;
@@ -1193,6 +1322,7 @@ class PlannerView extends ItemView {
     if (!evs.length && !tasks.length) h(list, 'div', 'a4pl-empty', 'nothing on this day');
   }
 
+  /** @param {HTMLElement} col @param {string} day @param {string | null} half @param {PlanItem[]} list @param {string} mode */
   renderSlot(col, day, half, list, mode) {
     const s = h(col, 'div', `a4pl-slot is-${half || 'any'}`);
     s.dataset.drop = 'slot'; s.dataset.day = day; s.dataset.half = half || '';
@@ -1205,6 +1335,7 @@ class PlannerView extends ItemView {
     if (half === 'am') h(h(s, 'div', 'a4pl-noon'), 'span', null, '13:00');
   }
 
+  /** @param {HTMLElement} slot @param {HTMLElement} btn @param {string} day @param {string} half */
   inlineAdd(slot, btn, day, half) {
     const inp = createEl('input', { cls: 'a4pl-slot-input', type: 'text' });
     inp.placeholder = 'New task…';
@@ -1224,12 +1355,13 @@ class PlannerView extends ItemView {
 
   /* ---- task row ---------------------------------------------------------- */
 
+  /** @param {PlanItem} it @param {PlanRowOpts} o */
   taskRow(it, o) {
     const day = o.day || this.today();
     const done = isTaskDone(it, day, this.completed);
     // Dependencies (Projects mockup round 4): open blockers dim the row and add a lock chip.
     const blockers = done ? [] : (it.blockers || openBlockersOf(this.app, it, this.completed));
-    const r = h(null, 'div', 'a4pl-task' + (done ? ' is-done' : '') + (o.drag ? ' is-drag' : '') + (it.projectKey ? ' has-project' : '') + (blockers.length ? ' is-blocked' : ''));
+    const r = /** @type {PlanRow} */ (h(null, 'div', 'a4pl-task' + (done ? ' is-done' : '') + (o.drag ? ' is-drag' : '') + (it.projectKey ? ' has-project' : '') + (blockers.length ? ' is-blocked' : '')));
     r.dataset.path = it.path;
     if (o.drag && o.side && this.narrow) { const g = h(r, 'span', 'a4pl-grip a4pl-ic'); setIcon(g, 'grip-vertical'); }
     const tick = h(r, 'button', 'a4pl-tick' + (done ? ' is-on' : ''));
@@ -1237,7 +1369,7 @@ class PlannerView extends ItemView {
     if (done) setIcon(tick, 'check');
     tick.addEventListener('click', async (e) => {
       e.stopPropagation();
-      try { await this.plugin.toggleTask(it, day); } catch (err) { new Notice(String(err.message || err)); }
+      try { await this.plugin.toggleTask(it, day); } catch (err) { new Notice(String(errField(err, 'message') || err)); }
       this.scheduleRender();
     });
     const main = h(r, 'div', 'a4pl-task-main');
@@ -1281,7 +1413,7 @@ class PlannerView extends ItemView {
         if (e.key === 'Enter' || e.key === 's' || e.key === 'S') { e.preventDefault(); this.openSchedule(it, sb); }
         else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault();
-          const rows = [...this.contentEl.querySelectorAll('.a4pl-task[tabindex="0"]')].filter((x) => x.offsetParent);
+          const rows = /** @type {HTMLElement[]} */ ([...this.contentEl.querySelectorAll('.a4pl-task[tabindex="0"]')]).filter((x) => x.offsetParent);
           const i = rows.indexOf(r);
           const n = rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
           if (n) n.focus();
@@ -1292,22 +1424,25 @@ class PlannerView extends ItemView {
     setIcon(pin, 'star');
     pin.setAttr('aria-label', it.weeklyGoal ? 'Unpin from weekly goals' : 'Pin as weekly goal');
     pin.addEventListener('click', async (e) => { e.stopPropagation(); await this.plugin.toggleWeeklyGoal(it); this.scheduleRender(); });
-    main.addEventListener('click', () => { if (r._dragged) return; if (it.ext) { const own = this.plugin.projectsPlugin(); if (own) own.openTask(it); return; } const f = this.plugin.fileOf(it.path); if (f) this.app.workspace.getLeaf('tab').openFile(f); });
+    main.addEventListener('click', () => { if (r._dragged) return; if (it.ext) { const own = this.plugin.projectsPlugin(); if (own) own.openTask(/** @type {ExtItem} */ (it)); return; } const f = this.plugin.fileOf(it.path); if (f) this.app.workspace.getLeaf('tab').openFile(f); });
     if (o.drag) r.addEventListener('pointerdown', (e) => this.startDrag(e, { item: it }, r));
     return r;
   }
 
   /* ---- dragging (pointer events: mouse and finger) ------------------------ */
 
+  /** @param {PointerEvent} e @param {{ item?: PlanItem, ev?: PlanEvent }} what @param {PlanRow} row */
   startDrag(e, what, row) {
-    if (e.button !== 0 || e.target.closest('.a4pl-tick, .a4pl-pin, .a4pl-sched')) return;
+    const target = /** @type {HTMLElement} */ (e.target);
+    if (e.button !== 0 || target.closest('.a4pl-tick, .a4pl-pin, .a4pl-sched')) return;
     const inSheet = !!row.closest('.a4pl-sheet, .a4pl-mlist');
-    if (inSheet && what.item && !e.target.closest('.a4pl-grip')) return; // the phone drawer (and Month's day list) scrolls; the grip drags
+    if (inSheet && what.item && !target.closest('.a4pl-grip')) return; // the phone drawer (and Month's day list) scrolls; the grip drags
     if (e.pointerType === 'touch' && !inSheet && !what.ev) return; // board rows on touch: use the Schedule button
     this.drag = { ...what, row, x0: e.clientX, y0: e.clientY, live: false, inSheet };
     if (e.pointerType !== 'touch' || inSheet) e.preventDefault();
   }
 
+  /** @param {PointerEvent} e */
   onPointerMove(e) {
     const d = this.drag;
     if (!d) return;
@@ -1318,26 +1453,28 @@ class PlannerView extends ItemView {
       d.ghost = document.body.createDiv({ cls: 'a4pl-ghost', text: d.ev ? 'New task: ' + d.ev.summary : d.item.title });
       if (d.inSheet) { this.sheetOpen = false; const s = this.contentEl.querySelector('.a4pl-sheet'); if (s) s.addClass('is-closed'); }
     }
-    d.ghost.style.left = `${e.clientX + 12}px`;
-    d.ghost.style.top = `${e.clientY + 8}px`;
+    const ghost = /** @type {HTMLElement} */ (d.ghost);
+    ghost.style.left = `${e.clientX + 12}px`;
+    ghost.style.top = `${e.clientY + 8}px`;
     this.clearMarks();
     const hit = document.elementFromPoint(e.clientX, e.clientY);
-    const zone = hit && this.contentEl.contains(hit) ? hit.closest('[data-drop]') : null;
+    const zone = /** @type {HTMLElement | null} */ (hit && this.contentEl.contains(hit) ? hit.closest('[data-drop]') : null);
     d.zone = zone; d.idx = null; d.at = null;
     this.autoScroll(e.clientY);
     if (!zone) return;
     zone.addClass('is-over');
     if (zone.dataset.drop === 'slot' && d.item) {
-      const rows = [...zone.querySelectorAll(':scope > .a4pl-task:not(.is-lifted)')];
+      const rows = /** @type {HTMLElement[]} */ ([...zone.querySelectorAll(':scope > .a4pl-task:not(.is-lifted)')]);
       let idx = rows.length;
       for (let i = 0; i < rows.length; i++) { const b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2) { idx = i; break; } }
       d.idx = idx;
-      d.at = { before: idx < rows.length ? rows[idx].dataset.path : null, after: idx > 0 ? rows[idx - 1].dataset.path : null };
+      d.at = { before: idx < rows.length ? rows[idx].dataset.path || null : null, after: idx > 0 ? rows[idx - 1].dataset.path || null : null };
       const line = createDiv({ cls: 'a4pl-drop-line' });
       if (idx < rows.length) zone.insertBefore(line, rows[idx]); else zone.insertBefore(line, zone.querySelector('.a4pl-slot-add, .a4pl-noon'));
     }
   }
 
+  /** @param {number} y */
   autoScroll(y) {
     const sc = this.contentEl.querySelector('.a4pl-scroll');
     if (!sc) return;
@@ -1367,28 +1504,31 @@ class PlannerView extends ItemView {
     if (!d.live || !d.zone) return;
     d.row._dragged = true; window.setTimeout(() => { d.row._dragged = false; }, 50);
     const today = this.today();
-    const toPool = d.zone.dataset.drop === 'pool';
-    const day = toPool ? null : d.zone.dataset.day;
-    const onMonth = d.zone.dataset.drop === 'mday';
+    const zone = d.zone;
+    const toPool = zone.dataset.drop === 'pool';
+    const day = toPool ? null : /** @type {string} */ (zone.dataset.day);
+    const onMonth = zone.dataset.drop === 'mday';
     if (onMonth && d.item && day === d.item.plannedDay) return; // Month has no drop line: a nudge on its own day is not a move
-    const half = toPool ? null : onMonth ? monthDropHalf(d) : (d.zone.dataset.half || null);
+    const half = toPool ? null : onMonth ? monthDropHalf(d) : (zone.dataset.half || null);
     try {
       if (d.ev) {
         await this.plugin.createTask({ title: d.ev.summary, day, half, details: eventDetails(d.ev), time: d.ev.allDay ? null : d.ev.time }, this.items);
         await this.plugin.markEventMade(d.ev, today);
         new Notice(day ? `Task made for ${moveLabel(day, half, today)}` : 'Task made, in Unscheduled');
       } else if (toPool) {
-        await this.plugin.unscheduleTask(d.item);
+        await this.plugin.unscheduleTask(/** @type {PlanItem} */ (d.item));
       } else {
-        const res = await this.plugin.moveTask(d.item, day, half, d.at, this.items);
-        if (res) this.plugin.movedNotice(d.item, day, half, res, () => this.scheduleRender());
+        const item = /** @type {PlanItem} */ (d.item); const to = /** @type {string} */ (day);
+        const res = await this.plugin.moveTask(item, to, half, d.at || null, this.items);
+        if (res) this.plugin.movedNotice(item, to, half, res, () => this.scheduleRender());
       }
-    } catch (err) { console.error('[LifeWorld] drop failed', err); new Notice(err && err.plain ? err.plain : 'That did not work. Nothing was changed.'); }
+    } catch (err) { console.error('[LifeWorld] drop failed', err); new Notice(String(errField(err, 'plain') || 'That did not work. Nothing was changed.')); }
     this.scheduleRender();
   }
 
   /* ---- Schedule popover --------------------------------------------------- */
 
+  /** @param {PlanItem} it @param {HTMLElement} btn */
   openSchedule(it, btn) {
     const same = this.pop && this.pop.btn === btn;
     if (this.pop) this.pop.close(false);
@@ -1398,18 +1538,21 @@ class PlannerView extends ItemView {
 }
 
 class SchedulePopover {
+  /** @param {PlannerView} view @param {PlanItem} it @param {HTMLElement} btn */
   constructor(view, it, btn) {
     this.view = view; this.it = it; this.btn = btn;
     const today = view.today();
     this.today = today;
     this.sel = it.plannedDay || today;
     this.month = this.sel.slice(0, 7);
+    /** @type {string} */
     this.half = it.plannedHalf || 'am';
     this.el = document.body.createDiv({ cls: 'a4pl-pop' + (view.narrow ? ' is-narrow' : '') });
     this.el.setAttr('role', 'dialog'); this.el.setAttr('aria-label', 'Schedule ' + it.title);
     btn.addClass('is-open');
     openPopovers.add(this);
-    this.away = (e) => { if (!this.el.contains(e.target) && !btn.contains(e.target)) this.close(false); };
+    /** @param {PointerEvent} e */
+    this.away = (e) => { if (!this.el.contains(/** @type {Node} */ (e.target)) && !btn.contains(/** @type {Node} */ (e.target))) this.close(false); };
     document.addEventListener('pointerdown', this.away, true);
     this.onScroll = () => this.place();
     this.scroller = view.contentEl.querySelector('.a4pl-scroll');
@@ -1417,7 +1560,7 @@ class SchedulePopover {
     this.el.addEventListener('keydown', (e) => this.onKey(e));
     this.draw();
     this.place();
-    const first = this.el.querySelector('.a4pl-pop-q');
+    const first = /** @type {HTMLElement | null} */ (this.el.querySelector('.a4pl-pop-q'));
     if (first) first.focus();
   }
 
@@ -1430,28 +1573,32 @@ class SchedulePopover {
     if (this.view.pop === this) this.view.pop = null;
     const key = this.btn.dataset.focus;
     if (this.view.pendingRender) this.view.render();
-    if (restore && key) { const b = this.view.contentEl.querySelector(`[data-focus="${CSS.escape(key)}"]`); if (b) b.focus(); }
+    if (restore && key) { const b = /** @type {HTMLElement | null} */ (this.view.contentEl.querySelector(`[data-focus="${CSS.escape(key)}"]`)); if (b) b.focus(); }
   }
 
+  /** @param {KeyboardEvent} e */
   onKey(e) {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); return; }
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.target.classList.contains('a4pl-pop-q')) {
+    const target = /** @type {HTMLElement} */ (e.target);
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && target.classList.contains('a4pl-pop-q')) {
       e.preventDefault();
-      const q = [...this.el.querySelectorAll('.a4pl-pop-q')];
-      const i = q.indexOf(e.target);
+      const q = /** @type {HTMLElement[]} */ ([...this.el.querySelectorAll('.a4pl-pop-q')]);
+      const i = q.indexOf(target);
       q[(i + (e.key === 'ArrowDown' ? 1 : q.length - 1)) % q.length].focus();
     }
   }
 
+  /** @param {() => Promise<unknown>} fn */
   async act(fn) {
     const view = this.view;
     this.close(false);
-    try { await fn(); } catch (err) { console.error('[LifeWorld] schedule failed', err); new Notice(err && err.plain ? err.plain : 'That did not work. Nothing was changed.'); }
+    try { await fn(); } catch (err) { console.error('[LifeWorld] schedule failed', err); new Notice(String(errField(err, 'plain') || 'That did not work. Nothing was changed.')); }
     view.scheduleRender();
-    const key = this.btn.dataset.focus.replace(/^sched:/, 'row:').replace(/@.*$/, '');
-    window.setTimeout(() => { const r = [...view.contentEl.querySelectorAll('[data-focus]')].find((x) => x.dataset.focus.startsWith(key + '@')); if (r) r.focus({ preventScroll: true }); }, 450);
+    const key = /** @type {string} */ (this.btn.dataset.focus).replace(/^sched:/, 'row:').replace(/@.*$/, '');
+    window.setTimeout(() => { const r = /** @type {HTMLElement[]} */ ([...view.contentEl.querySelectorAll('[data-focus]')]).find((x) => /** @type {string} */ (x.dataset.focus).startsWith(key + '@')); if (r) r.focus({ preventScroll: true }); }, 450);
   }
 
+  /** @param {string} day @param {string | null} half */
   placeOn(day, half) {
     const { view, it } = this;
     this.act(async () => { const res = await view.plugin.moveTask(it, day, half, null, view.items); if (res) view.plugin.movedNotice(it, day, half, res, () => view.scheduleRender()); });
@@ -1462,7 +1609,7 @@ class SchedulePopover {
     el.empty();
     h(el, 'div', 'a4pl-pop-title', 'Schedule · ' + it.title);
     const tom = addDays(today, 1);
-    for (const [label, d, half] of [['Today morning', today, 'am'], ['Today afternoon', today, 'pm'], ['Tomorrow morning', tom, 'am'], ['Tomorrow afternoon', tom, 'pm'], ['Any time today', today, null]]) {
+    for (const [label, d, half] of /** @type {[string, string, string | null][]} */ ([['Today morning', today, 'am'], ['Today afternoon', today, 'pm'], ['Tomorrow morning', tom, 'am'], ['Tomorrow afternoon', tom, 'pm'], ['Any time today', today, null]])) {
       const b = h(el, 'button', 'a4pl-pop-q');
       h(b, 'span', null, label);
       h(b, 'span', 'a4pl-pop-k', fmtDay(d, { weekday: 'short', day: 'numeric' }));
@@ -1490,7 +1637,7 @@ class SchedulePopover {
       b.setAttr('aria-label', fmtDay(d, { weekday: 'long', month: 'long', day: 'numeric' }));
       b.addEventListener('click', () => { this.sel = d; this.draw(); this.focusSel(); });
       b.addEventListener('keydown', (e) => {
-        const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+        const mv = /** @type {Record<string, number>} */ ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 })[e.key];
         if (mv) { e.preventDefault(); this.sel = addDays(this.sel, mv); this.month = this.sel.slice(0, 7); this.draw(); this.focusSel(); }
         else if (e.key === 'Enter') { e.preventDefault(); this.placeOn(this.sel, this.half === 'any' ? null : this.half); }
       });
@@ -1515,7 +1662,8 @@ class SchedulePopover {
     this.act(async () => {
       const w = await view.plugin.somedayTask(it);
       const text = it.due ? 'Moved to Someday. The due date was taken off.' : 'Moved to Someday';
-      if (w && w.undo) undoNotice(text, async () => { await w.undo(); view.scheduleRender(); }); else new Notice(text);
+      const u = w && w.undo;
+      if (u) undoNotice(text, async () => { await u(); view.scheduleRender(); }); else new Notice(text);
     });
   }
 
@@ -1524,17 +1672,17 @@ class SchedulePopover {
     const { el, it } = this;
     el.empty();
     h(el, 'div', 'a4pl-pop-title', 'Someday · ' + it.title);
-    h(el, 'div', 'a4pl-pop-note', `Due ${fmtDay(it.due, { month: 'short', day: 'numeric' })}${it.time ? `, ${timeText(it.time)}` : ''}. Someday takes the due date off too, so it no longer sits on a day${it.time && it.reminder != null ? ' or rings' : ''}.`);
+    h(el, 'div', 'a4pl-pop-note', `Due ${fmtDay(/** @type {string} */ (it.due), { month: 'short', day: 'numeric' })}${it.time ? `, ${timeText(it.time)}` : ''}. Someday takes the due date off too, so it no longer sits on a day${it.time && it.reminder != null ? ' or rings' : ''}.`);
     const go = h(el, 'button', 'a4pl-pop-place', 'Move to Someday');
     go.addEventListener('click', () => this.toSomeday());
     const back = h(el, 'button', 'a4pl-pop-q');
     h(back, 'span', null, 'Keep the due date');
-    back.addEventListener('click', () => { this.draw(); this.place(); const q = this.el.querySelector('.a4pl-pop-q'); if (q) q.focus(); });
+    back.addEventListener('click', () => { this.draw(); this.place(); const q = /** @type {HTMLElement | null} */ (this.el.querySelector('.a4pl-pop-q')); if (q) q.focus(); });
     this.place();
     go.focus();
   }
 
-  focusSel() { const b = this.el.querySelector('.a4pl-mc .is-sel'); if (b) b.focus(); }
+  focusSel() { const b = /** @type {HTMLElement | null} */ (this.el.querySelector('.a4pl-mc .is-sel')); if (b) b.focus(); }
 
   place() {
     const { el, btn, view } = this;

@@ -45,6 +45,7 @@ import { partOf, ADDON } from '../core/parts'; // the other parts, and what an a
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
 import { sidebarContent } from '../core/vault';
+import { errField } from '../core/sources';
 const SBC = sidebarContent;
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
@@ -68,17 +69,22 @@ const NAV = [
 // `sphere` property (work / personal; ruling 2026-10-04). No rule, no guess:
 // a project with no or another value shows under "Unsorted projects", which
 // appears only when there is one.
+/** @type {Record<string, { folder: string, kind: string, hideEmpty?: boolean }>} */
 const VIRTUAL = {
   'Work projects': { folder: 'Projects', kind: 'work' },
   'Personal projects': { folder: 'Projects', kind: 'personal' },
   'Unsorted projects': { folder: 'Projects', kind: 'unsorted', hideEmpty: true },
 };
+/** @param {string} n */
 const itemFolder = (n) => (VIRTUAL[n] ? VIRTUAL[n].folder : n);
+/** @param {Fm | null | undefined} fm */
 function sphereOf(fm) {
   const v = fm && typeof fm.sphere === 'string' ? fm.sphere.trim().toLowerCase() : '';
   return v === 'work' || v === 'personal' ? v : 'unsorted';
 }
+/** @type {Record<string, number>} */
 const PROJECT_STATUS_ORDER = { active: 0, paused: 1, backlog: 2 };
+/** @template {{ status: string, name: string }} T @param {T[]} list */
 function sortProjects(list) {
   return list.slice().sort((a, b) => ((PROJECT_STATUS_ORDER[a.status] ?? 3) - (PROJECT_STATUS_ORDER[b.status] ?? 3)) || collator.compare(a.name, b.name));
 }
@@ -86,6 +92,7 @@ function sortProjects(list) {
 // (bug 2026-10-05: 16 shown, 14 listed; the 2 failed ones were counted). The
 // rule is Projects' own (`isOpenProjectNote`), never a copy here. Without
 // Projects there is no open list to match, so every project counts.
+/** @param {PartTypes['a4-projects'] | null | undefined} projectsPlugin @returns {(fm: Fm | null | undefined) => boolean} */
 function openRuleFrom(projectsPlugin) {
   return projectsPlugin && typeof projectsPlugin.isOpenProjectNote === 'function'
     ? (fm) => !!projectsPlugin.isOpenProjectNote(fm) : () => true;
@@ -93,10 +100,13 @@ function openRuleFrom(projectsPlugin) {
 // The list that folds out under Work / Personal / Unsorted shows the same
 // open projects as the count (ruling 2026-10-05): failed, done and
 // dropped ones stay reachable from the Projects page's Closed section.
+/** @template {{ open: boolean }} T @param {T[]} members */
 const openProjects = (members) => members.filter((m) => m.open);
+/** @param {{ open: boolean }[]} members */
 const openProjectCount = (members) => openProjects(members).length;
 
 // Lifeworld's stroke icons (ui.tsx P), 24x24 viewBox.
+/** @type {Record<string, string>} */
 const P = {
   sun: 'M12 4V2M12 22v-2M4.9 4.9 3.5 3.5M20.5 20.5l-1.4-1.4M4 12H2M22 12h-2M4.9 19.1l-1.4 1.4M20.5 3.5l-1.4 1.4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
   calendar: 'M8 2v4M16 2v4M3 9h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
@@ -150,23 +160,28 @@ const P = {
  * Pure logic (exported for the node test suite; no Obsidian objects).
  * ------------------------------------------------------------------ */
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+/** @param {string} p */
 const parentOf = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+/** @param {string} p */
 const nameOf = (p) => p.slice(p.lastIndexOf('/') + 1);
 
 // Lifeworld: rooms are keyed on the numeric prefix; a rename after it is a no-op. The room's colour
 // is its place in the list. No rooms set (a new install): every top folder, A to Z, plain.
+/** @param {string[]} rootFolderNames @returns {{ name: string, icon: string, path: string, prefix?: string, c?: number }[]} */
 function findRoomFolders(rootFolderNames) {
   if (!SBC.rooms.length) return rootFolderNames.slice().sort(collator.compare).map((path) => ({ name: path, icon: 'folder', path }));
   return SBC.rooms.map((r, c) => {
     const path = rootFolderNames.filter((n) => n.startsWith(r.prefix)).sort(collator.compare)[0];
     return path ? { ...r, c, path } : null;
-  }).filter(Boolean);
+  }).filter((x) => x !== null);
 }
 
 // My Life groups: Lifeworld's order; folders the vault does not have are skipped; any
 // My Life folder no group names lands in "More" (Lifeworld does the same).
+/** @param {string[]} myLifeFolderNames */
 function buildLifeGroups(myLifeFolderNames) {
   const have = new Set(myLifeFolderNames);
+  /** @type {Set<string>} */
   const used = new Set();
   const groups = SBC.groups.map((g) => {
     const items = g.folders.filter((n) => have.has(itemFolder(n)));
@@ -178,16 +193,20 @@ function buildLifeGroups(myLifeFolderNames) {
   return groups.filter((g) => g.items.length);
 }
 
+/** @param {string} name */
 function itemLabel(name) { return SBC.labels[name] || name; }
+/** @param {string} name */
 function itemIcon(name) { return SBC.icons[name] || 'folder'; }
+/** @param {string} name */
 function itemShowsCount(name) { return !SBC.noCount.includes(name); }
 
 // What clicking a My Life item does, in order: the command an add-on named for
 // it (addItemCommand) while that is registered; else a landing note named like
 // the folder; else a single .base in the folder; else unfold.
+/** @param {string} name @param {string} folderPath @param {string[]} childPaths @param {(id: string) => boolean} hasCommand */
 function resolveLanding(name, folderPath, childPaths, hasCommand) {
   const l = EXTRA.items.find((x) => x.item === name);
-  if (l && hasCommand(l.command)) return { kind: 'command', id: l.command };
+  if (l && l.command && hasCommand(l.command)) return { kind: 'command', id: l.command };
   const note = `${folderPath}/${name}.md`;
   if (childPaths.includes(note)) return { kind: 'file', path: note };
   const bases = childPaths.filter((p) => parentOf(p) === folderPath && p.endsWith('.base'));
@@ -196,7 +215,9 @@ function resolveLanding(name, folderPath, childPaths, hasCommand) {
 }
 
 // Markdown note count under a folder (recursive). One pass over all paths.
+/** @param {string[]} allFilePaths @param {string[]} folderPaths */
 function countNotes(allFilePaths, folderPaths) {
+  /** @type {Record<string, number>} */
   const out = {};
   for (const f of folderPaths) out[f] = 0;
   for (const p of allFilePaths) {
@@ -234,27 +255,32 @@ function countNotes(allFilePaths, folderPaths) {
  * the settings carried over from the old plugin).
  */
 const SORT_MODES = ['newest', 'oldest', 'az', 'za'];
+/** @type {Record<string, string>} */
 const SORT_LABEL = { newest: 'Newest first', oldest: 'Oldest first', az: 'A to Z', za: 'Z to A' };
+/** @type {SortSettings} */
 const DEFAULT_SORT = { dates: 'last', newestFirstIn: [], text: 'az', folders: false, perFolder: {} };
 
 // Saved settings -> a clean sort object. Missing = the pre-filled defaults; a
 // damaged value falls back to its default rather than breaking the list.
+/** @param {unknown} saved @returns {SortSettings} */
 function normalizeSort(saved) {
-  const s = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  const s = /** @type {Fm} */ (saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {});
+  /** @type {SortSettings} */
   const out = {
     dates: s.dates === 'first' ? 'first' : 'last',
     text: s.text === 'za' ? 'za' : 'az',
     folders: s.folders === true,
-    newestFirstIn: Array.isArray(s.newestFirstIn) ? [...new Set(s.newestFirstIn.filter((p) => typeof p === 'string' && p))] : DEFAULT_SORT.newestFirstIn.slice(),
+    newestFirstIn: Array.isArray(s.newestFirstIn) ? [...new Set(/** @type {string[]} */ (/** @type {unknown[]} */ (s.newestFirstIn).filter((p) => typeof p === 'string' && p)))] : DEFAULT_SORT.newestFirstIn.slice(),
     perFolder: {},
   };
-  const pf = s.perFolder && typeof s.perFolder === 'object' && !Array.isArray(s.perFolder) ? s.perFolder : (s.perFolder === undefined ? DEFAULT_SORT.perFolder : {});
-  for (const [p, m] of Object.entries(pf)) if (p && SORT_MODES.includes(m)) out.perFolder[p] = m;
+  const pf = /** @type {Fm} */ (s.perFolder && typeof s.perFolder === 'object' && !Array.isArray(s.perFolder) ? s.perFolder : (s.perFolder === undefined ? DEFAULT_SORT.perFolder : {}));
+  for (const [p, m] of Object.entries(pf)) if (p && typeof m === 'string' && SORT_MODES.includes(m)) out.perFolder[p] = m;
   return out;
 }
 
 // Which rule orders this folder: its own entry, else the nearest parent's
 // (per-folder entry or the always-newest-first list), else null = main setting.
+/** @param {string} folderPath @param {SortSettings} sort @returns {{ mode: string, from: string, always?: boolean } | null} */
 function sortRuleFor(folderPath, sort) {
   for (let p = folderPath; p; p = parentOf(p)) {
     if (Object.prototype.hasOwnProperty.call(sort.perFolder, p)) return { mode: sort.perFolder[p], from: p };
@@ -266,6 +292,7 @@ function sortRuleFor(folderPath, sort) {
 // Date at the START of a name, in the usual naming styles: 2026-10-08..., 10-08-2026,
 // quick captures "10-08-2026 - 2-05 PM" and older "10-08-2026 - 1328".
 // -> { day: 20261008, time: minutes or -1 } or null. Impossible dates are not dates.
+/** @param {unknown} name */
 function dateKey(name) {
   const n = String(name || '');
   let y, mo, d, rest;
@@ -287,7 +314,10 @@ function dateKey(name) {
 // Comparator for one mode. 'az'/'za' = by name only (what the old plugins did).
 // Date modes: dated names first, by date then time then name, in the date
 // direction; then everything without a date in the Text order.
+/** @typedef {{ name: string, isFolder?: boolean }} SortEntry */
+/** @param {string} mode @param {SortSettings} sort @returns {(a: SortEntry, b: SortEntry) => number} */
 function sortComparator(mode, sort) {
+  /** @param {SortEntry} a @param {SortEntry} b */
   const byName = (a, b) => collator.compare(a.name, b.name);
   if (mode === 'az') return byName;
   if (mode === 'za') return (a, b) => -byName(a, b);
@@ -304,6 +334,7 @@ function sortComparator(mode, sort) {
 
 // Folders on top, then notes. Called on every render, so it always reflects
 // what is in the folder now (the bug in the two old plugins was a frozen list).
+/** @template {SortEntry} T @param {string} folderPath @param {T[]} children @param {SortSettings} [sortSettings] @returns {T[]} */
 function sortChildren(folderPath, children, sortSettings) {
   const sort = sortSettings || normalizeSort(undefined);
   const rule = sortRuleFor(folderPath, sort);
@@ -314,9 +345,11 @@ function sortChildren(folderPath, children, sortSettings) {
 }
 
 // "04 Work/Clients" -> "Work / Clients"
+/** @param {unknown} path */
 function folderDisplay(path) { return String(path || '').split('/').map((s) => s.replace(/^\d\d /, '')).join(' / '); }
 
 // Set (mode) or clear (null) one folder's own order. Returns a new sort object.
+/** @param {SortSettings} sort @param {string} path @param {string | null} [mode] */
 function setFolderSort(sort, path, mode) {
   const perFolder = { ...sort.perFolder };
   if (mode && SORT_MODES.includes(mode)) perFolder[path] = mode; else delete perFolder[path];
@@ -324,14 +357,18 @@ function setFolderSort(sort, path, mode) {
 }
 
 // A folder was renamed or moved: carry its (and its subfolders') entries along.
+/** @param {SortSettings} sort @param {string} oldPath @param {string} newPath */
 function renameSortPaths(sort, oldPath, newPath) {
+  /** @param {string} p */
   const move = (p) => (p === oldPath ? newPath : p.startsWith(oldPath + '/') ? newPath + p.slice(oldPath.length) : p);
+  /** @type {Record<string, string>} */
   const perFolder = {};
   for (const [p, m] of Object.entries(sort.perFolder)) perFolder[move(p)] = m;
   return { ...sort, perFolder, newestFirstIn: [...new Set(sort.newestFirstIn.map(move))] };
 }
 
 // Can this note be dropped into that folder? Returns { ok, reason, newPath }.
+/** @param {string} srcPath @param {boolean} srcIsFolder @param {string | null | undefined} destFolder @param {(p: string) => boolean} exists @returns {{ ok: boolean, reason?: string, newPath?: string }} */
 function planMove(srcPath, srcIsFolder, destFolder, exists) {
   if (srcIsFolder) return { ok: false, reason: 'folders-stay-put' };
   if (!destFolder) return { ok: false, reason: 'no-target' };
@@ -344,14 +381,18 @@ function planMove(srcPath, srcIsFolder, destFolder, exists) {
 // A row only receives `drop` if it accepted `dragover`. A name clash is
 // accepted (no highlight) so the drop can say why nothing moved; the other
 // refusals (same folder, a folder, no target) stay silent no-drop targets.
+/** @param {{ ok: boolean, reason?: string } | null | undefined} p */
 function dropAccepts(p) { return !!p && (p.ok || p.reason === 'name-taken'); }
+/** @param {unknown} folderName */
 const showName = (folderName) => String(folderName || '').replace(/^\d\d /, ''); // "01 Inbox" shows as "Inbox"
+/** @param {unknown} fileName @param {unknown} folderName */
 function nameTakenMessage(fileName, folderName) {
   const n = String(fileName || '');
   return `A note called ${n.endsWith('.md') ? n.slice(0, -3) : n} is already in ${showName(folderName)}.`;
 }
 
 // Rename: keeps the extension and the folder; rejects empty, slashes, clashes.
+/** @param {string} srcPath @param {unknown} newBase @param {(p: string) => boolean} exists @returns {{ ok: boolean, reason?: string, newPath?: string }} */
 function planRename(srcPath, newBase, exists) {
   const base = String(newBase || '').trim();
   if (!base) return { ok: false, reason: 'empty' };
@@ -367,6 +408,7 @@ function planRename(srcPath, newBase, exists) {
 }
 
 // Which My Life group holds the active note (Lifeworld opens that group).
+/** @param {string | null | undefined} activePath @param {{ id: string, items: string[] }[]} groups @param {((path: string) => string) | null} [classify] */
 function activeGroupFor(activePath, groups, classify) {
   if (!activePath) return null;
   for (const g of groups) for (const n of g.items) {
@@ -379,6 +421,7 @@ function activeGroupFor(activePath, groups, classify) {
 
 // Which room the open note belongs to (highlighted like Today/Planner/Focus).
 // A note the My Life section already shows highlights its My Life item instead.
+/** @param {string | null | undefined} activePath @param {string[]} roomPaths @param {Iterable<string> | null} [hidden] */
 function activeRoomFor(activePath, roomPaths, hidden) {
   if (!activePath) return null;
   for (const h of hidden || []) if (activePath.startsWith(h + '/')) return null;
@@ -387,6 +430,7 @@ function activeRoomFor(activePath, roomPaths, hidden) {
 
 // Outside files being dragged in? Same test Obsidian's Files list uses
 // (any item of kind "file"; iOS only reports the "Files" type).
+/** @param {DataTransfer | null | undefined} dt */
 function hasExternalFiles(dt) {
   if (!dt) return false;
   for (const it of Array.from(dt.items || [])) if (it.kind === 'file') return true;
@@ -394,13 +438,16 @@ function hasExternalFiles(dt) {
 }
 
 // "report.final.pdf" -> { name: 'report.final', ext: 'pdf' }; ".env" -> { name: '.env', ext: '' }
+/** @param {string} n */
 function splitName(n) {
   const i = n.lastIndexOf('.');
   return i > 0 ? { name: n.slice(0, i), ext: n.slice(i + 1) } : { name: n, ext: '' };
 }
 
 // Obsidian's getAvailablePath: "name.ext", then "name 1.ext", "name 2.ext"...
+/** @param {string} folderPath @param {string} name @param {string} ext @param {(p: string) => boolean} exists */
 function freePath(folderPath, name, ext, exists) {
+  /** @param {string} b */
   const at = (b) => (folderPath ? folderPath + '/' : '') + b + (ext ? '.' + ext : '');
   let p = at(name);
   for (let n = 1; exists(p); n++) p = at(`${name} ${n}`);
@@ -408,7 +455,9 @@ function freePath(folderPath, name, ext, exists) {
 }
 
 // Split a drop into files and folders (folders are never imported here).
+/** @param {DataTransfer | null | undefined} dt */
 function collectDropped(dt) {
+  /** @type {File[]} */
   const files = []; let folders = 0;
   for (const it of Array.from((dt && dt.items) || [])) {
     if (it.kind !== 'file') continue;
@@ -422,6 +471,7 @@ function collectDropped(dt) {
 }
 
 // Long-press: fires once the finger has stayed put long enough.
+/** @param {number} start @param {number} now @param {number} moved */
 function longPressState(start, now, moved) {
   if (moved > LONG_PRESS_SLOP) return 'cancel';
   return now - start >= LONG_PRESS_MS ? 'fire' : 'wait';
@@ -429,24 +479,31 @@ function longPressState(start, now, moved) {
 
 // Placement is per device kind: data.json syncs between Mac and phone, so the
 // Mac's "already placed" must not stop the phone from adding its own tab.
+/** @param {boolean} isMobile */
 function placedKey(isMobile) { return isMobile ? 'placedMobile' : 'placed'; }
 
 // Group open state: remembered once toggled, else open only if active.
+/** @param {string} id @param {Record<string, boolean>} remembered @param {string | null} activeGroup */
 function isGroupOpen(id, remembered, activeGroup) {
   return Object.prototype.hasOwnProperty.call(remembered, id) ? !!remembered[id] : id === activeGroup;
 }
 
 // quick-create targets keyed by folder path.
+/** @typedef {{ navPath?: string, key?: string, label?: string, [k: string]: unknown }} PlusTarget */
+/** @param {unknown} targets */
 function plusTargetsByPath(targets) {
+  /** @type {Record<string, PlusTarget>} */
   const out = {};
-  for (const t of targets || []) if (t && t.navPath) out[t.navPath] = t;
+  for (const t of /** @type {(PlusTarget | null)[]} */ (Array.isArray(targets) ? targets : (targets || []))) if (t && t.navPath) out[t.navPath] = t;
   return out;
 }
 
 // Folders the My Life section already shows: the My Life folder itself (it IS
 // the section) and every item folder in it. Rooms skip these, so nothing is
 // listed twice (2026-10-03). Display only; no folder is moved.
+/** @param {{ items: string[] }[] | null | undefined} groups */
 function hiddenUnderRooms(groups) {
+  /** @type {Set<string>} */
   const out = new Set();
   if (!groups || !groups.length) return out;
   out.add(SBC.life);
@@ -455,6 +512,7 @@ function hiddenUnderRooms(groups) {
 }
 
 // Markdown count under a folder, leaving out notes inside hidden folders.
+/** @param {string[]} allFilePaths @param {string[]} folderPaths @param {Iterable<string>} hidden */
 function countNotesExcluding(allFilePaths, folderPaths, hidden) {
   const keep = allFilePaths.filter((p) => { for (const h of hidden) if (p.startsWith(h + '/')) return false; return true; });
   return countNotes(keep, folderPaths);
@@ -475,6 +533,7 @@ const TOOLS = [
 // name in the notice when it is turned off. The unique-note NAME
 // (MM-DD-YYYY - h-mm A) comes from core "Unique note creator" settings
 // (.obsidian/zk-prefixer.json), never from this plugin.
+/** @type {Record<string, { name: string, core: string, plugin: string }>} */
 const CORE_TOOLS = {
   'open-daily-note': { name: "Open today's daily note", core: 'daily-notes', plugin: 'Daily notes' },
   'new-unique-note': { name: 'New unique note', core: 'zk-prefixer', plugin: 'Unique note creator' },
@@ -492,12 +551,15 @@ const BASES_TOOL = { id: 'bases', icon: 'database', label: 'Open a base' };
 // row ('top'), each { id, label, icon, onClick }; Files tab footers ('foot', { id, draw }); and the
 // command a My Life item opens ('items', { item, command }).
 // shortcut: kept for this LifeWorld start only; an add-on adds them again when LifeWorld restarts.
+/** @type {Record<string, SidebarExtra[]>} */
 const EXTRA = { nav: [], tools: [], top: [], foot: [], items: [] };
+/** @param {string} kind @param {SidebarExtra} def */
 function addExtra(kind, def) {
   // 'toggle-all' is the Expand/Collapse button, found by that id (syncToggleAll; review p2-s7b).
-  const taken = { nav: NAV, tools: TOOLS.concat([BASES_TOOL, { id: 'toggle-all' }]), top: [{ id: 'settings' }] }[kind] || [];
+  /** @type {SidebarExtra[]} */
+  const taken = /** @type {Record<string, SidebarExtra[]>} */ ({ nav: NAV, tools: TOOLS.concat([BASES_TOOL, /** @type {typeof BASES_TOOL} */ ({ id: 'toggle-all' })]), top: [{ id: 'settings' }] })[kind] || [];
   const key = kind === 'items' ? 'item' : 'id';
-  const noun = { nav: 'item', tools: 'button', top: 'tab row button', foot: 'footer', items: 'item command for' }[kind];
+  const noun = /** @type {Record<string, string>} */ ({ nav: 'item', tools: 'button', top: 'tab row button', foot: 'footer', items: 'item command for' })[kind];
   if (taken.concat(EXTRA[kind]).some((x) => x[key] === def[key])) throw new Error(`LifeWorld: there is already a Sidebar ${noun} "${def[key]}"`);
   EXTRA[kind].push(def);
   return () => { const i = EXTRA[kind].indexOf(def); if (i !== -1) EXTRA[kind].splice(i, 1); };
@@ -505,6 +567,7 @@ function addExtra(kind, def) {
 // The toolbar, in order: the built-in buttons, an add-on button with `before` in front of that built-in
 // button, the other add-on buttons after them.
 function toolbarItems() {
+  /** @type {SidebarExtra[]} */
   const out = TOOLS.concat([BASES_TOOL]);
   for (const x of EXTRA.tools) {
     const i = out.findIndex((t) => t.id === x.before); // add-on ids never repeat a built-in one (addExtra)
@@ -517,26 +580,30 @@ function formTargets() {
   try { return plusTargetsByPath(ADDON.form ? ADDON.form.targets() : []); } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); return {}; }
 }
 // An add-on's click: an error (thrown or a rejected promise) is logged, never breaks the Sidebar.
+/** @param {SidebarExtra} x */
 function runExtra(x) {
-  return Promise.resolve().then(() => x.onClick()).catch((e) => console.error(`LifeWorld: add-on button ${x.id} failed`, e));
+  return Promise.resolve().then(() => /** @type {() => unknown} */ (x.onClick)()).catch((e) => console.error(`LifeWorld: add-on button ${x.id} failed`, e));
 }
 // One add-on button: Obsidian's icon names (setIcon), as the toolbar's own buttons use. then: runs after
 // the click (the Sidebar tab closes the phone drawer, as its own buttons do; review of the add-on job).
+/** @param {HTMLElement} parent @param {string} cls @param {SidebarExtra} x @param {() => void} then */
 function extraButton(parent, cls, x, then) {
-  const b = parent.createDiv({ cls, attr: { 'aria-label': x.label, 'data-tool': x.id } });
-  setIcon(b, x.icon);
+  const b = parent.createDiv({ cls, attr: { 'aria-label': /** @type {string} */ (x.label), 'data-tool': /** @type {string} */ (x.id) } });
+  setIcon(b, /** @type {string} */ (x.icon));
   b.addEventListener('click', () => runExtra(x).then(then));
   return b;
 }
 // The faint folder name: the folder the base sits in, or the one above when
 // the base is named after its own folder (People.base in Contacts/People
 // reads "Contacts"); a room's number is dropped ("04 Library" reads "Library").
+/** @param {string} path @param {string} name */
 function baseWhere(path, name) {
   const parts = path.split('/').slice(0, -1);
   let i = parts.length - 1;
   if (i > 0 && collator.compare(parts[i], name) === 0) i--;
   return i < 0 ? '' : parts[i].replace(/^\d\d /, '');
 }
+/** @param {string[]} paths */
 function listBases(paths) {
   return paths
     .filter((p) => /\.base$/i.test(p) && !SBC.basesSkip.some((s) => p.startsWith(s)))
@@ -548,9 +615,12 @@ const LEGACY_CHROME = ['icor', 'for', 'life', 'connect'].join('-');
 
 // Expand/collapse all, mirroring the Files button: it reads "Expand all" while
 // anything is folded, "Collapse all" once everything is open.
+/** @typedef {{ sections: Record<string, boolean>, groups: Record<string, boolean>, open: Record<string, unknown>, [k: string]: unknown }} SbState */
+/** @param {SbState} state @param {string[]} groupIds @param {string[]} sectionIds @param {string | null} activeGroup */
 function isAllOpen(state, groupIds, sectionIds, activeGroup) {
   return sectionIds.every((id) => state.sections[id] !== false) && groupIds.every((id) => isGroupOpen(id, state.groups, activeGroup));
 }
+/** @param {SbState} state @param {string[]} groupIds @param {string[]} sectionIds @param {string | null} activeGroup @returns {SbState} */
 function toggleAll(state, groupIds, sectionIds, activeGroup) {
   const open = !isAllOpen(state, groupIds, sectionIds, activeGroup);
   const sections = { ...state.sections }; const groups = { ...state.groups };
@@ -565,6 +635,7 @@ const FILE_CAP = 400; // Lifeworld caps a folder's file list at 400 rows
  * DOM helpers
  * ------------------------------------------------------------------ */
 const SVGNS = 'http://www.w3.org/2000/svg';
+/** @param {string} name @param {number} [size] @param {string} [cls] */
 function icon(name, size, cls) {
   const s = document.createElementNS(SVGNS, 'svg');
   s.setAttribute('class', 'a4sb-icon' + (cls ? ' ' + cls : ''));
@@ -576,6 +647,7 @@ function icon(name, size, cls) {
 }
 
 class RenameModal extends Modal {
+  /** @param {import('obsidian').App} app @param {TFile} file */
   constructor(app, file) { super(app); this.file = file; }
   onOpen() {
     const { contentEl } = this;
@@ -590,10 +662,10 @@ class RenameModal extends Modal {
       const plan = planRename(this.file.path, input.value, (p) => !!this.app.vault.getAbstractFileByPath(p));
       if (!plan.ok) {
         if (plan.reason === 'unchanged') { this.close(); return; }
-        err.setText({ empty: 'Type a name.', 'bad-character': 'Names cannot contain / \\ or :', 'name-taken': 'A note with that name is already there.' }[plan.reason] || 'Cannot rename.');
+        err.setText(/** @type {Record<string, string>} */ ({ empty: 'Type a name.', 'bad-character': 'Names cannot contain / \\ or :', 'name-taken': 'A note with that name is already there.' })[/** @type {string} */ (plan.reason)] || 'Cannot rename.');
         return;
       }
-      await this.app.fileManager.renameFile(this.file, normalizePath(plan.newPath));
+      await this.app.fileManager.renameFile(this.file, normalizePath(/** @type {string} */ (plan.newPath)));
       this.close();
     };
     go.addEventListener('click', submit);
@@ -606,8 +678,24 @@ class RenameModal extends Modal {
 /* ------------------------------------------------------------------ *
  * The view
  * ------------------------------------------------------------------ */
+/** @typedef {{ cls?: string, label?: string, icon?: string, depth?: number, count?: number | null, landing?: { kind: string, id?: string, path?: string }, attrs?: Record<string, string>, style?: string | null, openKey?: string, noDrop?: boolean, plusPreset?: Record<string, unknown> | null, noPlus?: boolean, fillWith?: (el: HTMLElement, depth: number) => void }} FolderRowOpts */
 class SidebarView extends ItemView {
-  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.dragging = null; this.classify = (p) => this.classifyPath(p); }
+  // Set while drawing (no value before the first render).
+  /** @type {{ id: string, label: string, items: string[] }[] | undefined} */ groups;
+  /** @type {Set<string> | undefined} */ hideInRooms;
+  /** @type {Record<string, number>} */ counts;
+  /** @type {Record<string, PlusTarget>} */ plus;
+  /** @type {string | undefined} */ shownTitle;
+  /** @type {{ path: string, leaf: import('obsidian').WorkspaceLeaf | null, file: string | null } | null | undefined} */ clicked;
+
+  /** @param {import('obsidian').WorkspaceLeaf} leaf @param {SidebarPlugin} plugin */
+  constructor(leaf, plugin) {
+    super(leaf); this.plugin = plugin;
+    /** @type {import('obsidian').TAbstractFile | null} */
+    this.dragging = null;
+    /** @param {string} p */
+    this.classify = (p) => this.classifyPath(p);
+  }
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { return SBC.brand; }
   // A changed Sidebar name reaches the tab title too (review p2-s6); Obsidian reads it only when the tab opens.
@@ -617,8 +705,9 @@ class SidebarView extends ItemView {
     if (this.shownTitle !== undefined && this.shownTitle !== SBC.brand) {
       // An Obsidian update that makes these throw must not blank the Sidebar (review p2-s7).
       try {
-        if (this.titleEl) this.titleEl.setText(SBC.brand);
-        if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader();
+        const titleEl = /** @type {{ titleEl?: HTMLElement }} */ (/** @type {unknown} */ (this)).titleEl; const leaf = /** @type {{ updateHeader?: () => void }} */ (this.leaf);
+        if (titleEl) titleEl.setText(SBC.brand);
+        if (leaf && typeof leaf.updateHeader === 'function') leaf.updateHeader();
       } catch (e) { console.error('LifeWorld: the Sidebar tab title did not update', e); }
     }
     this.shownTitle = SBC.brand;
@@ -639,23 +728,27 @@ class SidebarView extends ItemView {
   }
 
   // 'work' / 'personal' for a project note directly in My Life/Projects, else null.
+  /** @param {string} path @returns {string | null} */
   classifyPath(path) {
     const dir = `${SBC.life}/Projects/`;
     if (!SBC.life || !path || !path.startsWith(dir) || path.slice(dir.length).includes('/')) return null;
     const f = this.app.vault.getAbstractFileByPath(path);
-    const fm = f && (this.app.metadataCache.getFileCache(f) || {}).frontmatter;
+    const fm = /** @type {Fm | null | undefined} */ (f && (this.app.metadataCache.getFileCache(/** @type {TFile} */ (f)) || {}).frontmatter);
     if (!fm || fm.type !== 'project') return null;
     return sphereOf(fm);
   }
 
+  /** @param {string} id */
   hasCommand(id) { const c = this.app.commands; return !!(c && c.commands && c.commands[id]); }
+  /** @param {string} id */
   run(id) {
     if (id !== 'switcher:open') this.clicked = null;
-    if (this.hasCommand(id)) { this.app.commands.executeCommandById(id); this.markActive(); if (id !== 'switcher:open') this.closeDrawer(); return true; }
+    if (this.hasCommand(id)) { /** @type {NonNullable<import('obsidian').App['commands']>} */ (this.app.commands).executeCommandById(id); this.markActive(); if (id !== 'switcher:open') this.closeDrawer(); return true; }
     new Notice('That part is not turned on.');
     return false;
   }
 
+  /** @param {string} path */
   folder(path) { const f = this.app.vault.getAbstractFileByPath(path); return f instanceof TFolder ? f : null; }
 
   render() {
@@ -687,9 +780,9 @@ class SidebarView extends ItemView {
     const bar = header.createDiv({ cls: 'nav-buttons-container a4sb-tools' });
     for (const t of toolbarItems()) {
       if (EXTRA.tools.includes(t)) { extraButton(bar, 'clickable-icon nav-action-button', t, () => this.closeDrawer()); continue; }
-      const b = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': t.label, 'data-tool': t.id } });
-      setIcon(b, t.icon);
-      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.run(t.command));
+      const b = bar.createDiv({ cls: 'clickable-icon nav-action-button', attr: { 'aria-label': /** @type {string} */ (t.label), 'data-tool': /** @type {string} */ (t.id) } });
+      setIcon(b, /** @type {string} */ (t.icon));
+      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.run(/** @type {string} */ (t.command)));
     }
     const sectionIds = ['mylife', 'rooms'].filter((id) => id !== 'mylife' || groups.length);
     const allOpen = isAllOpen(st, groups.map((g) => g.id), sectionIds, activeGroup);
@@ -731,8 +824,8 @@ class SidebarView extends ItemView {
       });
     }
     for (const x of EXTRA.nav) {
-      const b = nav.createDiv({ cls: 'a4sb-nav-item', attr: { role: 'button', tabindex: '0', 'data-nav': x.id } });
-      setIcon(b.createSpan({ cls: 'a4sb-icon' }), x.icon);
+      const b = nav.createDiv({ cls: 'a4sb-nav-item', attr: { role: 'button', tabindex: '0', 'data-nav': /** @type {string} */ (x.id) } });
+      setIcon(b.createSpan({ cls: 'a4sb-icon' }), /** @type {string} */ (x.icon));
       b.createSpan({ text: x.label });
       b.addEventListener('click', () => runExtra(x).then(() => this.closeDrawer()));
     }
@@ -763,7 +856,7 @@ class SidebarView extends ItemView {
     for (const r of rooms) {
       const f = this.folder(r.path);
       const box = rs.createDiv();
-      this.folderRow(box, f, {
+      this.folderRow(box, /** @type {TFolder} */ (f), {
         cls: 'a4sb-room', label: r.name, icon: r.icon, depth: 0, count: this.counts[r.path],
         style: r.c == null ? null : `--a4sb-room: var(--a4sb-room-${r.c})`, attrs: { 'data-room': r.name },
       });
@@ -773,11 +866,12 @@ class SidebarView extends ItemView {
     foot.createSpan({ cls: 'a4sb-hand', text: this.app.vault.getName() }); // the vault's name, as drawn
     foot.createSpan({ cls: 'a4sb-small', text: `${filePaths.filter((p) => p.endsWith('.md')).length.toLocaleString()} notes` });
 
-    root.querySelectorAll('[role="button"]').forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }));
+    /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('[role="button"]')).forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }));
     scroll.scrollTop = keep;
     this.markActive();
   }
 
+  /** @param {HTMLElement} parent @param {string} id @param {string} label */
   section(parent, id, label) {
     const st = this.plugin.state;
     const open = st.sections[id] !== false;
@@ -797,9 +891,9 @@ class SidebarView extends ItemView {
   }
 
   syncToggleAll() {
-    const ex = this.contentEl.querySelector('[data-tool="toggle-all"]');
+    const ex = /** @type {HTMLElement | null} */ (this.contentEl.querySelector('[data-tool="toggle-all"]'));
     if (!ex) return;
-    const groups = this.groups || [];
+    const groups = /** @type {{ id: string, label: string, items: string[] }[]} */ (this.groups || []);
     const sectionIds = ['mylife', 'rooms'].filter((id) => id !== 'mylife' || groups.length);
     const open = isAllOpen(this.plugin.state, groups.map((g) => g.id), sectionIds, activeGroupFor(this.activePath(), groups, this.classify));
     ex.setAttr('aria-label', open ? 'Collapse all' : 'Expand all');
@@ -807,23 +901,26 @@ class SidebarView extends ItemView {
   }
 
   // Areas of one kind (LifeWorld 0.1.5, areas mockup screen 6), A to Z: listed first, never counted.
+  /** @param {string} kind @returns {TFile[]} */
   areasOf(kind) {
     const f = SBC.life ? this.folder(`${SBC.life}/Projects`) : null;
     if (!f) return [];
-    return f.children.filter((c) => c instanceof TFile && c.extension === 'md')
-      .filter((c) => { const fm = (this.app.metadataCache.getFileCache(c) || {}).frontmatter; return fm && fm.type === 'area' && sphereOf(fm) === kind; })
+    return /** @type {TFile[]} */ (f.children.filter((c) => c instanceof TFile && c.extension === 'md'))
+      .filter((c) => { const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter); return fm && fm.type === 'area' && sphereOf(fm) === kind; })
       .sort((a, b) => collator.compare(a.basename, b.basename));
   }
 
   // Projects folder notes of one kind ('work' / 'personal'), active first.
+  /** @param {string} kind */
   projectsOf(kind) {
     const f = SBC.life ? this.folder(`${SBC.life}/Projects`) : null;
     if (!f) return [];
+    /** @type {{ file: TFile, name: string, status: string, open: boolean }[]} */
     const list = [];
     const isOpen = openRuleFrom(partOf(this.app, 'a4-projects'));
     for (const c of f.children) {
       if (!(c instanceof TFile) || c.extension !== 'md') continue;
-      const fm = (this.app.metadataCache.getFileCache(c) || {}).frontmatter;
+      const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter);
       if (!fm || fm.type !== 'project') continue;
       if (sphereOf(fm) !== kind) continue;
       list.push({ file: c, name: c.basename, status: String(fm.status || ''), open: isOpen(fm) });
@@ -831,6 +928,7 @@ class SidebarView extends ItemView {
     return sortProjects(list);
   }
 
+  /** @param {HTMLElement} parent @param {string} name @param {string[]} filePaths */
   lifeItem(parent, name, filePaths) {
     if (VIRTUAL[name]) {
       const v = VIRTUAL[name];
@@ -852,7 +950,7 @@ class SidebarView extends ItemView {
         fillWith: (el, depth) => {
           // Areas first, with the stack icon and no status tag; then the projects as before. Either
           // opens its page in Projects (an area's page is drawn there too).
-          for (const m of [...areas.map((file) => ({ file, area: true })), ...members]) {
+          for (const m of /** @type {{ file: TFile, area?: boolean, status?: string }[]} */ ([...areas.map((file) => ({ file, area: true })), ...members])) {
             this.fileRow(el, m.file, depth, !m.area && m.status !== 'active' ? m.status : null, m.area ? 'layers' : null);
             const row = el.lastElementChild;
             if (!pj || !row || typeof pj.openProject !== 'function') continue;
@@ -880,6 +978,7 @@ class SidebarView extends ItemView {
   }
 
   // One folder row + its lazily rendered children.
+  /** @param {HTMLElement} parent @param {TFolder} folder @param {FolderRowOpts} o */
   folderRow(parent, folder, o) {
     const st = this.plugin.state;
     const key = o.openKey || folder.path;
@@ -896,7 +995,7 @@ class SidebarView extends ItemView {
     if (t && !o.noPlus) { // this.plus is empty without a form
       const b = row.createSpan({ cls: 'a4sb-act', attr: { 'data-plus': t.key, title: t.label } });
       b.appendChild(icon('plus', 13));
-      b.addEventListener('click', (e) => { e.stopPropagation(); this.plugin.openForm(t.key, o.plusPreset || undefined); });
+      b.addEventListener('click', (e) => { e.stopPropagation(); this.plugin.openForm(/** @type {string} */ (t.key), o.plusPreset || undefined); });
     }
     const kids = parent.createDiv({ cls: 'a4sb-kids' + (open ? '' : ' is-hidden') });
     let filled = false;
@@ -914,8 +1013,8 @@ class SidebarView extends ItemView {
     row.addEventListener('click', (e) => {
       const l = o.landing;
       if (!l || l.kind === 'toggle') return toggle();
-      if (l.kind === 'command') return this.run(l.id);
-      const file = this.app.vault.getAbstractFileByPath(l.path);
+      if (l.kind === 'command') return this.run(/** @type {string} */ (l.id));
+      const file = this.app.vault.getAbstractFileByPath(/** @type {string} */ (l.path));
       if (file instanceof TFile) this.openFile(file, e); else toggle();
     });
     if (o.cls === 'a4sb-room') row.addEventListener('click', () => this.lightRoom(folder.path), true);
@@ -924,12 +1023,13 @@ class SidebarView extends ItemView {
     return row;
   }
 
+  /** @param {HTMLElement} el @param {TFolder} folder @param {number} depth */
   renderChildren(el, folder, depth) {
     const items = sortChildren(folder.path, folder.children.map((c) => ({ c, name: c.name, isFolder: c instanceof TFolder })), this.plugin.state.sort);
     let files = 0;
     for (const it of items) {
       if (it.isFolder && this.hideInRooms && this.hideInRooms.has(it.c.path)) continue;
-      if (it.isFolder) { const box = el.createDiv(); this.folderRow(box, it.c, { cls: 'a4sb-sub', depth }); continue; }
+      if (it.isFolder) { const box = el.createDiv(); this.folderRow(box, /** @type {TFolder} */ (it.c), { cls: 'a4sb-sub', depth }); continue; }
       files += 1;
       if (files > FILE_CAP) {
         const more = el.createDiv({ cls: 'a4sb-row a4sb-more', text: `${items.filter((x) => !x.isFolder).length - FILE_CAP} more: show in Files` });
@@ -937,10 +1037,11 @@ class SidebarView extends ItemView {
         more.addEventListener('click', () => this.revealInFiles(folder));
         break;
       }
-      this.fileRow(el, it.c, depth);
+      this.fileRow(el, /** @type {TFile} */ (it.c), depth);
     }
   }
 
+  /** @param {HTMLElement} parent @param {TFile} file @param {number} depth @param {string | null} [tag] @param {string | null} [ic] */
   fileRow(parent, file, depth, tag, ic) {
     const row = parent.createDiv({ cls: 'a4sb-row a4sb-file', attr: { 'data-path': file.path, draggable: IS_MOBILE ? 'false' : 'true' } });
     row.style.paddingLeft = `${26 + depth * 14}px`;
@@ -969,6 +1070,7 @@ class SidebarView extends ItemView {
     return null;
   }
 
+  /** @param {HTMLElement} row @param {TFolder} folder */
   dropTarget(row, folder) {
     const plan = () => {
       const f = this.draggedFile();
@@ -977,6 +1079,7 @@ class SidebarView extends ItemView {
     };
     // Files dragged in from outside Obsidian (Finder, the Desktop): accepted
     // like Obsidian's own Files list does, copied into this folder.
+    /** @param {DragEvent} e */
     const external = (e) => !this.draggedFile() && hasExternalFiles(e.dataTransfer);
     row.addEventListener('dragover', (e) => {
       if (external(e)) {
@@ -1008,7 +1111,7 @@ class SidebarView extends ItemView {
         return;
       }
       this.dragging = null;
-      await this.app.fileManager.renameFile(x.f, normalizePath(x.p.newPath));
+      await this.app.fileManager.renameFile(x.f, normalizePath(/** @type {string} */ (x.p.newPath)));
     });
   }
 
@@ -1016,12 +1119,14 @@ class SidebarView extends ItemView {
   // routine (the one its Files list calls), which numbers a clashing name
   // ("photo 1.png") and never overwrites. Dropped folders are skipped:
   // folders are made elsewhere, on purpose.
+  /** @param {DataTransfer | null} dt @param {TFolder} folder */
   async importExternal(dt, folder) {
     const { files, folders } = collectDropped(dt);
     const where = showName(folder.name);
     if (folders) new Notice(folders === 1 ? 'Folders are not added here. Ask the team to make the folder.' : `${folders} folders were not added. Ask the team to make folders.`);
     if (!files.length) return [];
     const entries = files.map((f) => { const n = splitName(f.name); return { name: n.name, extension: n.ext, filepath: '', data: f.arrayBuffer() }; });
+    /** @type {(TFile | null)[]} */
     let made = [];
     try {
       if (typeof this.app.importAttachments === 'function') made = await this.app.importAttachments(entries, folder);
@@ -1033,14 +1138,15 @@ class SidebarView extends ItemView {
       }
     } catch (err) {
       console.error('a4-sidebar: import failed', err);
-      new Notice(`Could not add the file to ${where}: ${err && err.message ? err.message : err}`);
+      new Notice(`Could not add the file to ${where}: ${String(errField(err, 'message') || err)}`);
       return made;
     }
     made = (made || []).filter(Boolean);
-    if (made.length) new Notice(made.length === 1 ? `Added ${made[0].name} to ${where}.` : `Added ${made.length} files to ${where}.`);
+    if (made.length) new Notice(made.length === 1 ? `Added ${/** @type {TFile} */ (made[0]).name} to ${where}.` : `Added ${made.length} files to ${where}.`);
     return made;
   }
 
+  /** @param {TFile} file @param {MouseEvent | KeyboardEvent | null} [e] */
   openFile(file, e) {
     this.clicked = null;
     const mode = e && !IS_MOBILE ? Keymap.isModEvent(e) : false;
@@ -1059,9 +1165,12 @@ class SidebarView extends ItemView {
   // contextmenu on long-press, so the touch is timed; Android (and Obsidian's
   // phone emulation) does fire one, so whichever comes first wins and the
   // other is swallowed: one press, one menu.
+  /** @param {HTMLElement} row @param {import('obsidian').TAbstractFile} f @param {{ noSort?: boolean } | null} [opts] */
   menuOn(row, f, opts) {
     if (!IS_MOBILE) { row.addEventListener('contextmenu', (e) => this.menuFor(f, e, opts)); return; }
-    let t = null, sx = 0, sy = 0, fired = false;
+    /** @type {number | null} */
+    let t = null;
+    let sx = 0, sy = 0, fired = false;
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (t) { window.clearTimeout(t); t = null; }
@@ -1086,18 +1195,21 @@ class SidebarView extends ItemView {
     row.addEventListener('click', (e) => { if (fired) { fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   }
 
+  /** @param {import('obsidian').TAbstractFile} f */
   revealInFiles(f) {
     const fe = this.app.internalPlugins && this.app.internalPlugins.getPluginById && this.app.internalPlugins.getPluginById('file-explorer');
     if (fe && fe.instance && fe.instance.revealInFolder) fe.instance.revealInFolder(f);
     else new Notice('Open the files tab to find it.');
   }
 
+  /** @param {import('obsidian').TAbstractFile} f @param {MouseEvent} e @param {{ noSort?: boolean } | null} [opts] */
   menuFor(f, e, opts) {
     e.preventDefault();
     this.showMenu(f, e, opts);
   }
 
   // e: a mouse event (computer) or { x, y } (phone long-press)
+  /** @param {import('obsidian').TAbstractFile} f @param {MouseEvent | { x: number, y: number }} e @param {{ noSort?: boolean } | null} [opts] */
   showMenu(f, e, opts) {
     const menu = new Menu();
     if (f instanceof TFolder && !(opts && opts.noSort)) this.addSortItems(menu, f);
@@ -1116,9 +1228,12 @@ class SidebarView extends ItemView {
   // Obsidian offers one, else the same items inline. The tick marks this
   // folder's own setting; "Use main setting" = no own setting (it then follows
   // a listed parent folder, or the main setting).
+  /** @param {Menu} menu @param {TFolder} folder */
   addSortItems(menu, folder) {
     const own = this.plugin.state.sort.perFolder[folder.path] || null;
-    const choices = [[null, 'Use main setting']].concat(SORT_MODES.map((m) => [m, SORT_LABEL[m]]));
+    /** @type {[string | null, string][]} */
+    const choices = /** @type {[string | null, string][]} */ ([[null, 'Use main setting']]).concat(SORT_MODES.map((m) => /** @type {[string, string]} */ ([m, SORT_LABEL[m]])));
+    /** @param {Menu} target @param {string} prefix */
     const fill = (target, prefix) => {
       for (const [mode, label] of choices) {
         target.addItem((i) => {
@@ -1127,6 +1242,7 @@ class SidebarView extends ItemView {
         });
       }
     };
+    /** @type {Menu | null} */
     let sub = null;
     menu.addItem((i) => {
       i.setTitle('Sort this folder').setIcon('arrow-up-down').setSection('sort');
@@ -1141,6 +1257,7 @@ class SidebarView extends ItemView {
   // "Opens" = the front tab or its note changes, or the user clicks something
   // that opens a page (run/openFile clear it directly, which covers clicking
   // Today while Today is already in front: no workspace event fires then).
+  /** @param {string} path */
   lightRoom(path) {
     const leaf = this.app.workspace.getMostRecentLeaf ? this.app.workspace.getMostRecentLeaf() : null;
     this.clicked = { path, leaf, file: this.activePath() };
@@ -1155,22 +1272,23 @@ class SidebarView extends ItemView {
     if (this.clicked && (this.clicked.leaf !== leaf || this.clicked.file !== this.activePath())) this.clicked = null;
     if (this.clicked) {
       root.querySelectorAll('.a4sb-nav-item.is-on, .a4sb-row.is-on').forEach((r) => r.removeClass('is-on'));
-      root.querySelectorAll('.a4sb-room').forEach((r) => { if (r.dataset.path === this.clicked.path) r.addClass('is-on'); });
+      const clickedPath = this.clicked.path;
+      /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('.a4sb-room')).forEach((r) => { if (r.dataset.path === clickedPath) r.addClass('is-on'); });
       return;
     }
     const vt = leaf && leaf.view ? leaf.view.getViewType() : '';
-    root.querySelectorAll('.a4sb-nav-item').forEach((b) => b.toggleClass('is-on', b.dataset.view === vt));
-    const p = vt === 'markdown' || (leaf && leaf.view && leaf.view.file) ? this.activePath() : null;
+    /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('.a4sb-nav-item')).forEach((b) => b.toggleClass('is-on', b.dataset.view === vt));
+    const p = vt === 'markdown' || (leaf && leaf.view && /** @type {{ file?: TFile | null }} */ (leaf.view).file) ? this.activePath() : null;
     root.querySelectorAll('.a4sb-row.is-on').forEach((r) => r.removeClass('is-on'));
     if (!p) return;
-    root.querySelectorAll('.a4sb-file').forEach((r) => { if (r.dataset.path === p) r.addClass('is-on'); });
-    root.querySelectorAll('.a4sb-life').forEach((r) => {
-      if (!p.startsWith(r.dataset.path + '/')) return;
+    /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('.a4sb-file')).forEach((r) => { if (r.dataset.path === p) r.addClass('is-on'); });
+    /** @type {NodeListOf<HTMLElement>} */ (root.querySelectorAll('.a4sb-life')).forEach((r) => {
+      if (!p.startsWith(String(r.dataset.path) + '/')) return;
       if (r.dataset.virtual && this.classify(p) !== r.dataset.virtual) return;
       r.addClass('is-on');
     });
-    const rooms = [...root.querySelectorAll('.a4sb-room')];
-    const room = activeRoomFor(p, rooms.map((r) => r.dataset.path), this.hideInRooms);
+    const rooms = /** @type {HTMLElement[]} */ ([...root.querySelectorAll('.a4sb-room')]);
+    const room = activeRoomFor(p, rooms.map((r) => /** @type {string} */ (r.dataset.path)), this.hideInRooms);
     rooms.forEach((r) => { if (r.dataset.path === room) r.addClass('is-on'); });
   }
 }
@@ -1184,7 +1302,15 @@ class SidebarView extends ItemView {
  * removed again when the plugin is turned off.
  * ------------------------------------------------------------------ */
 class FilesChrome {
-  constructor(plugin) { this.plugin = plugin; this.app = plugin.app; this.stamp = String(Date.now()); this.observer = null; this.frame = 0; }
+  /** @type {number | undefined} how many times refresh() ran */ round;
+
+  /** @param {SidebarPlugin} plugin */
+  constructor(plugin) {
+    this.plugin = plugin; this.app = plugin.app; this.stamp = String(Date.now());
+    /** @type {MutationObserver | null} */
+    this.observer = null;
+    this.frame = 0;
+  }
 
   start() {
     this.attach();
@@ -1193,7 +1319,7 @@ class FilesChrome {
     p.registerEvent(this.app.workspace.on('active-leaf-change', () => this.schedule()));
     // A deferred Files tab builds its DOM the first time it is shown, with no
     // workspace event; watch the two sidebars for that and re-attach.
-    const roots = [this.app.workspace.leftSplit, this.app.workspace.rightSplit].map((x) => x && x.containerEl).filter(Boolean);
+    const roots = /** @type {HTMLElement[]} */ ([this.app.workspace.leftSplit, this.app.workspace.rightSplit].map((x) => x && /** @type {{ containerEl?: HTMLElement }} */ (/** @type {unknown} */ (x)).containerEl).filter(Boolean));
     if (roots.length && typeof MutationObserver !== 'undefined') {
       this.observer = new MutationObserver(() => this.schedule());
       for (const r of roots) this.observer.observe(r, { childList: true, subtree: true });
@@ -1212,20 +1338,22 @@ class FilesChrome {
 
   attach() {
     if (this.connectOn()) { this.clear(); return; }
-    for (const ex of document.querySelectorAll('.workspace-leaf-content[data-type="file-explorer"]')) {
+    for (const ex of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.workspace-leaf-content[data-type="file-explorer"]'))) {
       this.attachTools(ex);
       this.attachFoot(ex);
     }
     this.attachTopButtons();
   }
 
-  fresh(el) { return el && el.dataset.a4sb === this.stamp; }
+  /** @param {Element | null} el */
+  fresh(el) { return el && /** @type {HTMLElement} */ (el).dataset.a4sb === this.stamp; }
 
   // Add-on buttons changed: a new stamp makes every piece draw again on the next attach.
-  refresh() { this.stamp = `${Date.now()}-${(this.round = (this.round || 0) + 1)}`; if (this.observer) this.schedule(); }
+  refresh() { this.round = (this.round || 0) + 1; this.stamp = `${Date.now()}-${this.round}`; if (this.observer) this.schedule(); }
 
+  /** @param {HTMLElement} ex */
   attachTools(ex) {
-    const bar = ex.querySelector('.nav-header .nav-buttons-container');
+    const bar = /** @type {HTMLElement | null} */ (ex.querySelector('.nav-header .nav-buttons-container'));
     if (!bar) return;
     const have = bar.querySelector('.a4sb-files-tool');
     if (have && this.fresh(have)) return;
@@ -1234,32 +1362,34 @@ class FilesChrome {
     const at = bar.firstChild;
     for (const t of toolbarItems()) {
       if (EXTRA.tools.includes(t)) { const x = extraButton(createDiv(), 'clickable-icon nav-action-button a4sb-files-tool', t); x.dataset.a4sb = this.stamp; bar.insertBefore(x, at); continue; }
-      const b = createDiv({ cls: 'clickable-icon nav-action-button a4sb-files-tool', attr: { 'aria-label': t.label, 'data-tool': t.id } });
+      const b = createDiv({ cls: 'clickable-icon nav-action-button a4sb-files-tool', attr: { 'aria-label': /** @type {string} */ (t.label), 'data-tool': /** @type {string} */ (t.id) } });
       b.dataset.a4sb = this.stamp;
-      setIcon(b, t.icon);
-      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.plugin.runTool(t.command));
+      setIcon(b, /** @type {string} */ (t.icon));
+      b.addEventListener('click', t === BASES_TOOL ? () => this.plugin.showBases(b) : () => this.plugin.runTool(/** @type {string} */ (t.command)));
       bar.insertBefore(b, at);
     }
   }
 
   // An add-on's footers at the foot of the Files tab, in the order added; a failing draw is logged.
+  /** @param {HTMLElement} ex */
   attachFoot(ex) {
     const have = ex.querySelectorAll(':scope > .a4sb-files-foot');
     if (have.length === EXTRA.foot.length && [...have].every((f) => this.fresh(f))) return;
     have.forEach((f) => f.remove());
     for (const x of EXTRA.foot) {
-      const foot = ex.createDiv({ cls: 'a4sb-files-foot', attr: { 'data-foot': x.id } });
+      const foot = ex.createDiv({ cls: 'a4sb-files-foot', attr: { 'data-foot': /** @type {string} */ (x.id) } });
       foot.dataset.a4sb = this.stamp;
-      try { x.draw(foot); } catch (e) { console.error(`LifeWorld: add-on footer ${x.id} failed`, e); }
+      try { /** @type {(el: HTMLElement) => unknown} */ (x.draw)(foot); } catch (e) { console.error(`LifeWorld: add-on footer ${x.id} failed`, e); }
     }
   }
 
   attachTopButtons() {
-    const row = document.querySelector('.workspace-split.mod-right-split .workspace-tab-header-container');
+    const row = /** @type {HTMLElement | null} */ (document.querySelector('.workspace-split.mod-right-split .workspace-tab-header-container'));
     if (!row) return;
     const have = row.querySelector('.a4sb-top-btn');
     if (have && this.fresh(have)) return;
     row.querySelectorAll('.a4sb-top-btn').forEach((b) => b.remove());
+    /** @param {string} cls @param {string} ic @param {string} label @param {() => void} fn */
     const add = (cls, ic, label, fn) => {
       const b = row.createDiv({ cls: `clickable-icon a4sb-top-btn ${cls}`, attr: { 'aria-label': label } });
       b.dataset.a4sb = this.stamp;
@@ -1278,21 +1408,28 @@ class FilesChrome {
 
   clear() {
     document.querySelectorAll('.a4sb-files-tool, .a4sb-files-foot, .a4sb-top-btn').forEach((e) => e.remove());
-    document.querySelectorAll('.a4sb-files-tools').forEach((e) => e.removeClass('a4sb-files-tools'));
+    /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.a4sb-files-tools')).forEach((e) => e.removeClass('a4sb-files-tools'));
   }
 }
 /* ------------------------------------------------------------------ */
+/** @typedef {{ groups: Record<string, boolean>, sections: Record<string, boolean>, open: Record<string, boolean>, placed: boolean, placedMobile: boolean, sort: SortSettings, [k: string]: unknown }} SidebarState */
 class SidebarPlugin extends Plugin {
+  /** @type {SidebarSettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
+
   async onload() {
     // A half-synced or damaged data.json must never stop the plugin loading
     // (Obsidian turns a plugin back off when onload throws). Fall back to
     // defaults; the next fold or click writes a clean file.
+    /** @type {unknown} */
     let saved = {};
     try { saved = (await this.loadData()) || {}; } catch (e) { console.warn('a4-sidebar: settings unreadable, using defaults', e); saved = {}; }
     if (typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-    const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
-    this.state = { groups: obj(saved.groups), sections: obj(saved.sections), open: obj(saved.open), placed: !!saved.placed, placedMobile: !!saved.placedMobile, sort: normalizeSort(saved.sort) };
-    const sortIsNew = !saved.sort;
+    const sv = /** @type {Fm} */ (saved);
+    /** @param {unknown} v @returns {Record<string, boolean>} */
+    const obj = (v) => /** @type {Record<string, boolean>} */ (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    /** @type {SidebarState} */
+    this.state = { groups: obj(sv.groups), sections: obj(sv.sections), open: obj(sv.open), placed: !!sv.placed, placedMobile: !!sv.placedMobile, sort: normalizeSort(sv.sort) };
+    const sortIsNew = !sv.sort;
     this.registerView(VIEW_TYPE, (leaf) => new SidebarView(leaf, this));
     this.addSettingTab(new SidebarSettingTab(this.app, this));
     // A folder renamed or moved keeps its sort setting (and its subfolders').
@@ -1308,7 +1445,7 @@ class SidebarPlugin extends Plugin {
     // The toolbar commands (0.7.0): ours, so the buttons work with ICOR Connect off.
     for (const [id, c] of Object.entries(CORE_TOOLS)) {
       this.addCommand({ id, name: c.name, callback: () => {
-        if (!this.app.commands.executeCommandById(c.core)) new Notice(`Turn on the ${c.plugin} core plugin in Settings to use this.`);
+        if (!/** @type {NonNullable<import('obsidian').App['commands']>} */ (this.app.commands).executeCommandById(c.core)) new Notice(`Turn on the ${c.plugin} core plugin in Settings to use this.`);
       } });
     }
     this.chrome = new FilesChrome(this);
@@ -1337,7 +1474,7 @@ class SidebarPlugin extends Plugin {
       // Same tab group as Files when it exists, else a fresh left leaf.
       const files = ws.getLeavesOfType('file-explorer')[0];
       const parent = files && files.parent;
-      if (parent && ws.createLeafInParent) leaf = ws.createLeafInParent(parent, (parent.children || []).length);
+      if (parent && ws.createLeafInParent) leaf = ws.createLeafInParent(/** @type {import('obsidian').WorkspaceSplit} */ (parent), (parent.children || []).length);
       if (!leaf) leaf = ws.getLeftLeaf(false);
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
@@ -1348,17 +1485,18 @@ class SidebarPlugin extends Plugin {
   // the drawer's front tab, without sliding the drawer open on startup.
   async placeInDrawer() {
     const ws = this.app.workspace; const ls = ws.leftSplit;
+    /** @type {import('obsidian').WorkspaceLeaf | null} */
     let leaf = null;
-    if (ls && ws.createLeafInParent) { try { leaf = ws.createLeafInParent(ls, 0); } catch { leaf = null; } }
+    if (ls && ws.createLeafInParent) { try { leaf = ws.createLeafInParent(/** @type {import('obsidian').WorkspaceSplit} */ (ls), 0); } catch { leaf = null; } }
     if (!leaf) leaf = ws.getLeftLeaf(false);
     await leaf.setViewState({ type: VIEW_TYPE, active: false });
     if (ls && ls.selectTab) ls.selectTab(leaf);
   }
 
   scheduleRender() {
-    window.clearTimeout(this.renderTimer);
+    window.clearTimeout(/** @type {number | undefined} */ (this.renderTimer));
     this.renderTimer = window.setTimeout(() => {
-      for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (l.view && l.view.render) l.view.render();
+      for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {SidebarView} */ (l.view); if (v && v.render) v.render(); }
     }, 300);
   }
 
@@ -1368,31 +1506,36 @@ class SidebarPlugin extends Plugin {
   extrasChanged() { this.scheduleRender(); if (this.chrome) this.chrome.refresh(); }
 
   // Sort settings changed here (settings page, right-click menu).
+  /** @param {unknown} next */
   async updateSort(next) {
     this.state.sort = normalizeSort(next);
     await this.saveState();
     this.scheduleRender();
   }
+  /** @param {string} path @param {string | null} mode */
   setFolderSort(path, mode) { return this.updateSort(setFolderSort(this.state.sort, path, mode)); }
 
   // data.json changed underneath us (Obsidian Sync from the phone): take the
   // new sort settings; fold state stays per device as before.
   async onExternalSettingsChange() {
+    /** @type {unknown} */
     let d = null;
     try { d = await this.loadData(); } catch { return; }
     if (!d || typeof d !== 'object' || Array.isArray(d)) return;
-    this.state.sort = normalizeSort(d.sort);
+    this.state.sort = normalizeSort(/** @type {Fm} */ (d).sort);
     this.scheduleRender();
     for (const t of [this.settingTab]) if (t && t.containerEl && t.containerEl.isConnected) t.display();
   }
 
+  /** @param {string} id */
   runTool(id) {
-    if (this.app.commands.executeCommandById(id)) return true;
+    if (/** @type {NonNullable<import('obsidian').App['commands']>} */ (this.app.commands).executeCommandById(id)) return true;
     new Notice('That part is not turned on.');
     return false;
   }
 
   // A row's "+": the add-on's form; a failing form is logged, the Sidebar carries on.
+  /** @param {string} key @param {unknown} [preset] */
   openForm(key, preset) {
     try { if (ADDON.form) ADDON.form.open(key, preset); } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); }
   }
@@ -1400,6 +1543,7 @@ class SidebarPlugin extends Plugin {
   // The Bases drop-down. Always Obsidian's own drawn menu (not the Mac
   // system menu used elsewhere), so the folder names can sit faintly
   // on the right as mocked. Arrow keys and Enter come with Obsidian's menu.
+  /** @param {HTMLElement} btn */
   showBases(btn) {
     const bases = listBases(this.app.vault.getFiles().map((f) => f.path));
     if (!bases.length) { new Notice('There are no bases in the vault yet.'); return; }
@@ -1424,6 +1568,7 @@ class SidebarPlugin extends Plugin {
     menu.showAtPosition({ x: r.left, y: r.bottom + 4 }, btn.ownerDocument);
   }
 
+  /** @param {string} path @param {MouseEvent | KeyboardEvent | null} [e] */
   async openBase(path, e) {
     const f = this.app.vault.getAbstractFileByPath(path);
     if (!(f instanceof TFile)) { new Notice('That base is not in the vault any more.'); return; }
@@ -1431,21 +1576,26 @@ class SidebarPlugin extends Plugin {
     if (IS_MOBILE) { const ls = this.app.workspace.leftSplit; if (ls && ls.collapse && !ls.collapsed) ls.collapse(); }
   }
 
-  onunload() { window.clearTimeout(this.renderTimer); if (this.chrome) this.chrome.stop(); }
+  onunload() { window.clearTimeout(/** @type {number | undefined} */ (this.renderTimer)); if (this.chrome) this.chrome.stop(); }
 }
 
 /* ------------------------------------------------------------------ *
  * Settings page: Settings > LifeWorld > Sidebar > Sort order (approved mockups
  * 2026-10-07 and 2026-10-08; drawn with Obsidian's own controls).
  * ------------------------------------------------------------------ */
+/** @extends {FuzzySuggestModal<TFolder>} */
 class FolderPickModal extends FuzzySuggestModal {
+  /** @param {import('obsidian').App} app @param {(path: string) => unknown} onPick @param {Set<string>} [skip] */
   constructor(app, onPick, skip) { super(app); this.onPick = onPick; this.skip = skip || new Set(); this.setPlaceholder('Pick a folder'); }
-  getItems() { return this.app.vault.getAllLoadedFiles().filter((f) => f instanceof TFolder && f.path && f.path !== '/' && !this.skip.has(f.path) && !f.path.startsWith('.')).sort((a, b) => collator.compare(a.path, b.path)); }
+  getItems() { return /** @type {TFolder[]} */ (this.app.vault.getAllLoadedFiles().filter((f) => f instanceof TFolder && f.path && f.path !== '/' && !this.skip.has(f.path) && !f.path.startsWith('.'))).sort((a, b) => collator.compare(a.path, b.path)); }
+  /** @param {TFolder} f */
   getItemText(f) { return folderDisplay(f.path); }
+  /** @param {TFolder} f */
   onChooseItem(f) { this.onPick(f.path); }
 }
 
 class NewestFirstListModal extends Modal {
+  /** @param {import('obsidian').App} app @param {SidebarPlugin} plugin @param {() => void} [onDone] */
   constructor(app, plugin, onDone) { super(app); this.plugin = plugin; this.onDone = onDone; }
   onOpen() { this.titleEl.setText('Always newest first in'); this.draw(); }
   draw() {
@@ -1460,7 +1610,7 @@ class NewestFirstListModal extends Modal {
         this.draw();
       }));
     }
-    new Setting(contentEl).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
+    new Setting(contentEl).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (/** @type {string} */ path) => {
       await this.plugin.updateSort({ ...this.plugin.state.sort, newestFirstIn: this.plugin.state.sort.newestFirstIn.concat(path) });
       this.draw();
     }, new Set(this.plugin.state.sort.newestFirstIn)).open()));
@@ -1469,21 +1619,23 @@ class NewestFirstListModal extends Modal {
 }
 
 class SidebarSettingTab extends PluginSettingTab {
+  /** @param {import('obsidian').App} app @param {SidebarPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; plugin.settingTab = this; }
   display() {
     const el = this.containerEl;
     el.empty();
     el.addClass('a4sb-settings');
     const sort = () => this.plugin.state.sort;
+    /** @param {Partial<SortSettings>} patch */
     const save = async (patch) => { await this.plugin.updateSort({ ...sort(), ...patch }); };
     // No own heading: LifeWorld's page puts these under "Sidebar" (decided 2026-10-13).
     new Setting(el).setName('Dates').setDesc('Notes whose name starts with a date are sorted by the real date and time.')
-      .addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: v })));
+      .addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: /** @type {'first' | 'last'} */ (v) })));
     const nf = sort().newestFirstIn;
     new Setting(el).setName('Always newest first in').setDesc(nf.length ? nf.map(folderDisplay).join(', ') : 'No folders.')
       .addButton((b) => b.setButtonText('Edit').onClick(() => new NewestFirstListModal(this.app, this.plugin, () => this.display()).open()));
     new Setting(el).setName('Text').setDesc('Everything without a date.')
-      .addDropdown((d) => d.addOption('az', 'A to Z').addOption('za', 'Z to A').setValue(sort().text).onChange((v) => save({ text: v })));
+      .addDropdown((d) => d.addOption('az', 'A to Z').addOption('za', 'Z to A').setValue(sort().text).onChange((v) => save({ text: /** @type {'az' | 'za'} */ (v) })));
     new Setting(el).setName('Sort folders by these rules too').setDesc('Off: folders stay on top, A to Z. A folder with its own order below sorts its folders that way too.')
       .addDropdown((d) => d.addOption('off', 'Off').addOption('on', 'On').setValue(sort().folders ? 'on' : 'off').onChange((v) => save({ folders: v === 'on' })));
 
@@ -1501,7 +1653,7 @@ class SidebarSettingTab extends PluginSettingTab {
       });
       s.addExtraButton((b) => b.setIcon('x').setTooltip('Remove').onClick(async () => { await this.plugin.setFolderSort(path, null); this.display(); }));
     }
-    new Setting(el).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (path) => {
+    new Setting(el).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (/** @type {string} */ path) => {
       await this.plugin.setFolderSort(path, 'az');
       this.display();
     }, new Set(Object.keys(sort().perFolder))).open()));

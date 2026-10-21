@@ -13,11 +13,15 @@ import { pad2, isDayStr, toDayStr, utcOf, fromUtc, addDays, weekdayOf, partsOf, 
 const DOW_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DOW_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 const MON_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/** @param {unknown} w */
 function dowIndex(w) { const x = String(w).toLowerCase(); if (x.length < 3) return -1; return DOW_NAMES.findIndex((d) => d.startsWith(x) || (x.startsWith(d.slice(0, 3)) && d.startsWith(x.replace(/s$/, '')))); }
+/** @param {string} today @param {number} idx @param {boolean} [skipToday] */
 function nextDow(today, idx, skipToday) { let n = (idx - weekdayOf(today) + 7) % 7; if (n === 0 && skipToday) n = 7; return addDays(today, n); }
+/** @param {number} y @param {number} m @param {number} d */
 function validDay(y, m, d) { const s = `${y}-${pad2(m)}-${pad2(d)}`; return isDayStr(s) && toDayStr(fromUtc(utcOf(s))) === s ? s : null; }
 
 // A typed day -> 'YYYY-MM-DD' or null.
+/** @param {unknown} w @param {string} today */
 function parseDayWord(w, today) {
   const x = String(w || '').trim().toLowerCase().replace(/^on /, '').replace(/[.,]+$/, '');
   if (!x) return null;
@@ -34,6 +38,7 @@ function parseDayWord(w, today) {
   m = /^(next |this )?([a-z]+)$/.exec(x);
   if (m && dowIndex(m[2]) >= 0) { const base = nextDow(today, dowIndex(m[2]), true); return m[1] === 'next ' && base !== addDays(today, 7) ? addDays(base, 7) : base; }
   const year = Number(today.slice(0, 4));
+  /** @param {number} mo @param {number} d */
   const ahead = (mo, d) => { const s = validDay(year, mo, d); if (!s) return null; return s < today ? validDay(year + 1, mo, d) : s; };
   m = /^([a-z]{3})[a-z]* (\d{1,2})(?:st|nd|rd|th)?$/.exec(x) || /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]{3})[a-z]*$/.exec(x);
   if (m) { const mon = MON_NAMES.indexOf(isNaN(m[1]) ? m[1] : m[2]); const d = Number(isNaN(m[1]) ? m[2] : m[1]); if (mon >= 0) return ahead(mon + 1, d); }
@@ -45,6 +50,7 @@ function parseDayWord(w, today) {
 const DAY_RE = '(today|tonight|tomorrow|tmrw|next week|in \\d{1,3} (?:days?|weeks?)|\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}/\\d{1,2}|(?:next |this )?(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}(?:st|nd|rd|th)? (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*)';
 
 // "every ..." words -> RRULE body (no DTSTART) or null.
+/** @param {unknown} words */
 function repeatRule(words) {
   const w = String(words || '').trim().toLowerCase().replace(/^every /, '');
   if (!w) return null;
@@ -57,7 +63,7 @@ function repeatRule(words) {
   if (w === 'other month') return 'FREQ=MONTHLY;INTERVAL=2';
   if (w === 'year' || w === 'yearly') return 'FREQ=YEARLY';
   let m = /^(\d{1,3}) (day|days|week|weeks|month|months|year|years)$/.exec(w);
-  if (m) { const f = { d: 'DAILY', w: 'WEEKLY', m: 'MONTHLY', y: 'YEARLY' }[m[2][0]]; return Number(m[1]) > 1 ? `FREQ=${f};INTERVAL=${Number(m[1])}` : `FREQ=${f}`; }
+  if (m) { const f = /** @type {Record<string, string>} */ ({ d: 'DAILY', w: 'WEEKLY', m: 'MONTHLY', y: 'YEARLY' })[m[2][0]]; return Number(m[1]) > 1 ? `FREQ=${f};INTERVAL=${Number(m[1])}` : `FREQ=${f}`; }
   m = /^(other |2nd |second )?(.+)$/.exec(w);
   const parts = m[2].split(/\s*(?:,|and|&)\s*/).filter(Boolean);
   const idx = parts.map(dowIndex);
@@ -71,18 +77,21 @@ const REPEAT_RE = /\severy (other day|other week|other month|day|daily|weekdays?
 
 // -> { title, priority, due, start, plannedDay, plannedHalf, recurrence, repeatText, time, startTime }
 // (time: the due time, or a repeating task's start time; startTime: a one-off start's)
+/** @param {unknown} text @param {string} today */
 function understand(text, today) {
   let s = ` ${String(text || '')} `;
+  /** @type {Understood} */
   const r = { priority: null };
   // Takes the first match the reader accepts (fn returns true) and cuts
   // only that one out of the title; a match it can't read stays in the text.
+  /** @param {RegExp} re @param {(m: RegExpExecArray) => boolean} fn */
   const cut = (re, fn) => {
     const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
     let m;
     while ((m = g.exec(s))) { if (fn(m)) { s = s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length); return; } g.lastIndex = m.index + 1; }
   };
   cut(/\s!(high|low|none|normal)\b/i, (m) => { r.priority = m[1].toLowerCase(); return true; });
-  cut(/\s(p1|p2|p3|p4)\b/i, (m) => { r.priority = { p1: 'high', p2: 'normal', p3: 'low', p4: 'none' }[m[1].toLowerCase()]; return true; });
+  cut(/\s(p1|p2|p3|p4)\b/i, (m) => { r.priority = /** @type {Record<string, string>} */ ({ p1: 'high', p2: 'normal', p3: 'low', p4: 'none' })[m[1].toLowerCase()]; return true; });
   cut(REPEAT_RE, (m) => { const rule = repeatRule(m[1]); if (!rule) return false; r.recurrence = rule; r.repeatText = m[1].toLowerCase(); return true; });
   cut(new RegExp(`\\s(?:starts?|start on|starting|from) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.start = d; return true; });
   cut(new RegExp(`\\s(?:due|by) ${DAY_RE}\\b`, 'i'), (m) => { const d = parseDayWord(m[1], today); if (!d) return false; r.due = d; return true; });
@@ -107,6 +116,7 @@ function understand(text, today) {
 // A typed clock time -> 'HH:MM' or null. Needs am/pm or a colon ("4pm",
 // "4 p.m.", "9:30am", "15:30"), or is "noon" / "midnight". A bare "9" is not
 // a time: it could be either half of the day, so it is never guessed.
+/** @param {unknown} s */
 function parseClock(s) {
   const x = String(s || '').trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, '');
   if (x === 'noon') return '12:00';
@@ -125,9 +135,11 @@ function parseClock(s) {
 }
 
 // The value written: 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM' (TaskNotes' format).
+/** @param {string | null | undefined} day @param {string | null | undefined} [time] */
 function whenValue(day, time) { return day ? (time ? `${day}T${time}` : day) : null; }
 
 // First occurrence of a new rule on or after `from` (for DTSTART/scheduled).
+/** @param {string} rule @param {string} from */
 function firstOccurrence(rule, from) {
   const r = parseRRule(`DTSTART:${from.replace(/-/g, '')};${rule}`);
   if (!r) return from;
@@ -136,9 +148,13 @@ function firstOccurrence(rule, from) {
 }
 
 // RRULE -> plain words ("Every Monday and Thursday").
+/** @type {Record<string, string>} */
 const DOW_LONG = { SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday' };
+/** @param {string[]} list */
 function joinWords(list) { return list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`; }
-function ordinal(n) { const v = n % 100; return `${n}${v >= 11 && v <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th')}`; }
+/** @param {number} n */
+function ordinal(n) { const v = n % 100; return `${n}${v >= 11 && v <= 13 ? 'th' : (/** @type {Record<number, string>} */ ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th')}`; }
+/** @param {unknown} raw */
 function repeatWords(raw) {
   if (!raw) return "Doesn't repeat";
   const r = parseRRule(raw, '2000-01-01');
@@ -161,6 +177,7 @@ function repeatWords(raw) {
 }
 
 // Days and halves as the quick add line shows them.
+/** @param {string} day @param {string} today */
 function shortDay(day, today) {
   if (day === today) return 'today';
   if (day === addDays(today, 1)) return 'tomorrow';
@@ -168,11 +185,13 @@ function shortDay(day, today) {
   const { m, d, y } = partsOf(day);
   return `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}${y !== Number(today.slice(0, 4)) ? ` ${y}` : ''}`;
 }
+/** @param {unknown} h */
 function halfWord(h) { return h === 'am' ? 'morning' : h === 'pm' ? 'afternoon' : ''; }
 
 // The orange "what will be saved" line under a quick add box, as chip texts:
 // the title, the project (when given), the day, Due, Starts, the repeat, and a
 // priority that isn't the default one.
+/** @param {Understood} r @param {string} today @param {string | null} [project] @param {string} [defaultPriority] */
 function quickAddChips(r, today, project, defaultPriority) {
   const out = [r.title || '…'];
   if (project) out.push(project);
@@ -189,12 +208,15 @@ function quickAddChips(r, today, project, defaultPriority) {
 // writes it, 'YYYY-MM-DDTHH:MM') plus the planner's planned_* fields. `lane` is the
 // day and half the task joins ({ day, half }, or null): the caller adds
 // planned_order at the end of that lane. -> { input, lane }
+/** @param {Understood} r @param {string} today */
 function quickAddPlan(r, today) {
+  /** @type {NewTaskInput} */
   const input = { title: r.title, customFrontmatter: {} };
   const cf = input.customFrontmatter;
   if (r.priority) input.priority = r.priority;
   if (r.due) input.due = whenValue(r.due, r.time);
   if (r.start) input.scheduled = whenValue(r.start, r.startTime);
+  /** @type {{ day: string, half: string | null } | null} */
   let lane = null;
   if (r.recurrence) { const first = firstOccurrence(r.recurrence, r.start || today); input.recurrence = r.recurrence; input.scheduled = whenValue(first, r.time); if (r.plannedHalf) cf.planned_half = r.plannedHalf; }
   else if (r.plannedDay || r.due) {

@@ -3,21 +3,32 @@
 // 'YYYY-MM-DD'; day arithmetic runs on UTC-anchored dates so daylight saving never shifts a day.
 'use strict';
 
+/** @param {unknown} n */
 function pad2(n) { return String(n).padStart(2, '0'); }
+/** @param {Date} d */
 function dayOf(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+/** @param {unknown} s @returns {s is string} */
 function isDayStr(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+/** @param {unknown} v */
 function toDayStr(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date) return isNaN(v) ? null : dayOf(v);
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v).trim());
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
+/** @param {string} day */
 function utcOf(day) { const [y, m, d] = day.split('-').map(Number); return Date.UTC(y, m - 1, d); }
+/** @param {number} ms */
 function fromUtc(ms) { const d = new Date(ms); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; }
+/** @param {string} day @param {number} n */
 function addDays(day, n) { return fromUtc(utcOf(day) + n * 86400000); }
+/** @param {string} a @param {string} b */
 function daysBetween(a, b) { return Math.round((utcOf(b) - utcOf(a)) / 86400000); }
+/** @param {string} day */
 function weekdayOf(day) { return new Date(utcOf(day)).getUTCDay(); } // 0 = Sunday
+/** @param {string} day */
 function partsOf(day) { const [y, m, d] = day.split('-').map(Number); return { y, m, d }; }
+/** @param {number} y @param {number} m */
 function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
 
 /* ---- recurrence (RFC 5545 subset TaskNotes writes) -----------------------
@@ -26,10 +37,13 @@ function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
  * BYSETPOS, COUNT, UNTIL, WKST and EXDATE. A rule it cannot read returns
  * null and the task is never shown as due (never guessed). */
 
+/** @type {Record<string, number>} */
 const WD = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
 
+/** @param {unknown} raw @param {unknown} [fallbackStart] @returns {RRule | null} */
 function parseRRule(raw, fallbackStart) {
   if (!raw || typeof raw !== 'string') return null;
+  /** @type {RRule} */
   const out = { interval: 1, byday: null, bymonthday: null, bymonth: null, bysetpos: null, count: null, until: null, wkst: 1, exdates: [] };
   let text = raw.replace(/\r/g, '');
   // DTSTART may carry parameters (DTSTART;TZID=...:20260904T090000); read it
@@ -69,8 +83,10 @@ function parseRRule(raw, fallbackStart) {
 }
 
 // Weekdays `byday` picks inside one month (y, m 1-based), as day numbers.
+/** @param {{ n: number, wd: number }[]} byday @param {number} y @param {number} m */
 function monthDaysByDay(byday, y, m) {
   const dim = daysInMonth(y, m);
+  /** @type {Set<number>} */
   const out = new Set();
   for (const { n, wd } of byday) {
     const hits = [];
@@ -80,21 +96,26 @@ function monthDaysByDay(byday, y, m) {
   }
   return out;
 }
+/** @param {number[]} list @param {number} y @param {number} m */
 function monthDaysByMonthDay(list, y, m) {
   const dim = daysInMonth(y, m);
+  /** @type {Set<number>} */
   const out = new Set();
   for (const x of list) { const d = x > 0 ? x : dim + 1 + x; if (d >= 1 && d <= dim) out.add(d); }
   return out;
 }
+/** @param {Set<number>} set @param {number[] | null} pos */
 function applySetPos(set, pos) {
   if (!pos) return set;
   const sorted = [...set].sort((a, b) => a - b);
+  /** @type {Set<number>} */
   const out = new Set();
   for (const p of pos) { const v = p > 0 ? sorted[p - 1] : sorted[sorted.length + p]; if (v != null) out.add(v); }
   return out;
 }
 
 // Pattern match only (ignores COUNT, UNTIL and EXDATE).
+/** @param {RRule} r @param {string} day */
 function matchesPattern(r, day) {
   const s = r.dtstart;
   if (day < s) return false;
@@ -109,6 +130,7 @@ function matchesPattern(r, day) {
     return true;
   }
   if (r.freq === 'WEEKLY') {
+    /** @param {string} x */
     const startOfWeek = (x) => addDays(x, -((weekdayOf(x) - r.wkst + 7) % 7));
     const weeks = daysBetween(startOfWeek(s), startOfWeek(day)) / 7;
     if (weeks % r.interval !== 0) return false;
@@ -118,6 +140,7 @@ function matchesPattern(r, day) {
   if (r.freq === 'MONTHLY') {
     const months = (y - st.y) * 12 + (m - st.m);
     if (months % r.interval !== 0) return false;
+    /** @type {Set<number>} */
     let set;
     if (r.bymonthday && r.byday) {
       const a = monthDaysByMonthDay(r.bymonthday, y, m); const b = monthDaysByDay(r.byday, y, m);
@@ -131,6 +154,7 @@ function matchesPattern(r, day) {
     if ((y - st.y) % r.interval !== 0) return false;
     const months = r.bymonth || [st.m];
     if (!months.includes(m)) return false;
+    /** @type {Set<number>} */
     let set;
     if (r.bymonthday) set = monthDaysByMonthDay(r.bymonthday, y, m);
     else if (r.byday) set = monthDaysByDay(r.byday, y, m);
@@ -140,6 +164,7 @@ function matchesPattern(r, day) {
   return false;
 }
 
+/** @param {RRule | null} rule @param {unknown} day */
 function occursOn(rule, day) {
   if (!rule || !isDayStr(day) || day < rule.dtstart) return false;
   if (rule.until && day > rule.until) return false;
@@ -160,9 +185,11 @@ function occursOn(rule, day) {
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** @param {string | null | undefined} t @returns {'am' | 'pm' | null} */
 function halfOfTime(t) { return t ? (t < '13:00' ? 'am' : 'pm') : null; }
 
 // 'HH:MM' -> '4:30 PM' ('4 PM' with short and no minutes).
+/** @param {string | null | undefined} t @param {boolean} [short] */
 function timeText(t, short) {
   if (!t) return '';
   const [h, mi] = t.split(':').map(Number);

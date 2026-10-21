@@ -91,6 +91,7 @@ const JOURNAL_EXCERPT_CHARS = 260;
 const CAPTURE_MAX_CHARS = 2000;
 const NARROW_WIDTH = 720;                   // one column + up/down arrows below this
 // What Today redraws for: the weather and calendar notes (when set) and the folders it reads.
+/** @param {string} p */
 const watches = (p) => p === feedNotes.weather || p === feedNotes.calendar || [vaultFolders.tasks, vaultFolders.archive, vaultFolders.habits, vaultFolders.mood, vaultFolders.projects, vaultFolders.journal].some((f) => f && p.startsWith(f + '/'));
 const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · Undo" line, a few seconds
 
@@ -109,7 +110,7 @@ import { partOf, ADDON } from '../core/parts'; // the other parts, and what an a
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
-import { keyOf, setKey } from '../core/sources'; // the Stormglass key, kept on this device
+import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
 import { isHttp, linksOf, saveLinks, calendarEvents, refreshCalendars, calendarErrors, resetCalendars } from '../core/calendars'; // calendar links (launch section 6)
 import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertUnderHeading, newDailyContent, writeDailyNote } from '../core/daily'; // a day's daily note (launch section 5)
 
@@ -118,8 +119,11 @@ import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertU
 // -> { morning, afternoon, overdue, open, total } for `today`. `carry` (the real today only): a plan
 // whose day passed while its due date has not ("Just plan it") stays on Today until done or moved;
 // with "Set its due date" a past day is always overdue, so nothing carries.
+/** @param {TodayItem[]} items @param {string} today @param {string[]} completedStatuses @param {boolean} [carry] */
 function buildTaskLists(items, today, completedStatuses, carry) {
+  /** @param {TodayItem} t */
   const done = (t) => isTaskDone(t, today, completedStatuses);
+  /** @param {TodayItem} t */
   const slipped = (t) => carry && !t.recurrenceRaw && !!t.plannedDay && t.plannedDay < today && !isSomeday(t) && !done(t) && !isOverdue(t, today, completedStatuses);
   const onToday = items.filter((t) => taskOnDay(t, today) || slipped(t));
   const morning = sortByOrder(onToday.filter((t) => t.plannedHalf !== 'pm'));
@@ -128,25 +132,29 @@ function buildTaskLists(items, today, completedStatuses, carry) {
   // Newest first, as drawn; ties keep planned order.
   const overdue = items
     .filter((t) => isOverdue(t, today, completedStatuses))
-    .sort((a, b) => (b.due || b.plannedDay).localeCompare(a.due || a.plannedDay) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
+    .sort((a, b) => /** @type {string} */ (b.due || b.plannedDay).localeCompare(/** @type {string} */ (a.due || a.plannedDay)) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
   const total = morning.length + afternoon.length;
   const open = [...morning, ...afternoon].filter((t) => !done(t)).length;
   return { morning, afternoon, overdue, open, total };
 }
 
+/** @param {number} open @param {number} total */
 function plateText(open, total) {
   if (!total) return 'a clear day ahead';
   if (!open) return 'all done, nice work';
   return `${open} thing${open === 1 ? '' : 's'} on your plate today`;
 }
 
+/** @param {number} hour */
 function greeting(hour) {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 }
 // Settings › Today page › Your name; empty: no trailing comma.
+/** @param {number} hour @param {unknown} name */
 function greetingLine(hour, name) { const n = normalizeUserName(name); return n ? `${greeting(hour)}, ${n}` : greeting(hour); }
+/** @param {unknown} raw */
 function normalizeUserName(raw) { return typeof raw === 'string' ? raw.trim().slice(0, 60) : ''; }
 
 /* ---- moving a task (same writes as the old daily planner's assignItem) ----- */
@@ -156,6 +164,7 @@ function normalizeUserName(raw) { return typeof raw === 'string' ? raw.trim().sl
 
 // The due date's day becomes `day`; anything after the day (a time, a zone)
 // is kept as written. A value that is not a readable date becomes `day`.
+/** @param {unknown} due @param {string} day */
 function dueOnDay(due, day) {
   if (due instanceof Date) return day;
   const s = due == null ? '' : String(due);
@@ -170,13 +179,15 @@ function dueOnDay(due, day) {
 // a task with no half keeps none (Today shows it in Morning, the Planner
 // under "Any time").
 // -> [{ path, lane: 'am' | 'pm', order }]
+/** @param {ReturnType<typeof buildTaskLists>} lists */
 function planOverdueMove(lists) {
+  /** @type {Record<string, number[]>} */
   const tail = {
     am: lists.morning.map((t) => t.plannedOrder),
     pm: lists.afternoon.map((t) => t.plannedOrder),
   };
   const oldestFirst = [...lists.overdue].filter((t) => !t.recurrenceRaw && t.plannedDay)
-    .sort((a, b) => a.plannedDay.localeCompare(b.plannedDay) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
+    .sort((a, b) => /** @type {string} */ (a.plannedDay).localeCompare(/** @type {string} */ (b.plannedDay)) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
   return oldestFirst.map((t) => {
     const lane = t.plannedHalf === 'pm' ? 'pm' : 'am';
     const orders = tail[lane];
@@ -189,6 +200,7 @@ function planOverdueMove(lists) {
 // The write for one task. Re-checks the note itself first, so a task that
 // changed since the card was drawn (now repeating, done, or no longer
 // overdue) is left alone. Due wins; planned_day moves only on an undated task. Returns true when it wrote.
+/** @param {Fm | null | undefined} fm @param {string} day @param {number} order @param {string[] | null} [completedStatuses] */
 function applyOverdueMove(fm, day, order, completedStatuses) {
   if (!fm || typeof fm !== 'object') return false;
   if (typeof fm.recurrence === 'string' && fm.recurrence.trim()) return false;
@@ -201,7 +213,7 @@ function applyOverdueMove(fm, day, order, completedStatuses) {
   if (due) fm.due = dueOnDay(fm.due, day);
   else fm.planned_day = day;
   // "Just plan it": a past plan comes along, or the planned day would keep the task off Today.
-  if (!planning.setsDue && fm.planned_day && toDayStr(fm.planned_day) < day) fm.planned_day = day;
+  if (!planning.setsDue && fm.planned_day && /** @type {string} */ (toDayStr(fm.planned_day)) < day) fm.planned_day = day;
   fm.planned_order = order;
   return true;
 }
@@ -209,10 +221,13 @@ function applyOverdueMove(fm, day, order, completedStatuses) {
 // One frontmatter write that remembers what the keys it changed held before;
 // the returned undo() puts exactly those back (a key that was absent is
 // removed again), through the frontmatter API too.
+/** @param {import('obsidian').App} app @param {TFile} file @param {(fm: Fm) => unknown} fn */
 async function writeWithUndo(app, file, fn) {
+  /** @type {Record<string, { v: unknown } | null>} */
   let before = {};
   await app.fileManager.processFrontMatter(file, (fm) => {
-    const copy = JSON.parse(JSON.stringify(fm || {}));
+    const parsed = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm || {})));
+    const copy = /** @type {Fm} */ (parsed);
     writable(fm, fn);
     before = {};
     for (const k of new Set([...Object.keys(copy), ...Object.keys(fm)])) {
@@ -227,6 +242,7 @@ async function writeWithUndo(app, file, fn) {
 }
 
 // An Obsidian notice with an Undo button (a move that took a clock time off).
+/** @param {string} text @param {() => Promise<unknown>} undo */
 function undoNotice(text, undo) {
   const frag = document.createDocumentFragment();
   const box = frag.createDiv({ cls: 'a4-undo-notice' });
@@ -243,12 +259,14 @@ function undoNotice(text, undo) {
 
 // The "Blocked" marker (lock chip). Hover names the blockers; a click or tap
 // lists them in a menu that opens each one. Not shared code: it renders.
+/** @param {HTMLElement} meta @param {{ path: string, title: string }[]} blockers @param {(path: string) => void} open @param {string} pre */
 function blockedChip(meta, blockers, open, pre) {
   const c = meta.createSpan({ cls: `${pre}-chip ${pre}-lock` });
   setIcon(c.createSpan({ cls: `${pre}-ic` }), 'lock');
   c.appendText(blockers.length > 1 ? `blocked · ${blockers.length}` : 'blocked');
   const names = `Blocked by: ${blockers.map((b) => b.title).join(', ')}`;
   c.setAttr('aria-label', names); c.setAttr('title', names); c.setAttr('role', 'button'); c.tabIndex = 0;
+  /** @param {Event} e */
   const show = (e) => {
     e.preventDefault(); e.stopPropagation();
     const m = new Menu();
@@ -265,6 +283,7 @@ function blockedChip(meta, blockers, open, pre) {
 // tab on Cmd/Ctrl-click; the note itself (a new tab, as before) when Projects
 // is off or has no page for it. `ref`: a project note's path, or a task's
 // project link or name. Resolves 'page', 'note', or false.
+/** @param {import('obsidian').App} app @param {unknown} ref @param {MouseEvent | KeyboardEvent | null | undefined} e @param {string} [sourcePath] */
 async function openProjectPage(app, ref, e, sourcePath) {
   if (ref == null || ref === '') return false;
   const newTab = !!(e && Keymap && Keymap.isModEvent(e));
@@ -285,6 +304,7 @@ async function openProjectPage(app, ref, e, sourcePath) {
  * a light-mode and a dark-mode shade (no single colour reads at 4.5:1 on both
  * a white and a near-black page); shades from the approved accent colours mockup.
  * Orange matches the owner theme's marker pair, so the existing page looks the same. */
+/** @type {{ id: string, name: string, light?: string, dark?: string }[]} */
 const ACCENTS = [
   { id: 'orange', name: 'Orange', light: '#d43f16', dark: '#ff5a2d' },
   { id: 'accent', name: 'Follow Obsidian accent' },
@@ -304,29 +324,38 @@ const HAND_FONTS = [
 ];
 // Ink blue is the public default (2026-10-06); a saved Orange is kept
 // because the owner's data.json stores it explicitly.
+/** @type {TodayLook} */
 const DEFAULT_LOOK = { accent: 'blue', font: 'caveat' };
+/** @param {unknown} raw @returns {TodayLook} */
 function normalizeLook(raw) {
-  const r = raw && typeof raw === 'object' ? raw : {};
+  const r = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
   return {
-    accent: ACCENTS.some((a) => a.id === r.accent) ? r.accent : DEFAULT_LOOK.accent,
-    font: HAND_FONTS.some((f) => f.id === r.font) ? r.font : DEFAULT_LOOK.font,
+    accent: ACCENTS.some((a) => a.id === r.accent) ? /** @type {string} */ (r.accent) : DEFAULT_LOOK.accent,
+    font: HAND_FONTS.some((f) => f.id === r.font) ? /** @type {string} */ (r.font) : DEFAULT_LOOK.font,
   };
 }
+/** @param {unknown} c @returns {number[] | null} */
 function rgbOf(c) {
-  if (Array.isArray(c)) return c.slice(0, 3);
+  if (Array.isArray(c)) return /** @type {number[]} */ (c).slice(0, 3);
   const s = String(c || '').trim();
   let m = /^#([0-9a-f]{6})$/i.exec(s);
   if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
   m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(s);
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])].map(Math.round) : null;
 }
-function luminance(rgb) { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]); }
-function contrastRatio(a, b) { const x = luminance(rgbOf(a)), y = luminance(rgbOf(b)); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+/** @param {number[]} rgb */
+function luminance(rgb) { const f = (/** @type {number} */ v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]); }
+/** @param {unknown} a @param {unknown} b */
+function contrastRatio(a, b) { const x = luminance(/** @type {number[]} */ (rgbOf(a))), y = luminance(/** @type {number[]} */ (rgbOf(b))); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+/** @param {number[]} rgb */
 function toHexColor(rgb) { return '#' + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
+/** @param {number[]} rgb */
 function rgbToHsl([r, g, b]) { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0; const l = (mx + mn) / 2; if (mx !== mn) { const d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h /= 6; } return [h, s, l]; }
-function hslToRgb([h, s, l]) { if (!s) return [l, l, l].map((v) => Math.round(v * 255)); const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q; const t = (x) => { x = (x + 1) % 1; return x < 1 / 6 ? p + (q - p) * 6 * x : x < 0.5 ? q : x < 2 / 3 ? p + (q - p) * (2 / 3 - x) * 6 : p; }; return [t(h + 1 / 3), t(h), t(h - 1 / 3)].map((v) => Math.round(v * 255)); }
+/** @param {number[]} hsl */
+function hslToRgb([h, s, l]) { if (!s) return [l, l, l].map((v) => Math.round(v * 255)); const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q; const t = (/** @type {number} */ x) => { x = (x + 1) % 1; return x < 1 / 6 ? p + (q - p) * 6 * x : x < 0.5 ? q : x < 2 / 3 ? p + (q - p) * (2 / 3 - x) * 6 : p; }; return [t(h + 1 / 3), t(h), t(h - 1 / 3)].map((v) => Math.round(v * 255)); }
 // "Follow Obsidian accent": keep the hue, nudge lightness until it reads at
 // 4.5:1 on the page background (as drawn in the mockup).
+/** @param {string} color @param {string} bg @param {number} [target] */
 function readableShade(color, bg, target) {
   const want = target || 4.5;
   let rgb = rgbOf(color); const b = rgbOf(bg);
@@ -336,6 +365,7 @@ function readableShade(color, bg, target) {
   for (let i = 0; i < 100 && contrastRatio(rgb, b) < want; i++) { hsl[2] = Math.max(0, Math.min(1, hsl[2] + (darker ? -0.01 : 0.01))); rgb = hslToRgb(hsl); }
   return toHexColor(rgb);
 }
+/** @param {TodayLook} look @param {boolean} dark @param {string | null | undefined} obsidianAccent @param {string} [bg] */
 function accentShade(look, dark, obsidianAccent, bg) {
   const a = ACCENTS.find((x) => x.id === look.accent) || ACCENTS[0];
   if (a.id === 'accent') return obsidianAccent ? readableShade(obsidianAccent, bg || (dark ? '#1e1e1e' : '#ffffff')) : null;
@@ -352,12 +382,14 @@ const SCHEMES = [
   { id: 'obsidian', label: 'Dark', icon: 'moon' },
   { id: 'system', label: 'System', icon: 'monitor' },
 ];
+/** @param {unknown} value */
 function schemeOf(value) { return SCHEMES.find((x) => x.id === value) || null; }
 
 /* ---- habits (the habits add-on's '## Log' format) ---------------------------------- */
 
 const LOG_LINE_RE = /^-\s+(\d{4}-\d{2}-\d{2})\s+(done|missed)\b/;
 
+/** @param {string} text */
 function findLogSpan(text) {
   const re = /^## (.+)$/gm;
   let m; let found = null;
@@ -370,11 +402,13 @@ function findLogSpan(text) {
   return { start, end: next ? next.index : text.length };
 }
 
+/** @param {string | null | undefined} text */
 function parseDoneSet(text) {
   const span = findLogSpan(text || '');
+  /** @type {Map<string, string>} */
   const per = new Map();
   if (span) {
-    for (const line of text.slice(span.start, span.end).split('\n')) {
+    for (const line of /** @type {string} */ (text).slice(span.start, span.end).split('\n')) {
       const m = LOG_LINE_RE.exec(line.trim());
       if (m) per.set(m[1], m[2]);
     }
@@ -384,6 +418,7 @@ function parseDoneSet(text) {
 
 // Same rule as the habits add-on: consecutive done days ending today, or yesterday
 // when today isn't ticked yet.
+/** @param {Set<string>} doneSet @param {string} today */
 function computeStreak(doneSet, today) {
   let d = doneSet.has(today) ? today : addDays(today, -1);
   let n = 0;
@@ -392,6 +427,7 @@ function computeStreak(doneSet, today) {
 }
 
 // Adds or removes '- <day> done' inside '## Log', touching nothing else.
+/** @param {string} text @param {string} day */
 function toggleHabitLog(text, day) {
   let span = findLogSpan(text);
   if (!span) {
@@ -422,11 +458,14 @@ function toggleHabitLog(text, day) {
  * note (through the frontmatter API). The streak counts days in a row whose daily note says yes. The
  * habit notes with '## Log' lines (above) stay the second format. */
 // Saved habits -> [{ name }]: a usable property name, no repeats.
+/** @param {unknown} raw @returns {{ name: string }[]} */
 function normalizeHabits(raw) {
+  /** @type {Set<string>} */
   const seen = new Set();
-  return (Array.isArray(raw) ? raw : []).map((h) => (h && typeof h.name === 'string' ? h.name.trim().slice(0, 60) : '')).filter((n) => n && !BAD_NAME.test(n) && !isReserved(n) && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase())).map((name) => ({ name }));
+  return (Array.isArray(raw) ? /** @type {Fm[]} */ (raw) : []).map((h) => (h && typeof h.name === 'string' ? h.name.trim().slice(0, 60) : '')).filter((n) => n && !BAD_NAME.test(n) && !isReserved(n) && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase())).map((name) => ({ name }));
 }
 // Why a habit name cannot be used, or ''. fm: today's daily note properties, if any.
+/** @param {unknown} name @param {{ name: string }[] | null | undefined} list @param {Fm | null | undefined} fm */
 function habitNameProblem(name, list, fm) {
   const n = String(name || '').trim();
   if (!n) return 'Type a name for the habit.';
@@ -438,6 +477,7 @@ function habitNameProblem(name, list, fm) {
   return '';
 }
 // Days in a row with a yes, ending today (or yesterday while today is not ticked yet). yes(day) -> boolean.
+/** @param {(day: string) => boolean} yes @param {string} today @param {number} [max] */
 function propStreak(yes, today, max) {
   let d = yes(today) ? today : addDays(today, -1);
   let n = 0;
@@ -449,19 +489,23 @@ function propStreak(yes, today, max) {
 
 const JOURNAL_HEADING = 'Journal';
 
+/** @param {unknown} text */
 function cleanCapture(text) {
   return String(text == null ? '' : text).replace(/\s+/g, ' ').trim().slice(0, CAPTURE_MAX_CHARS);
 }
+/** @param {Date} d @param {string} text */
 function captureLine(d, text) { return `- ${pad2(d.getHours())}:${pad2(d.getMinutes())}  ${text}`; }
 // Drag-to-enlarge for the Today capture box (1.6.0). The box never gets
 // smaller than its resting size, and never taller than CAPTURE_MAX_PX or 60%
 // of the window, whichever is less. The height is NOT remembered: a save
 // snaps the box back to its resting size.
 const CAPTURE_MAX_PX = 480;
+/** @param {number} restH @param {unknown} viewH */
 function captureMaxHeight(restH, viewH) {
   const cap = Math.min(CAPTURE_MAX_PX, Math.floor((Number(viewH) || 0) * 0.6));
   return Math.max(restH, cap);
 }
+/** @param {unknown} startH @param {unknown} dy @param {number} restH @param {unknown} viewH */
 function captureDragHeight(startH, dy, restH, viewH) {
   const h = Math.round((Number(startH) || restH) + (Number(dy) || 0));
   return Math.min(captureMaxHeight(restH, viewH), Math.max(restH, h));
@@ -472,6 +516,7 @@ function captureDragHeight(startH, dy, restH, viewH) {
 // directly under the frontmatter (ruling 2026-10-04: a day reads
 // Quick notes -> Places -> end of day -> WhatsApp). Never writes inside the
 // frontmatter or between any other section's lines; nothing is reordered.
+/** @param {string | null | undefined} text @param {string} line */
 function insertQuickNote(text, line) {
   text = String(text == null ? '' : text).replace(/\r\n/g, '\n');
   const fmEnd = (() => {
@@ -507,6 +552,7 @@ function insertQuickNote(text, line) {
 // the frontmatter (fmEnd = offset just past its closing '---' line), one blank
 // line around it. Only blank lines at the very top of the body are dropped;
 // every other character of the note is kept in order.
+/** @param {string} text @param {number} fmEnd @param {string} section */
 function insertSectionAtTop(text, fmEnd, section) {
   const head = text.slice(0, fmEnd);
   const body = text.slice(fmEnd).replace(/^(?:[ \t]*\n)+/, '');
@@ -517,6 +563,7 @@ function insertSectionAtTop(text, fmEnd, section) {
 
 /* ---- weather, calendar, journal, mood -------------------------------------- */
 
+/** @param {unknown} updated @param {Date} now */
 function weatherAge(updated, now) {
   const t = Date.parse(String(updated || ''));
   if (!Number.isFinite(t)) return { label: 'last update unknown', stale: true, minutes: null };
@@ -529,6 +576,7 @@ function weatherAge(updated, now) {
   return { label, stale: now.getTime() - t > STALE_AFTER_MS, minutes: mins };
 }
 
+/** @param {unknown} s */
 function tideMinutes(s) {
   const m = /^(\d{1,2}):(\d{2})\s*([AP]M)?$/i.exec(String(s || '').trim());
   if (!m) return 99999;
@@ -536,12 +584,14 @@ function tideMinutes(s) {
   else if (m[3].toUpperCase() === 'PM') h += 12;
   return h * 60 + Number(m[2]);
 }
+/** @param {unknown} tides */
 function tidesLine(tides) {
-  return asList(tides).filter((t) => t && t.type && t.time)
+  return /** @type {Fm[]} */ (asList(tides)).filter((t) => t && t.type && t.time)
     .sort((a, b) => tideMinutes(a.time) - tideMinutes(b.time))
-    .map((t) => `${t.type} ${t.time}`).join(' · ');
+    .map((t) => `${String(t.type)} ${String(t.time)}`).join(' · ');
 }
 
+/** @param {unknown} code */
 function wmoIcon(code) {
   const c = Number(code);
   if (c === 0) return 'sun';
@@ -555,6 +605,7 @@ function wmoIcon(code) {
   return 'cloud-sun';
 }
 
+/** @param {unknown} hhmm */
 function fmt12(hhmm) {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
   if (!m) return String(hhmm || '');
@@ -562,29 +613,37 @@ function fmt12(hhmm) {
   return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+/** @typedef {{ date: string, time: string | null, allDay: boolean, summary: string, calendar: string }} TodayEvent */
+/** @param {unknown} events @param {string} today @param {number | null} [daysAhead] @returns {TodayEvent[]} */
 function eventsWindow(events, today, daysAhead) {
   const last = addDays(today, daysAhead == null ? CALENDAR_DAYS_AHEAD : daysAhead);
-  return asList(events)
+  return /** @type {TodayEvent[]} */ (/** @type {Fm[]} */ (asList(events))
     .filter((e) => e && typeof e === 'object')
-    .map((e) => ({ date: toDayStr(e.date), time: e.time || null, allDay: !!e.all_day || !e.time, summary: String(e.summary || '(untitled)'), calendar: e.calendar ? String(e.calendar) : '' }))
+    .map((e) => ({ date: toDayStr(e.date), time: /** @type {string | null} */ (e.time || null), allDay: !!e.all_day || !e.time, summary: String(e.summary || '(untitled)'), calendar: e.calendar ? String(e.calendar) : '' }))
     .filter((e) => e.date && e.date >= today && e.date <= last)
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.allDay === b.allDay ? String(a.time || '').localeCompare(String(b.time || '')) : (a.allDay ? -1 : 1)));
+    .sort((a, b) => /** @type {string} */ (a.date).localeCompare(/** @type {string} */ (b.date)) || (a.allDay === b.allDay ? String(a.time || '').localeCompare(String(b.time || '')) : (a.allDay ? -1 : 1))));
 }
 
 const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** @param {string} day */
 function longDate(day) { const { m, d } = partsOf(day); return `${WEEKDAYS_LONG[weekdayOf(day)]}, ${MONTHS_LONG[m - 1]} ${d}`; }
+/** @param {string} day */
 function shortDue(day) { const { m, d } = partsOf(day); return `${MONTHS_SHORT[m - 1]} ${d}`; }
+/** @param {string} day @param {string} today */
 function eventDayLabel(day, today) { return day === today ? 'Today' : `${WEEKDAYS_SHORT[weekdayOf(day)]} ${partsOf(day).d}`; }
+/** @param {string} day @param {string | null | undefined} time @param {string} today */
 function moodWhen(day, time, today) {
   const label = day === today ? 'Today' : (day === addDays(today, -1) ? 'Yesterday' : `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${shortDue(day)}`);
   return time ? `${label} · ${time}` : label;
 }
+/** @param {Date} d */
 function clockText(d) {
   const h = d.getHours();
   return `${h % 12 === 0 ? 12 : h % 12}:${pad2(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+/** @param {unknown} body @param {number} [max] */
 function journalExcerpt(body, max) {
   const n = max || JOURNAL_EXCERPT_CHARS;
   const plain = String(body || '')
@@ -592,7 +651,7 @@ function journalExcerpt(body, max) {
     .replace(/^#{1,6} .*$/gm, ' ')
     .replace(/!\[\[[^\]]*\]\]/g, ' ')
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-    .replace(/\[\[([^\]]+)\]\]/g, (_, t) => t.split('#')[0].split('/').pop())
+    .replace(/\[\[([^\]]+)\]\]/g, (_, /** @type {string} */ t) => /** @type {string} */ (t.split('#')[0].split('/').pop()))
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[*_`>]+/g, '')
     .replace(/^\s*[-+]\s+/gm, '')
@@ -605,19 +664,21 @@ function journalExcerpt(body, max) {
 }
 
 // The day a daily note stands for, from its path (Daily notes folder and date format), or null.
+/** @param {string} path @param {{ folder?: string, format?: string } | null | undefined} dn @param {((rel: string, format: string) => string | null) | null} [parse] */
 function dayFromNoteName(path, dn, parse) {
   const folder = dn && dn.folder ? `${dn.folder}/` : '';
   if (!path.endsWith('.md') || (folder && !path.startsWith(folder))) return null;
   const rel = path.slice(folder.length, -3);
   // Cheap shape check before the strict parse (run on every note): a date has a digit and is never over
   // three times its format's length ("MMMM" -> "September").
-  if (!/\d/.test(rel) || rel.length > String(dn.format || '').length * 3) return null;
-  const d = parse ? parse(rel, dn.format) : null;
+  if (!/\d/.test(rel) || rel.length > String(/** @type {NonNullable<typeof dn>} */ (dn).format || '').length * 3) return null;
+  const d = parse ? parse(rel, /** @type {string} */ (/** @type {NonNullable<typeof dn>} */ (dn).format)) : null;
   return d && toDayStr(d) ? toDayStr(d) : null;
 }
 
 // Newest first, the first daily note with writing in it: list = [{ path, date }], read(path) -> text.
 // Reads at most `max` notes. -> { path, date, text, cut } or null.
+/** @param {{ path: string, date: string }[]} list @param {string} today @param {(path: string) => Promise<string>} read @param {number} [max] */
 async function latestDailyEntry(list, today, read, max) {
   const cands = list.filter((x) => x.date <= today).sort((a, b) => b.date.localeCompare(a.date)).slice(0, max || 10);
   for (const c of cands) {
@@ -629,27 +690,35 @@ async function latestDailyEntry(list, today, read, max) {
   return null;
 }
 
+/** @param {unknown} t */
 function timeToMinutes(t) { return tideMinutes(t) === 99999 ? -1 : tideMinutes(t); }
 
 /* ---- launch section 4: Recent notes, Pinned shortcuts, World clock --------- */
 
 const RECENT_COUNT = 6;
 // The notes edited last: files = [{ path, basename, mtime }] -> the newest `n`.
+/** @template {{ path: string, mtime?: number }} T @param {T[]} files @param {number} [n] @returns {T[]} */
 function recentNotes(files, n) {
   return files.filter((f) => f && typeof f.path === 'string').slice().sort((a, b) => (b.mtime || 0) - (a.mtime || 0) || a.path.localeCompare(b.path)).slice(0, n || RECENT_COUNT);
 }
 // Saved pins: a list of vault paths (notes or folders), no repeats.
-function normalizePins(raw) { return Array.isArray(raw) ? [...new Set(raw.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))] : []; }
+/** @param {unknown} raw @returns {string[]} */
+function normalizePins(raw) { return Array.isArray(raw) ? [...new Set(/** @type {unknown[]} */ (raw).filter((x) => typeof x === 'string' && x.trim()).map((x) => /** @type {string} */ (x).trim()))] : []; }
 // Saved World clock places: [{ name, tz }]; a zone the device cannot read is dropped.
+/** @param {unknown} raw @returns {{ name: string, tz: string }[]} */
 function normalizePlaces(raw) {
+  /** @param {string} tz */
   const ok = (tz) => { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(0); return true; } catch { return false; } };
-  return Array.isArray(raw) ? raw.filter((p) => p && typeof p.name === 'string' && p.name.trim() && typeof p.tz === 'string' && ok(p.tz)).map((p) => ({ name: p.name.trim().slice(0, 40), tz: p.tz })) : [];
+  return Array.isArray(raw) ? /** @type {{ name: string, tz: string }[]} */ (/** @type {Fm[]} */ (raw).filter((p) => p && typeof p.name === 'string' && p.name.trim() && typeof p.tz === 'string' && ok(p.tz))).map((p) => ({ name: p.name.trim().slice(0, 40), tz: p.tz })) : [];
 }
 // A place search match (findPlaces) -> the World clock place it adds, or null when this device cannot read its zone.
+/** @param {{ short?: string, tz?: string } | null | undefined} m */
 function placeFromMatch(m) { return normalizePlaces([{ name: m && m.short, tz: m && m.tz }])[0] || null; }
 // One place's clock face at `now` (no internet: the device's own time zone data).
 // -> { time: '04:41 pm', big: '4:41:23 pm', day: 'MON', date: 'Mon, Oct 19', zone: 'GMT+1', h, m, s }
+/** @param {Date} now @param {string | null} [tz] */
 function clockAt(now, tz) {
+  /** @param {Intl.DateTimeFormatOptions} o @returns {Record<string, string>} */
   const parts = (o) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { ...o, ...(tz ? { timeZone: tz } : {}) }).formatToParts(now).map((x) => [x.type, x.value]));
   const p = parts({ hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, weekday: 'short', month: 'short', day: 'numeric', timeZoneName: 'short' });
   const h24 = Number(parts({ hour: '2-digit', hourCycle: 'h23' }).hour) % 24;
@@ -657,6 +726,7 @@ function clockAt(now, tz) {
   return { time: `${String(p.hour).padStart(2, '0')}:${p.minute} ${ap}`, big: `${p.hour}:${p.minute}:${p.second} ${ap}`, day: String(p.weekday).toUpperCase(), date: `${p.weekday}, ${p.month} ${p.day}`, zone: p.timeZoneName || '', h: h24, m: Number(p.minute), s: Number(p.second) };
 }
 // The hands' angles in degrees for a clock face.
+/** @param {{ h: number, m: number, s: number }} c */
 function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
 
 /* ---- widgets and layout ---------------------------------------------------- */
@@ -665,6 +735,9 @@ const ZONES = ['top', 'c1', 'c2', 'c3'];
 // The launch widget list (mockup v6, approved 2026-10-19), in each zone's order. tasks: the task cards that
 // show only for one kind of task source ('notes': Morning and Afternoon; 'checkbox': one "Today's tasks"
 // card, decision A). needs: the part it needs ('planner', 'projects'); greyed in Settings while it is off.
+/** @typedef {{ id: string, name: string, desc: string, zone: string, tasks?: string, needs?: string, render?: (body: HTMLElement, el: HTMLElement) => unknown }} WidgetDef */
+/** @typedef {{ zones: Record<string, string[]>, hidden: string[] }} Layout */
+/** @type {WidgetDef[]} */
 const WIDGETS = [
   { id: 'weather', name: 'Weather', desc: 'Forecast for your town', zone: 'top' },
   { id: 'capture', name: 'Quick capture', desc: "Jot a thought into today's daily note", zone: 'top' },
@@ -689,13 +762,17 @@ const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'jo
 // existing Today page looks as before (criterion 43). Today's tasks only shows for checkbox tasks.
 const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox'];
 // Settings wording for a part that is off.
+/** @type {Record<string, string>} */
 const NEEDS_TEXT = { planner: 'Needs the Planner (off under Parts)', projects: 'Needs Projects (off under Parts)' };
 // Widgets an add-on adds through LifeWorld (phase 2 section 7): { id, name, desc, zone, render(body, el) },
 // zone one of the three columns. shortcut: kept for this LifeWorld start only; an add-on adds them again
 // when LifeWorld restarts, and a layout saved while one is missing forgets its place (back to its zone).
+/** @type {WidgetDef[]} */
 const EXTRA_WIDGETS = [];
 const allWidgets = () => WIDGETS.concat(EXTRA_WIDGETS);
+/** @param {unknown} id */
 const isWidget = (id) => allWidgets().some((w) => w.id === id);
+/** @param {WidgetDef} def */
 function addExtraWidget(def) {
   // main, upd, item: the card's a4t-w-<id> class would match parts of the weather strip (review p2-s7b).
   if (isWidget(def.id) || ['main', 'upd', 'item'].includes(def.id)) throw new Error(`LifeWorld: there is already a Today widget "${def.id}"`);
@@ -705,8 +782,11 @@ function addExtraWidget(def) {
 }
 const TOP_ONLY = ['weather', 'capture'];
 
+/** @returns {Layout} */
 function defaultLayout() {
+  /** @type {Record<string, string[]>} */
   const zones = { top: [], c1: [], c2: [], c3: [] };
+  /** @type {string[]} */
   const hidden = [];
   allWidgets().forEach((w) => (STARTER_OFF.includes(w.id) ? hidden : zones[w.zone]).push(w.id));
   return { zones, hidden };
@@ -714,27 +794,33 @@ function defaultLayout() {
 
 // Clean any stored layout: unknown ids dropped, duplicates removed, and any
 // widget that is neither placed nor hidden goes back to its default zone.
+/** @param {unknown} raw @returns {Layout} */
 function normalizeLayout(raw) {
+  /** @type {Layout} */
   const out = { zones: { top: [], c1: [], c2: [], c3: [] }, hidden: [] };
+  /** @type {Set<string>} */
   const seen = new Set();
-  const src = raw && typeof raw === 'object' ? raw : {};
-  const zones = src.zones && typeof src.zones === 'object' ? src.zones : null;
+  const src = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
+  const zones = /** @type {Fm | null} */ (src.zones && typeof src.zones === 'object' ? src.zones : null);
   if (!zones) return defaultLayout();
   for (const z of ZONES) {
-    for (const id of asList(zones[z])) {
+    for (const id of /** @type {string[]} */ (asList(zones[z]))) {
       if (isWidget(id) && !seen.has(id)) { out.zones[z].push(id); seen.add(id); }
     }
   }
-  for (const id of asList(src.hidden)) {
+  for (const id of /** @type {string[]} */ (asList(src.hidden))) {
     if (isWidget(id) && !seen.has(id)) { out.hidden.push(id); seen.add(id); }
   }
   for (const w of allWidgets()) if (!seen.has(w.id)) (ADDED_OFF.includes(w.id) ? out.hidden : out.zones[w.zone]).push(w.id);
   return out;
 }
 
+/** @param {Layout} l @returns {Layout} */
 function cloneLayout(l) { return { zones: Object.fromEntries(ZONES.map((z) => [z, l.zones[z].slice()])), hidden: l.hidden.slice() }; }
+/** @param {Layout} layout @param {string} id */
 function zoneOf(layout, id) { return ZONES.find((z) => layout.zones[z].includes(id)) || null; }
 
+/** @param {Layout} layout @param {string} id */
 function removeWidget(layout, id) {
   const l = cloneLayout(layout);
   const z = zoneOf(l, id);
@@ -745,6 +831,7 @@ function removeWidget(layout, id) {
 }
 
 // heights: zone -> pixel height, so a new card lands in the shortest column.
+/** @param {Layout} layout @param {string} id @param {Record<string, number> | null} [heights] */
 function addWidget(layout, id, heights) {
   const l = cloneLayout(layout);
   if (!isWidget(id) || zoneOf(l, id)) return l;
@@ -765,10 +852,12 @@ function addWidget(layout, id, heights) {
 // Up/down (phone width on the page, and Settings): moves past the next widget that is shown
 // (`shown(id)`, default all), and past the end of a column into the next column, like the mockup.
 // The Top strip's widgets stay in the Top strip; column widgets never go into it (launch section 2).
+/** @param {Layout} layout @param {string} id @param {number} dir @param {((id: string) => boolean) | null} [shown] */
 function moveWidget(layout, id, dir, shown) {
   const l = cloneLayout(layout);
   const z = zoneOf(l, id);
   if (!z) return l;
+  /** @param {string} zz */
   const vis = (zz) => l.zones[zz].filter((x) => x === id || !shown || shown(x));
   const list = l.zones[z];
   const v = vis(z);
@@ -783,9 +872,11 @@ function moveWidget(layout, id, dir, shown) {
   return l;
 }
 // Can moveWidget move it that way? (the arrows in Settings are off when not)
+/** @param {Layout} layout @param {string} id @param {number} dir @param {((id: string) => boolean) | null} [shown] */
 function canMoveWidget(layout, id, dir, shown) { return JSON.stringify(moveWidget(layout, id, dir, shown)) !== JSON.stringify(cloneLayout(layout)); }
 
 // Settings' on/off switch: on puts the widget at the end of its own zone; off hides it, as × does.
+/** @param {Layout} layout @param {string} id @param {boolean} on */
 function setWidgetOn(layout, id, on) {
   if (!on) return removeWidget(layout, id);
   if (zoneOf(layout, id)) return cloneLayout(layout);
@@ -793,6 +884,7 @@ function setWidgetOn(layout, id, on) {
   return placeWidget(layout, id, w ? w.zone : 'c3', Infinity);
 }
 
+/** @param {Layout} layout @param {string} id @param {string} zone @param {number} index */
 function placeWidget(layout, id, zone, index) {
   const l = cloneLayout(layout);
   const z = zoneOf(l, id);
@@ -803,6 +895,7 @@ function placeWidget(layout, id, zone, index) {
   return l;
 }
 
+/** @param {unknown} a @param {unknown} b */
 function sameLayout(a, b) { return JSON.stringify(normalizeLayout(a)) === JSON.stringify(normalizeLayout(b)); }
 
 /* ---- calendar picker (Settings › Calendars) ------------------------------- *
@@ -815,28 +908,34 @@ function sameLayout(a, b) { return JSON.stringify(normalizeLayout(a)) === JSON.s
 const CAL_GROUP_ORDER = ['My calendars', 'Shared', 'Subscribed', 'Other'];
 
 // Saved choice -> array of ids, or null when nothing has been saved yet.
+/** @param {unknown} raw @returns {string[] | null} */
 function normalizeCalSel(raw) {
-  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.selected)) return null;
-  return [...new Set(raw.selected.filter((x) => typeof x === 'string' && x))];
+  const r = /** @type {Fm | null} */ (raw && typeof raw === 'object' ? raw : null);
+  if (!raw || typeof raw !== 'object' || !r || !Array.isArray(r.selected)) return null;
+  return [...new Set(/** @type {string[]} */ (/** @type {unknown[]} */ (r.selected).filter((x) => typeof x === 'string' && x)))];
 }
 
 // `calendars` frontmatter -> clean list (bad rows dropped).
+/** @typedef {{ id: string, name: string, account: string, group: string, color: string | null, subscribed: boolean, kind: string, selected: boolean, events: number | null, status: string | null }} CalChoice */
+/** @param {Fm | null | undefined} fm @returns {CalChoice[]} */
 function calendarListFrom(fm) {
-  return asList(fm && fm.calendars)
+  return /** @type {Fm[]} */ (asList(fm && fm.calendars))
     .filter((c) => c && typeof c === 'object' && typeof c.id === 'string' && c.id)
     .map((c) => ({
-      id: c.id, name: String(c.name || 'Calendar'), account: String(c.account || 'iCloud'),
-      group: CAL_GROUP_ORDER.includes(c.group) ? c.group : 'Other',
+      id: /** @type {string} */ (c.id), name: String(c.name || 'Calendar'), account: String(c.account || 'iCloud'),
+      group: typeof c.group === 'string' && CAL_GROUP_ORDER.includes(c.group) ? c.group : 'Other',
       color: /^#[0-9a-f]{6}$/i.test(String(c.color || '')) ? String(c.color) : null,
       subscribed: c.subscribed === true, kind: c.kind === 'reminders' ? 'reminders' : 'events',
       selected: c.selected === true,
-      events: Number.isFinite(c.events) ? c.events : null,
-      status: ['ok', 'empty', 'unreachable'].includes(c.status) ? c.status : null,
+      events: Number.isFinite(c.events) ? /** @type {number} */ (c.events) : null,
+      status: typeof c.status === 'string' && ['ok', 'empty', 'unreachable'].includes(c.status) ? c.status : null,
     }));
 }
 
 // -> [{ account, groups: [{ group, items }] }], only selectable calendars.
+/** @param {CalChoice[]} list */
 function groupCalendars(list) {
+  /** @type {{ account: string, groups: { group: string, items: CalChoice[] }[] }[]} */
   const accounts = [];
   list.filter((c) => c.kind === 'events').forEach((c) => {
     let a = accounts.find((x) => x.account === c.account);
@@ -850,14 +949,16 @@ function groupCalendars(list) {
 }
 
 // The note on the right of a calendar row: { text, warn } or null.
+/** @param {CalChoice} c */
 function calendarNote(c) {
   if (c.status === 'empty') return { text: 'feed is empty right now', warn: true };
   if (c.status === 'unreachable') return { text: "couldn't reach it on the last sync", warn: true };
-  if (c.events > 0) return { text: `${c.events} event${c.events === 1 ? '' : 's'} this week and next`, warn: false };
+  if (c.events && c.events > 0) return { text: `${c.events} event${c.events === 1 ? '' : 's'} this week and next`, warn: false };
   return null;
 }
 
 // '2026-10-04 07:47' (the sync's local time) -> 'today at 7:47 AM'.
+/** @param {unknown} updated @param {string} today */
 function listUpdatedText(updated, today) {
   const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(String(updated || ''));
   if (!m) return 'List not synced yet';
@@ -866,6 +967,7 @@ function listUpdatedText(updated, today) {
 }
 
 // Footer naming the reminder lists that are left out.
+/** @param {CalChoice[]} list */
 function remindersFooter(list) {
   const names = list.filter((c) => c.kind === 'reminders').map((c) => c.name.replace(/\s*⚠️?\s*$/u, '').trim());
   if (!names.length) return '';
@@ -877,12 +979,15 @@ function remindersFooter(list) {
 /* Startup: open the Today page when Obsidian starts (default on). Off means
  * Obsidian simply restores whatever was open last; Today is never opened,
  * focused or revealed at startup. Opening it by hand always works. */
+/** @param {unknown} raw */
 function normalizeOpenOnStartup(raw) { return raw !== false; }
+/** @param {Fm | null | undefined} saved */
 function startupOpensToday(saved) { return normalizeOpenOnStartup(saved && saved.openOnStartup); }
 
 /* Active projects, one line per project (option 1 mockup, picked 2026-10-18). ix = Projects'
  * areaIndex() or null. -> [{ path, area, label, rest }]: projects in an area first, areas A to Z, then the
  * ones with no area (label ''). label = the name's own "X - " start, else the area's name. */
+/** @param {{ path: string, name: string }[]} projects @param {{ areas?: { key: string, name: string }[], of?: Record<string, string> } | null | undefined} ix */
 function projectLines(projects, ix) {
   const areas = new Map(((ix && ix.areas) || []).map((a) => [a.key, a]));
   const rows = projects.map((p) => {
@@ -890,6 +995,7 @@ function projectLines(projects, ix) {
     const m = a && p.name.match(/^(.+?) - (.+)$/);
     return { path: p.path, area: a ? a.name : '', label: m ? m[1] : (a ? a.name : ''), rest: m ? m[2] : p.name };
   });
+  /** @param {{ area: string }} r */
   const order = (r) => (r.area ? 0 : 1);
   return rows.sort((x, y) => order(x) - order(y) || x.area.localeCompare(y.area, undefined, { sensitivity: 'base' }));
 }
@@ -911,9 +1017,13 @@ const logic = {
  * Plugin
  * ========================================================================== */
 
+/** @typedef {{ name: string, tz: string }} Place */
 class TodayPlugin extends Plugin {
+  /** @type {((refresh: boolean) => unknown) | null} an add-on's calendar sync (LifeWorld sets it) */ calendarSync = null;
+  /** @type {TodaySettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
+
   async onload() {
-    const saved = (await this.loadData()) || {};
+    const saved = /** @type {Fm} */ ((await this.loadData()) || {});
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
@@ -951,7 +1061,7 @@ class TodayPlugin extends Plugin {
   }
 
   async onExternalSettingsChange() {
-    const saved = (await this.loadData()) || {};
+    const saved = /** @type {Fm} */ ((await this.loadData()) || {});
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
@@ -962,41 +1072,47 @@ class TodayPlugin extends Plugin {
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
     this.applyLook();
-    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (!l.view) return; if (l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); if (l.view.data && l.view.renderHeader) l.view.renderHeader(); });
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (!v) return; if (v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); if (v.data && v.renderHeader) v.renderHeader(); });
   }
 
   // An add-on widget was added or removed (LifeWorld calls this). Read from the saved layout, so a widget
   // the person had placed or hidden comes back there (it was set aside while it was missing).
   async extrasChanged() {
-    const saved = (await this.loadData()) || {};
+    const saved = /** @type {Fm} */ ((await this.loadData()) || {});
     this.layout = normalizeLayout(saved.layout);
-    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); });
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); });
   }
 
   // The layout changed in Settings: open Today pages follow without a reload (criterion 5).
-  layoutChanged() { this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.onLayoutChangedElsewhere) l.view.onLayoutChangedElsewhere(); }); }
+  layoutChanged() { this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); }); }
 
+  /** @param {unknown} layout */
   async saveLayout(layout) {
     this.layout = normalizeLayout(layout);
-    const data = (await this.loadData()) || {};
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
     data.layout = this.layout;
     await this.saveData(data);
   }
 
   // Pinned shortcuts and World clock places (Settings, launch section 4); open pages redraw.
-  async savePins(list) { const data = (await this.loadData()) || {}; data.pins = normalizePins(list); await this.saveData(data); this.pins = data.pins; this.layoutChanged(); }
+  /** @param {unknown} list */
+  async savePins(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const pins = normalizePins(list); data.pins = pins; await this.saveData(data); this.pins = pins; this.layoutChanged(); }
   // Weather settings (launch section 7): saved, the forecast read again, open pages redraw.
+  /** @param {Partial<WeatherSettings>} patch */
   async saveWeather(patch) {
-    const data = (await this.loadData()) || {};
-    data.weather = normalizeWeather({ ...this.weatherCfg, ...patch });
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
+    const weather = normalizeWeather({ ...this.weatherCfg, ...patch });
+    data.weather = weather;
     await this.saveData(data);
-    this.weatherCfg = data.weather;
+    this.weatherCfg = weather;
     if (this.weatherCfg.place) refreshWeather(this.app, this.weatherCfg);
     this.layoutChanged();
   }
-  async saveHabits(list) { const data = (await this.loadData()) || {}; data.habits = normalizeHabits(list); await this.saveData(data); this.habits = data.habits; this.layoutChanged(); }
+  /** @param {unknown} list */
+  async saveHabits(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const habits = normalizeHabits(list); data.habits = habits; await this.saveData(data); this.habits = habits; this.layoutChanged(); }
 
   // The daily note of `day` ('YYYY-MM-DD'), or null.
+  /** @param {string} day */
   dailyFileOf(day) {
     const [y, m, d] = day.split('-').map(Number);
     const f = this.app.vault.getAbstractFileByPath(scratchPathFor(new Date(y, m - 1, d), dailyNotes(this.app), momentFormat()));
@@ -1005,6 +1121,7 @@ class TodayPlugin extends Plugin {
 
   // A Settings habit ticked or unticked for today: yes/no on today's daily note (made from the template when
   // missing), through the frontmatter API. -> the new state.
+  /** @param {string} name */
   async toggleHabitProp(name) {
     const now = new Date();
     let file = this.dailyFileOf(dayOf(now));
@@ -1019,36 +1136,43 @@ class TodayPlugin extends Plugin {
     return on;
   }
 
-  async savePlaces(list) { const data = (await this.loadData()) || {}; data.places = normalizePlaces(list); await this.saveData(data); this.places = data.places; this.layoutChanged(); }
+  /** @param {unknown} list */
+  async savePlaces(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const places = normalizePlaces(list); data.places = places; await this.saveData(data); this.places = places; this.layoutChanged(); }
 
   // A pinned folder is shown in Obsidian's file list. shortcut: revealInFolder is the file list's
   // undocumented method (Obsidian 1.x); upgrade if it gets an API.
+  /** @param {string} path */
   revealFolder(path) {
     const f = this.app.vault.getAbstractFileByPath(path);
     const leaf = this.app.workspace.getLeavesOfType('file-explorer')[0];
-    if (f && leaf && leaf.view && typeof leaf.view.revealInFolder === 'function') { this.app.workspace.revealLeaf(leaf); leaf.view.revealInFolder(f); return true; }
+    const fe = /** @type {{ revealInFolder?: (f: import('obsidian').TAbstractFile) => void } | undefined} */ (leaf && leaf.view);
+    if (f && leaf && fe && typeof fe.revealInFolder === 'function') { this.app.workspace.revealLeaf(leaf); fe.revealInFolder(f); return true; }
     new Notice('Could not show that folder in the file list.');
     return false;
   }
 
+  /** @param {unknown} on */
   async saveOpenOnStartup(on) {
     this.openOnStartup = !!on;
-    const data = (await this.loadData()) || {};
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
     data.openOnStartup = this.openOnStartup;
     await this.saveData(data);
   }
 
+  /** @param {unknown} name */
   async saveUserName(name) {
-    const data = (await this.loadData()) || {};
-    data.userName = normalizeUserName(name);
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
+    const userName = normalizeUserName(name);
+    data.userName = userName;
     await this.saveData(data);
-    this.userName = data.userName; // only once saved: a failed write leaves the name as it was
-    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { if (l.view && l.view.data && l.view.renderHeader) l.view.renderHeader(); });
+    this.userName = userName; // only once saved: a failed write leaves the name as it was
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.data && v.renderHeader) v.renderHeader(); });
   }
 
+  /** @param {unknown} look */
   async saveLook(look) {
     this.look = normalizeLook(look);
-    const data = (await this.loadData()) || {};
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
     data.look = this.look;
     await this.saveData(data);
     this.applyLook();
@@ -1059,14 +1183,15 @@ class TodayPlugin extends Plugin {
   calendarFrontmatter() {
     const f = feedNotes.calendar ? this.app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
     const c = f instanceof TFile ? this.app.metadataCache.getFileCache(f) : null;
-    return (c && c.frontmatter) || null;
+    return /** @type {Fm | null} */ ((c && c.frontmatter) || null);
   }
 
   calendarList() { return calendarListFrom(this.calendarFrontmatter()); }
 
+  /** @param {string[]} ids */
   async saveCalendarChoice(ids) {
     this.calSel = normalizeCalSel({ selected: ids });
-    const data = (await this.loadData()) || {};
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
     data.calendars = { selected: this.calSel };
     await this.saveData(data);
   }
@@ -1075,9 +1200,10 @@ class TodayPlugin extends Plugin {
     if (this.calSel !== null || this.adopting) return;
     const list = this.calendarList();
     if (!list.length) return;
+    /** @type {boolean | undefined} */
     this.adopting = true;
     try {
-      const data = (await this.loadData()) || {};
+      const data = /** @type {Fm} */ ((await this.loadData()) || {});
       if (normalizeCalSel(data.calendars) !== null) { this.calSel = normalizeCalSel(data.calendars); return; }
       await this.saveCalendarChoice(list.filter((c) => c.kind === 'events' && c.selected).map((c) => c.id));
     } finally { this.adopting = false; }
@@ -1091,23 +1217,29 @@ class TodayPlugin extends Plugin {
 
   // Runs the add-on's calendar sync now; one run at a time, a request during a run runs once after it.
   // Resolves true on success.
+  /** @param {boolean} refresh @returns {Promise<boolean>} */
   runCalendarSync(refresh) {
     if (!this.canRunSync()) return Promise.resolve(false);
     if (this.syncRun) { this.syncAgain = refresh ? true : this.syncAgain || 'plain'; return this.syncRun; }
-    this.syncRun = Promise.resolve().then(() => this.calendarSync(!!refresh)).then((ok) => ok === true, (e) => {
+    /** @type {Promise<boolean> | null} */
+    this.syncRun = Promise.resolve().then(() => /** @type {(refresh: boolean) => unknown} */ (this.calendarSync)(!!refresh)).then((ok) => ok === true, (e) => {
       console.warn('[LifeWorld] calendar sync failed', e); return false;
     }).then((ok) => {
       this.syncRun = null;
-      const again = this.syncAgain; this.syncAgain = null;
+      const again = this.syncAgain;
+      /** @type {boolean | 'plain' | null | undefined} */
+      this.syncAgain = null;
       return again ? this.runCalendarSync(again === true) : ok;
     });
     return this.syncRun;
   }
 
   // After a tick changes: sync shortly, once, however many boxes were ticked.
+  /** @param {(ok: boolean) => void} [onDone] */
   scheduleCalendarSync(onDone) {
     if (!this.canRunSync()) return false;
     if (this.syncTimer) window.clearTimeout(this.syncTimer);
+    /** @type {number | null | undefined} */
     this.syncTimer = window.setTimeout(() => { this.syncTimer = null; this.runCalendarSync(false).then((ok) => onDone && onDone(ok)); }, SYNC_AFTER_CHANGE_MS);
     return true;
   }
@@ -1115,7 +1247,9 @@ class TodayPlugin extends Plugin {
   onunload() { if (this.syncTimer) window.clearTimeout(this.syncTimer); }
 
   // Loads a bundled font once (FontFace API, works on desktop and mobile).
+  /** @param {string} id @returns {Promise<boolean>} */
   loadHandFont(id) {
+    /** @type {Record<string, Promise<boolean>>} */
     this.fontLoads = this.fontLoads || {};
     if (this.fontLoads[id]) return this.fontLoads[id];
     const f = HAND_FONTS.find((x) => x.id === id);
@@ -1144,11 +1278,12 @@ class TodayPlugin extends Plugin {
 
   // Sets the accent shade and handwriting font on an element (a Today page or
   // the settings preview) for the current light/dark mode.
+  /** @param {HTMLElement} el @param {TodayLook} [look] */
   styleLook(el, look) {
     const l = look || this.look;
     const dark = document.body.classList.contains('theme-dark');
     const bg = getComputedStyle(el).backgroundColor;
-    const bgOk = rgbOf(bg) && !/rgba\(.*,\s*0\)$/.test(bg) ? bg : null;
+    const bgOk = rgbOf(bg) && !/rgba\(.*,\s*0\)$/.test(bg) ? bg : undefined;
     const shade = accentShade(l, dark, l.accent === 'accent' ? this.obsidianAccent() : null, bgOk);
     if (shade) el.style.setProperty('--a4t-acc', shade); else el.style.removeProperty('--a4t-acc');
     const f = HAND_FONTS.find((x) => x.id === l.font) || HAND_FONTS[0];
@@ -1158,7 +1293,7 @@ class TodayPlugin extends Plugin {
   }
 
   applyLook() {
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (leaf.view && leaf.view.contentEl) this.styleLook(leaf.view.contentEl);
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {TodayView} */ (leaf.view); if (v && v.contentEl) this.styleLook(v.contentEl); }
   }
 
   async openToday() {
@@ -1180,6 +1315,7 @@ class TodayPlugin extends Plugin {
   // Which task cards the task source uses: 'checkbox' (one Today's tasks card) or 'notes'.
   taskKind() { const pj = this.projectsPlugin(); return pj && pj.settings && pj.settings.source === 'checkbox' ? 'checkbox' : 'notes'; }
   // A widget's part is on (planner, projects).
+  /** @param {string | undefined} needs */
   partOn(needs) { return needs === 'planner' ? this.plannerOn() : needs === 'projects' ? this.projectsOn() : true; }
 
   plannerOn() { const cmds = this.app.commands; return !!(cmds && cmds.commands && cmds.commands[PLANNER_COMMAND]); }
@@ -1198,8 +1334,9 @@ class TodayPlugin extends Plugin {
   openMoodCheckin() { this.newMoodCheckin(); }
 
   // New mood check-in: an add-on's own, when one is set (same note shape), else LifeWorld's 25 cards.
+  /** @param {() => void} [onDone] */
   newMoodCheckin(onDone) {
-    if (this.moodCheckinOn()) { this.app.commands.executeCommandById(ADDON.moodCheckin); return; }
+    if (this.moodCheckinOn()) { /** @type {NonNullable<import('obsidian').App['commands']>} */ (this.app.commands).executeCommandById(ADDON.moodCheckin); return; }
     new MoodCheckinModal(this.app, this, () => { this.layoutChanged(); if (onDone) onDone(); }).open();
   }
 
@@ -1218,7 +1355,7 @@ class TodayPlugin extends Plugin {
 
   currentScheme() {
     if (!this.canReadScheme()) return null;
-    return schemeOf(this.app.vault.getConfig('theme')) || schemeOf(document.body.classList.contains('theme-dark') ? 'obsidian' : 'moonstone');
+    return schemeOf(/** @type {(key: string) => unknown} */ (this.app.vault.getConfig)('theme')) || schemeOf(document.body.classList.contains('theme-dark') ? 'obsidian' : 'moonstone');
   }
 
   // Obsidian saves this setting to appearance.json on a 1 s debounce and
@@ -1227,6 +1364,7 @@ class TodayPlugin extends Plugin {
   // which restores the older saved value (seen in a test with no plugin
   // involved). Saving right away with Obsidian's own vault.saveConfig (what the
   // debounce calls) puts the new value on disk before any re-read.
+  /** @param {string} id */
   setScheme(id) {
     const ok = this.applyScheme(id);
     const v = this.app.vault;
@@ -1236,6 +1374,7 @@ class TodayPlugin extends Plugin {
     return ok;
   }
 
+  /** @param {string} id */
   applyScheme(id) {
     const app = this.app;
     if (typeof app.changeTheme === 'function') { app.changeTheme(id); return true; }
@@ -1248,6 +1387,7 @@ class TodayPlugin extends Plugin {
     return false;
   }
 
+  /** @param {string} path @param {boolean} [newTab] */
   openPath(path, newTab) {
     const f = this.app.vault.getAbstractFileByPath(path);
     if (f instanceof TFile) this.app.workspace.getLeaf(newTab ? 'tab' : false).openFile(f);
@@ -1258,7 +1398,8 @@ class TodayPlugin extends Plugin {
   projectsPlugin() { return partOf(this.app, 'a4-projects'); }
   // The chosen task source when it is not task notes, or null (src/core/sources.js, launch section 5).
   extSource() { const pj = this.projectsPlugin(); return pj && typeof pj.extSource === 'function' ? pj.extSource() : null; }
-  openTask(t) { if (t.ext) { const pj = this.projectsPlugin(); if (pj) pj.openTask(t); } else this.openPath(t.path, true); }
+  /** @param {TodayItem} t */
+  openTask(t) { if (t.ext) { const pj = this.projectsPlugin(); if (pj) pj.openTask(/** @type {ExtItem} */ (t)); } else this.openPath(t.path, true); }
 
   // Projects' task engine, when it is the chosen task source (Settings › LifeWorld › Tasks).
   tasksApi() {
@@ -1268,14 +1409,16 @@ class TodayPlugin extends Plugin {
 
   completedStatuses() {
     const own = this.projectsPlugin();
+    /** @type {string[]} */
     let list = [];
     try { if (own && own.engine) list = own.engine.cfg().statuses.filter((s) => s.isCompleted).map((s) => s.value); } catch { /* defaults below */ }
     return list.length ? list : DEFAULT_COMPLETED_STATUSES;
   }
 
   // Returns the task's new done state for `day`.
+  /** @param {TodayItem} item @param {string} day @returns {Promise<boolean>} */
   async toggleTask(item, day) {
-    if (item.ext) return this.extSource().toggle(item, day);
+    if (item.ext) return /** @type {NonNullable<ReturnType<TodayPlugin['extSource']>>} */ (this.extSource()).toggle(/** @type {ExtItem} */ (item), day);
     const file = this.app.vault.getAbstractFileByPath(item.path);
     if (!(file instanceof TFile)) throw new Error('That task note is gone.');
     const wasDone = isTaskDone(item, day, this.completedStatuses());
@@ -1319,21 +1462,30 @@ class TodayPlugin extends Plugin {
   // per task; each remembers what the keys it changed held before, so the
   // returned undo() puts every note back exactly (a key that was absent is
   // removed again). -> { moved: [paths], failed: [paths], undo }
+  /** @param {{ path: string, lane: string, order: number }[]} plan @param {string} day */
   async moveOverdueToToday(plan, day) {
     const completed = this.completedStatuses();
+    /** @type {{ path: string, before: Record<string, { v: unknown } | null> }[]} */
     const restores = [];
-    const moved = []; const failed = [];
+    /** @type {string[]} */
+    const moved = [];
+    /** @type {string[]} */
+    const failed = [];
     for (const step of plan) {
       const file = this.app.vault.getAbstractFileByPath(step.path);
       if (!(file instanceof TFile)) { failed.push(step.path); continue; }
+      /** @type {Record<string, { v: unknown } | null> | null} */
       let before = null;
       try {
         await this.app.fileManager.processFrontMatter(file, (fm) => {
-          const copy = JSON.parse(JSON.stringify(fm || {}));
+          const parsed = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm || {})));
+          const copy = /** @type {Fm} */ (parsed);
           if (!writable(fm, (v) => applyOverdueMove(v, day, step.order, completed))) return;
-          before = {};
+          /** @type {Record<string, { v: unknown } | null>} */
+          const was = {};
+          before = was;
           for (const k of [propNames.due, propNames.planned_day, propNames.planned_order]) {
-            before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
+            was[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
           }
         });
       } catch (e) {
@@ -1361,6 +1513,7 @@ class TodayPlugin extends Plugin {
 
   /* ---- habits ----------------------------------------------------------- */
 
+  /** @param {TFile} file @param {string} day */
   async toggleHabit(file, day) {
     let on = false;
     await this.app.vault.process(file, (text) => { const r = toggleHabitLog(text, day); on = r.on; return r.text; });
@@ -1369,6 +1522,7 @@ class TodayPlugin extends Plugin {
 
   /* ---- capture ---------------------------------------------------------- */
 
+  /** @param {unknown} rawText */
   async capture(rawText) {
     const text = cleanCapture(rawText);
     if (!text) return null;
@@ -1378,6 +1532,7 @@ class TodayPlugin extends Plugin {
   }
 
   // Journal box (launch section 3): the line goes under a "Journal" heading in today's daily note, as a list line.
+  /** @param {unknown} rawText */
   async journalLine(rawText) {
     const text = cleanCapture(rawText);
     if (!text) return null;
@@ -1387,9 +1542,11 @@ class TodayPlugin extends Plugin {
   // The daily note of `when` (a Date), found through Obsidian's own Daily notes setting, changed by
   // fn(text) -> text; made from the Daily notes template (folders on the way too) when it is missing.
   // -> its path.
+  /** @param {Date} now @param {(text: string) => string} fn */
   async writeDailyNote(now, fn) { return writeDailyNote(this.app, now, fn); }
 
   // Kept for a companion add-on that makes the note itself (Menu Bar Capture).
+  /** @param {Date} now @param {{ folder: string, format: string, template: string }} [dn] */
   async newScratchpadContent(now, dn) { return newDailyContent(this.app, now, dn); }
 
 }
@@ -1400,11 +1557,13 @@ class TodayPlugin extends Plugin {
 
 // The "Enter" key-cap beside a capture box. Before 1.6.0 it was only a label;
 // now it is a real control that saves, the same as pressing Enter.
+/** @param {HTMLElement} box */
 function captureSendButton(box) {
   return box.createEl('kbd', { text: 'Enter', cls: 'a4t-capture-send', attr: { role: 'button', tabindex: '0', 'aria-label': "Save to today's daily note", title: "Save to today's daily note", 'data-testid': 'a4t-capture-send' } });
 }
 
 class CaptureModal extends Modal {
+  /** @param {import('obsidian').App} app @param {TodayPlugin} plugin @param {string} [initial] */
   constructor(app, plugin, initial) { super(app); this.plugin = plugin; this.initial = initial || ''; }
   onOpen() {
     this.modalEl.addClass('a4t-capture-modal');
@@ -1436,6 +1595,7 @@ class CaptureModal extends Modal {
 
 // Settings › Calendars › Add a calendar link: one box for the private address (ICS, or webcal://).
 class CalendarLinkModal extends Modal {
+  /** @param {import('obsidian').App} app @param {() => void} onDone */
   constructor(app, onDone) { super(app); this.onDone = onDone; }
   onOpen() {
     this.setTitle('Add a calendar link');
@@ -1458,27 +1618,39 @@ class CalendarLinkModal extends Modal {
 }
 
 // Settings › Weather › Place: pick one of the towns the search found.
+/** @typedef {{ name: string, lat: number, lon: number, tz: string, short: string }} PlaceMatch */
+/** @extends {FuzzySuggestModal<PlaceMatch>} */
 class TownPicker extends FuzzySuggestModal {
+  /** @param {import('obsidian').App} app @param {PlaceMatch[]} list @param {(p: PlaceMatch) => unknown} onPick */
   constructor(app, list, onPick) { super(app); this.list = list; this.onPick = onPick; this.setPlaceholder('Pick your town'); }
   getItems() { return this.list; }
+  /** @param {PlaceMatch} p */
   getItemText(p) { return p.name; }
+  /** @param {PlaceMatch} p */
   onChooseItem(p) { this.onPick(p); }
 }
 
 // Settings › World clock › Add a place (2026-10-20): matches drop down under the box as you type,
 // from 3 letters and after a 300 ms pause. `find` is the place search (findPlaces; a stand-in in tests).
+/** @typedef {PlaceMatch | { none: string }} PlaceHit */
+/** @extends {AbstractInputSuggest<PlaceHit>} */
 class PlaceSuggest extends AbstractInputSuggest {
+  /** @param {import('obsidian').App} app @param {HTMLInputElement} inputEl @param {(m: PlaceMatch) => unknown} onPick @param {(q: string) => Promise<PlaceMatch[]>} [find] */
   constructor(app, inputEl, onPick, find = findPlaces) {
-    super(app, inputEl); this.suggestEl.addClass('a4t-place-suggest'); this.onPick = onPick; this.find = find; this.asked = 0; this.warned = false;
-    this.search = debounce((q, n, done) => this.lookUp(q, n, done), 300, true);
+    // suggestEl is Obsidian's own (not in its typings).
+    super(app, inputEl); /** @type {{ suggestEl: HTMLElement }} */ (/** @type {unknown} */ (this)).suggestEl.addClass('a4t-place-suggest'); this.onPick = onPick; this.find = find; this.asked = 0; this.warned = false;
+    this.search = debounce((/** @type {string} */ q, /** @type {number} */ n, /** @type {(list: PlaceHit[]) => void} */ done) => this.lookUp(q, n, done), 300, true);
   }
+  /** @param {string} text @returns {PlaceHit[] | Promise<PlaceHit[]>} */
   getSuggestions(text) {
     const q = text.trim(); const n = ++this.asked;
     if (q.length < 3) { this.search.cancel(); return []; }
-    return new Promise((done) => this.search(q, n, done));
+    return new Promise((done) => { this.search(q, n, done); });
   }
   // An answer for an older query is dropped (its promise never settles), so a slow one cannot replace a newer list.
+  /** @param {string} q @param {number} n @param {(list: PlaceHit[]) => void} done */
   async lookUp(q, n, done) {
+    /** @type {PlaceMatch[]} */
     let list;
     try { list = await this.find(q); } catch {
       if (n !== this.asked) return;
@@ -1489,19 +1661,26 @@ class PlaceSuggest extends AbstractInputSuggest {
     this.warned = false;
     done(list.length ? list : [{ none: q }]);
   }
+  /** @param {PlaceHit} m @param {HTMLElement} el */
   renderSuggestion(m, el) {
-    if (m.none) { el.addClass('a4t-pick-none'); el.setText(`No place called "${m.none}" was found.`); return; }
-    el.addClass('a4t-pick'); el.createSpan({ cls: 'a4t-pick-name', text: m.name }); el.createSpan({ cls: 'a4t-pick-tz', text: m.tz });
+    if ('none' in m && m.none) { el.addClass('a4t-pick-none'); el.setText(`No place called "${m.none}" was found.`); return; }
+    const pm = /** @type {PlaceMatch} */ (m);
+    el.addClass('a4t-pick'); el.createSpan({ cls: 'a4t-pick-name', text: pm.name }); el.createSpan({ cls: 'a4t-pick-tz', text: pm.tz });
   }
   // A pick also makes any waiting or late answer an old one, so no stray list opens under the redrawn box.
-  selectSuggestion(m) { if (m.none) return; this.asked++; this.search.cancel(); this.setValue(''); this.close(); return this.onPick(m); }
+  /** @param {PlaceHit} m */
+  selectSuggestion(m) { if ('none' in m && m.none) return; this.asked++; this.search.cancel(); this.setValue(''); this.close(); return this.onPick(/** @type {PlaceMatch} */ (m)); }
 }
 
 // Settings › Pinned shortcuts › Add: any note or folder in the vault.
+/** @extends {FuzzySuggestModal<import('obsidian').TAbstractFile>} */
 class PinPicker extends FuzzySuggestModal {
+  /** @param {import('obsidian').App} app @param {(path: string) => unknown} onPick */
   constructor(app, onPick) { super(app); this.onPick = onPick; this.setPlaceholder('Pick a note or folder to pin'); }
   getItems() { return this.app.vault.getAllLoadedFiles().filter((f) => (f instanceof TFolder && f.path !== '/') || (f instanceof TFile && f.extension === 'md')); }
+  /** @param {import('obsidian').TAbstractFile} f */
   getItemText(f) { return f instanceof TFolder ? `${f.path}/` : f.path; }
+  /** @param {import('obsidian').TAbstractFile} f */
   onChooseItem(f) { this.onPick(f.path); }
 }
 
@@ -1510,6 +1689,15 @@ class PinPicker extends FuzzySuggestModal {
  * ========================================================================== */
 
 class TodaySettingTab extends PluginSettingTab {
+  /** @type {HTMLElement | undefined} */ widgetsHost;
+  /** @type {HTMLElement | undefined} */ setupHost;
+  /** @type {HTMLElement | undefined} */ calHost;
+  /** @type {string | undefined} */ calStatus;
+  /** @type {boolean | undefined} */ refreshing;
+  /** @type {import('obsidian').EventRef | null | undefined} */ _cssRef;
+  /** @type {import('obsidian').EventRef | null | undefined} */ _calRef;
+
+  /** @param {import('obsidian').App} app @param {TodayPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
 
   display() {
@@ -1517,8 +1705,11 @@ class TodaySettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass('a4t-settings');
     const look = { ...this.plugin.look };
+    /** @type {HTMLElement | undefined} */
     let swatches;
+    /** @type {HTMLElement | undefined} */
     let preview;
+    /** @param {Partial<TodayLook>} patch */
     const update = async (patch) => {
       Object.assign(look, patch);
       await this.plugin.saveLook(look);
@@ -1536,7 +1727,7 @@ class TodaySettingTab extends PluginSettingTab {
         t.inputEl.addEventListener('change', async () => {
           try { await this.plugin.saveUserName(t.getValue()); } catch (e) { console.error('[LifeWorld] name not saved', e); new Notice('Your name could not be saved.'); }
           t.setValue(this.plugin.userName); // the box shows what is saved (trimmed, cut to length, or the old name)
-          if (preview && preview.isConnected) preview.querySelector('.a4t-pv-title').setText(greetingLine(new Date().getHours(), this.plugin.userName));
+          if (preview && preview.isConnected) /** @type {HTMLElement} */ (preview.querySelector('.a4t-pv-title')).setText(greetingLine(new Date().getHours(), this.plugin.userName));
         });
       });
     new Setting(containerEl)
@@ -1566,24 +1757,26 @@ class TodaySettingTab extends PluginSettingTab {
         d.setValue(look.font);
         d.onChange((v) => update({ font: v }));
       });
-    preview = containerEl.createDiv({ cls: 'a4t-preview' });
-    preview.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
-    preview.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours(), this.plugin.userName) });
-    preview.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
+    const pv = containerEl.createDiv({ cls: 'a4t-preview' });
+    preview = pv;
+    pv.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
+    pv.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours(), this.plugin.userName) });
+    pv.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
     const dark = () => document.body.classList.contains('theme-dark');
     const paintSwatches = () => {
-      swatches.empty();
+      const box = /** @type {HTMLElement} */ (swatches);
+      box.empty();
       ACCENTS.filter((a) => a.light).forEach((a) => {
-        const sw = swatches.createSpan({ cls: `a4t-swatch${look.accent === a.id ? ' is-on' : ''}`, attr: { 'aria-label': a.name, 'data-accent': a.id } });
-        sw.style.setProperty('--a4t-sw', dark() ? a.dark : a.light);
+        const sw = box.createSpan({ cls: `a4t-swatch${look.accent === a.id ? ' is-on' : ''}`, attr: { 'aria-label': a.name, 'data-accent': a.id } });
+        sw.style.setProperty('--a4t-sw', /** @type {string} */ (dark() ? a.dark : a.light));
         sw.addEventListener('click', () => { const dd = containerEl.querySelector('select'); if (dd) dd.value = a.id; update({ accent: a.id }); });
       });
     };
-    const paintPreview = () => this.plugin.styleLook(preview, look);
+    const paintPreview = () => this.plugin.styleLook(pv, look);
     paintSwatches();
     paintPreview();
     if (this._cssRef) this.app.workspace.offref(this._cssRef);
-    this._cssRef = this.app.workspace.on('css-change', () => { if (preview.isConnected) { paintSwatches(); paintPreview(); } });
+    this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
     this.plugin.registerEvent(this._cssRef);
 
     this.setupHost = containerEl.createDiv({ cls: 'a4t-setup' });
@@ -1608,21 +1801,23 @@ class TodaySettingTab extends PluginSettingTab {
     host.createDiv({ cls: 'setting-item-description a4t-wl-hint', text: 'Widgets: switch on or off, and use the arrows to change the order. You can also move them right on the page with Edit layout.' });
     const layout = plugin.layout;
     const kind = plugin.taskKind();
+    /** @param {string} id */
     const fits = (id) => { const w = allWidgets().find((x) => x.id === id); return !!w && (!w.tasks || w.tasks === kind); };
+    /** @param {Layout} next */
     const save = async (next) => { await plugin.saveLayout(next); plugin.layoutChanged(); this.renderWidgetList(); this.renderSetup(); };
-    for (const [zone, label] of [['top', 'Top strip'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right']]) {
+    for (const [zone, label] of /** @type {[string, string][]} */ ([['top', 'Top strip'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right']])) {
       const on = layout.zones[zone].filter(fits);
       const off = layout.hidden.filter((id) => fits(id) && (allWidgets().find((x) => x.id === id) || {}).zone === zone);
       if (!on.length && !off.length) continue;
       host.createDiv({ cls: 'a4t-wl-group', text: label });
       for (const id of [...on, ...off]) {
-        const w = allWidgets().find((x) => x.id === id);
+        const w = /** @type {WidgetDef} */ (allWidgets().find((x) => x.id === id));
         const blocked = !!(w.needs && !plugin.partOn(w.needs));
         const isOn = on.includes(id);
-        const row = new Setting(host).setName(w.name).setDesc(blocked ? NEEDS_TEXT[w.needs] : (w.desc || ''));
+        const row = new Setting(host).setName(w.name).setDesc(blocked ? NEEDS_TEXT[/** @type {string} */ (w.needs)] : (w.desc || ''));
         row.settingEl.addClass('a4t-wl-row');
         if (blocked) row.settingEl.addClass('lw-dim');
-        for (const [dir, icon, word] of [[-1, 'chevron-up', 'up'], [1, 'chevron-down', 'down']]) {
+        for (const [dir, icon, word] of /** @type {[number, string, string][]} */ ([[-1, 'chevron-up', 'up'], [1, 'chevron-down', 'down']])) {
           row.addExtraButton((b) => {
             b.setIcon(icon).setTooltip(`Move ${w.name} ${word}`);
             if (!isOn || !canMoveWidget(layout, id, dir, fits)) b.setDisabled(true);
@@ -1641,6 +1836,7 @@ class TodaySettingTab extends PluginSettingTab {
     const plugin = this.plugin;
     if (!host) return;
     host.empty();
+    /** @param {string} id */
     const on = (id) => !!zoneOf(plugin.layout, id);
     if (on('clock')) {
       new Setting(host).setName('World clock').setHeading();
@@ -1668,16 +1864,17 @@ class TodaySettingTab extends PluginSettingTab {
           t.inputEl.setAttr('aria-label', 'Weather place');
           t.inputEl.addEventListener('change', async () => {
             const q = t.getValue().trim(); if (!q) return;
+            /** @type {PlaceMatch[]} */
             let list = [];
             try { list = await findPlaces(q); } catch { new Notice('Could not search towns right now. Check the internet connection.'); return; }
             if (!list.length) { new Notice(`No town called "${q}" was found.`); return; }
             new TownPicker(this.app, list, async (p) => { await plugin.saveWeather({ place: p }); this.renderSetup(); }).open();
           });
         });
-        new Setting(host).setName('Forecast shows').addDropdown((d) => d.addOption('hours', 'Next 6 hours').addOption('days', 'Next 6 days').setValue(w.span).onChange((v) => plugin.saveWeather({ span: v })));
-        new Setting(host).setName('Temperature').addDropdown((d) => d.addOption('c', 'Celsius (°C)').addOption('f', 'Fahrenheit (°F)').setValue(w.units).onChange((v) => plugin.saveWeather({ units: v })));
+        new Setting(host).setName('Forecast shows').addDropdown((d) => d.addOption('hours', 'Next 6 hours').addOption('days', 'Next 6 days').setValue(w.span).onChange((v) => plugin.saveWeather({ span: /** @type {'hours' | 'days'} */ (v) })));
+        new Setting(host).setName('Temperature').addDropdown((d) => d.addOption('c', 'Celsius (°C)').addOption('f', 'Fahrenheit (°F)').setValue(w.units).onChange((v) => plugin.saveWeather({ units: /** @type {'c' | 'f'} */ (v) })));
         new Setting(host).setName('Show tides').setDesc('High and low tide times for your place').addToggle((t) => t.setValue(w.tides).onChange(async (v) => { await plugin.saveWeather({ tides: v }); this.renderSetup(); }));
-        if (w.tides) new Setting(host).setName('Tides from').addDropdown((d) => d.addOption('om', 'Open-Meteo (free, no account)').addOption('sg', 'Stormglass (your own key)').setValue(w.tideSrc).onChange(async (v) => { await plugin.saveWeather({ tideSrc: v }); this.renderSetup(); }));
+        if (w.tides) new Setting(host).setName('Tides from').addDropdown((d) => d.addOption('om', 'Open-Meteo (free, no account)').addOption('sg', 'Stormglass (your own key)').setValue(w.tideSrc).onChange(async (v) => { await plugin.saveWeather({ tideSrc: /** @type {'om' | 'sg'} */ (v) }); this.renderSetup(); }));
         if (w.tides && w.tideSrc === 'sg') {
           new Setting(host).setName('Stormglass key').setDesc('Get a free key at stormglass.io. Used once a day. It stays on this device: not synced or backed up.').addText((t) => {
             t.inputEl.type = 'password'; t.inputEl.setAttr('aria-label', 'Stormglass key'); t.inputEl.setAttr('autocomplete', 'off');
@@ -1698,7 +1895,7 @@ class TodaySettingTab extends PluginSettingTab {
       add.addText((t) => { t.setPlaceholder('Walk'); t.inputEl.setAttr('aria-label', 'Habit name'); t.onChange((v) => { name = v; }); });
       add.addButton((b) => b.setButtonText('Add').onClick(async () => {
         const today = plugin.dailyFileOf(dayOf(new Date()));
-        const why = habitNameProblem(name, plugin.habits, today ? (this.app.metadataCache.getFileCache(today) || {}).frontmatter : null);
+        const why = habitNameProblem(name, plugin.habits, /** @type {Fm | null | undefined} */ (today ? (this.app.metadataCache.getFileCache(today) || {}).frontmatter : null));
         if (why) { new Notice(why); return; }
         await plugin.saveHabits([...plugin.habits, { name: name.trim() }]); this.renderSetup();
       }));
@@ -1717,7 +1914,7 @@ class TodaySettingTab extends PluginSettingTab {
       new Setting(host).setName('Pinned shortcuts').setHeading();
       for (const p of plugin.pins) {
         const f = this.app.vault.getAbstractFileByPath(p);
-        new Setting(host).setName(p.split('/').pop() || p).setDesc(f ? (f instanceof TFolder ? `Folder: ${p}` : p) : `${p} (not found)`)
+        new Setting(host).setName(/** @type {string} */ (p.split('/').pop()) || p).setDesc(f ? (f instanceof TFolder ? `Folder: ${p}` : p) : `${p} (not found)`)
           .addButton((b) => b.setButtonText('Remove').onClick(async () => { await plugin.savePins(plugin.pins.filter((x) => x !== p)); this.renderSetup(); }));
       }
       new Setting(host).setName('Add a note or folder').addButton((b) => b.setButtonText('Add').onClick(() => new PinPicker(this.app, async (path) => { await plugin.savePins([...plugin.pins, path]); this.renderSetup(); }).open()));
@@ -1725,7 +1922,7 @@ class TodaySettingTab extends PluginSettingTab {
   }
 
   renderCalendars() {
-    const host = this.calHost;
+    const host = /** @type {HTMLElement} */ (this.calHost);
     const plugin = this.plugin;
     host.empty();
     const list = plugin.calendarList();
@@ -1770,8 +1967,8 @@ class TodaySettingTab extends PluginSettingTab {
         if (host.isConnected) this.renderCalendars();
       })) this.calStatus = 'Saved. Updating the calendar…';
       else this.calStatus = 'Saved. The next calendar sync picks this up.';
-      const st = host.querySelector('.a4t-cal-status') || host.insertBefore(createDiv({ cls: 'a4t-cal-status' }), host.querySelector('.a4t-cal-account'));
-      st.setText(this.calStatus);
+      const st = /** @type {HTMLElement | null} */ (host.querySelector('.a4t-cal-status')) || host.insertBefore(createDiv({ cls: 'a4t-cal-status' }), host.querySelector('.a4t-cal-account'));
+      st.setText(/** @type {string} */ (this.calStatus));
     };
     accounts.forEach((acc) => {
       const box = host.createDiv({ cls: 'a4t-cal-account' });
@@ -1817,20 +2014,33 @@ class TodaySettingTab extends PluginSettingTab {
  * The Today view
  * ========================================================================== */
 
+/** @typedef {{ path?: string, prop?: string, name: string, derived: boolean, doneToday: boolean, streak: number }} TodayHabit */
+/** @typedef {{ key: string, path: string, date: string, time: string, score: number, felt: string[] }} TodayMood */
+/** @typedef {{ today: string, completed: string[], items: TodayItem[], lists: ReturnType<typeof buildTaskLists>, weather: Fm | null, events: TodayEvent[], journal: { path: string, date: string, text: string, cut: boolean } | null, habits: TodayHabit[], mood: TodayMood | null, projects: { path: string, name: string }[], recent: { path: string, basename: string, mtime: number }[], pins: { path: string, name: string, folder: boolean, gone: boolean }[] }} TodayData */
+/** @typedef {TodayItem & { optimistic?: boolean }} TodayRowItem */
+/** @typedef {HTMLElement & { _justDragged?: boolean }} TodayRow */
 class TodayView extends ItemView {
+  /** @param {import('obsidian').WorkspaceLeaf} leaf @param {TodayPlugin} plugin */
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
     this.editing = false;
     this.panelOpen = false;
     this.overdueExpanded = false;
+    /** @type {string | null} */
     this.renderedDay = null;
+    /** @type {TodayData | null} */
     this.data = null;
+    /** @type {{ id: string, el: HTMLElement, ph: HTMLElement, dx: number, dy: number, pointerId: number } | null} */
     this.drag = null;
     this.seq = 0;
+    /** @type {Map<string, { done: boolean, day: string, until: number }>} */
     this.pending = new Map(); // path -> { done, until } so a just-ticked row never flickers back
+    /** @type {Map<string, TodayItem>} */
     this.lastItems = new Map(); // path -> last good task (frontmatter can read empty right after a write)
+    /** @type {Map<string, HTMLElement>} */
     this.widgetEls = new Map();
+    /** @type {number | null} */
     this._timer = null;
   }
 
@@ -1848,7 +2058,9 @@ class TodayView extends ItemView {
     this.panel.hidden = true;
     this.buildShell();
 
+    /** @param {string} p */
     const daily = (p) => { const f = dailyNotes(this.app).folder; return (this.journalFromDaily || this.plugin.habits.length > 0) && (!f || p.startsWith(`${f}/`)); };
+    /** @param {{ path?: unknown } | null | undefined} file */
     const onChange = (file) => { if (file && typeof file.path === 'string' && (watches(file.path) || daily(file.path))) this.scheduleRefresh(); };
     this.registerEvent(this.app.metadataCache.on('changed', onChange));
     this.registerEvent(this.app.vault.on('create', onChange));
@@ -1895,12 +2107,13 @@ class TodayView extends ItemView {
 
   scheduleRecent() {
     if (this._recentTimer) return;
+    /** @type {number | null | undefined} */
     this._recentTimer = window.setTimeout(() => {
       this._recentTimer = null;
       const el = this.widgetEls.get('recent');
       if (!this.data || !el || !el.isConnected || this.drag) return;
       this.data.recent = recentNotes(this.app.vault.getMarkdownFiles().map((f) => ({ path: f.path, basename: f.basename, mtime: f.stat ? f.stat.mtime : 0 })));
-      this.renderWidget('recent', el.querySelector('.a4t-wbody'), el);
+      this.renderWidget('recent', /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody')), el);
     }, 1000);
   }
 
@@ -1917,6 +2130,7 @@ class TodayView extends ItemView {
 
   /* ---- data ------------------------------------------------------------- */
 
+  /** @returns {Promise<TodayData>} */
   async collect() {
     const app = this.app;
     const today = dayOf(new Date());
@@ -1924,9 +2138,12 @@ class TodayView extends ItemView {
 
     // Tasks: from the chosen source (checkboxes, ClickUp, Todoist, Things) or the task notes folder.
     const ext = this.plugin.extSource();
+    /** @type {TodayItem[]} */
     const items = ext ? ext.items().slice() : [];
+    /** @type {Set<string>} */
     const seenPaths = new Set();
     const root = ext ? null : app.vault.getAbstractFileByPath(vaultFolders.tasks);
+    /** @param {TFolder} folder */
     const walk = (folder) => {
       for (const c of folder.children || []) {
         if (c instanceof TFolder) walk(c);
@@ -1938,8 +2155,8 @@ class TodayView extends ItemView {
             if (prev) items.push(prev);
             continue;
           }
-          const fm = readable(cache.frontmatter);
-          const it = taskFromFrontmatter(fm, c.path, c.basename);
+          const fm = readable(/** @type {Fm} */ (cache.frontmatter));
+          const it = /** @type {TodayItem | null} */ (taskFromFrontmatter(fm, c.path, c.basename));
           if (it) it.projectLink = asList(fm.projects)[0] || null; // the label shows the name; the link finds the page
           if (it) { items.push(it); this.lastItems.set(c.path, it); } else this.lastItems.delete(c.path);
         }
@@ -1953,26 +2170,28 @@ class TodayView extends ItemView {
       const it = items.find((x) => x.path === path);
       if (!it || now > st.until) { this.pending.delete(path); continue; }
       if (isTaskDone(it, st.day, completed) === st.done) { this.pending.delete(path); continue; }
-      it.optimistic = st.done;
+      /** @type {TodayRowItem} */ (it).optimistic = st.done;
     }
     const lists = buildTaskLists(items, today, completed, true);
 
     // Weather: the weather note when one is set (unchanged), else the forecast for the town in Settings.
+    /** @type {Fm | null} */
     let weather = null;
     const wf = feedNotes.weather ? app.vault.getAbstractFileByPath(feedNotes.weather) : null;
     if (wf instanceof TFile) {
-      const fm = (app.metadataCache.getFileCache(wf) || {}).frontmatter;
+      const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(wf) || {}).frontmatter);
       if (fm && fm.temp != null) weather = fm;
     } else if (!feedNotes.weather) {
       const w = weatherFor(app, this.plugin.weatherCfg);
-      if (w && w.temp != null) weather = this.plugin.weatherCfg.tides ? w : { ...w, tides_today: [] };
+      if (w && w.temp != null) weather = /** @type {Fm} */ (/** @type {unknown} */ (this.plugin.weatherCfg.tides ? w : { ...w, tides_today: [] }));
     }
 
     // Calendar: the calendar note (when set) and the calendar links (Settings, launch section 6).
+    /** @type {unknown[]} */
     let noteEvents = [];
     const cf = feedNotes.calendar ? app.vault.getAbstractFileByPath(feedNotes.calendar) : null;
     if (cf instanceof TFile) {
-      const fm = (app.metadataCache.getFileCache(cf) || {}).frontmatter;
+      const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(cf) || {}).frontmatter);
       noteEvents = asList(fm && fm.events);
     }
     const linked = calendarEvents(app);
@@ -1981,14 +2200,26 @@ class TodayView extends ItemView {
     // Journal days (for the derived habit) and the latest entry: notes marked `type: journal` in the
     // journal folder; a folder without them counts its untyped notes (a person's own journal folder);
     // none at all: the newest daily note with writing in it (launch section 3).
+    /** @type {Set<string>} */
     const journalDays = new Set();
-    let latest = null; let loose = null;
+    /** @type {{ file: TFile, date: string } | null} */
+    let latest = null;
+    /** @type {{ file: TFile, date: string } | null} */
+    let loose = null;
     const dn = dailyNotes(app);
-    const parse = moment ? (rel, f) => { const m = moment(rel, f, true); return m.isValid() ? m.format('YYYY-MM-DD') : null; } : null;
-    const files = app.vault.getMarkdownFiles();
-    for (const f of files) {
+    const mo = /** @type {MomentFn} */ (/** @type {unknown} */ (moment));
+    /** @type {((rel: string, f: string) => string | null) | null} */
+    const parse = moment ? (rel, f) => { const m = mo(rel, f, true); return m.isValid() ? m.format('YYYY-MM-DD') : null; } : null;
+    // Only the journal folder is read here (the scanner's "narrow it" advice), not every note in the vault.
+    /** @type {TFile[]} */
+    const journalFiles = [];
+    const jroot = vaultFolders.journal ? app.vault.getAbstractFileByPath(vaultFolders.journal) : null;
+    /** @param {TFolder} folder */
+    const walkJournal = (folder) => { for (const c of folder.children || []) { if (c instanceof TFolder) walkJournal(c); else if (c instanceof TFile && c.extension === 'md') journalFiles.push(c); } };
+    if (jroot instanceof TFolder) walkJournal(jroot);
+    for (const f of journalFiles) {
       if (!f.path.startsWith(vaultFolders.journal + '/')) continue;
-      const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+      const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(f) || {}).frontmatter);
       if (!fm || fm.type !== 'journal') {
         if (fm && fm.type) continue;
         const d0 = toDayStr(fm && fm.date) || dayFromNoteName(f.path, { folder: f.parent ? f.parent.path : '', format: dn.format }, parse) || (f.stat ? dayOf(new Date(f.stat.mtime)) : null);
@@ -2001,9 +2232,14 @@ class TodayView extends ItemView {
       if (!latest || d > latest.date) latest = { file: f, date: d };
     }
     if (!latest) latest = loose;
+    /** @type {TodayData['journal']} */
     let journal = null;
     this.journalFromDaily = !latest;
     if (!latest) {
+      // No journal note: the daily notes, wherever the Daily notes setting keeps them (the vault's top when it
+      // names no folder), so this one reads every note.
+      const files = app.vault.getMarkdownFiles();
+      /** @type {{ path: string, date: string }[]} */
       const dailyList = [];
       // Every name is parsed with the date format, not picked by length ("MMM D, YYYY" varies).
       for (const f of files) { const dd = dayFromNoteName(f.path, dn, parse); if (dd) dailyList.push({ path: f.path, date: dd }); }
@@ -2019,12 +2255,13 @@ class TodayView extends ItemView {
     }
 
     // Habits: active daily habit notes, same filter as the Planner and the habits add-on
+    /** @type {TodayHabit[]} */
     const habits = [];
     const hf = app.vault.getAbstractFileByPath(vaultFolders.habits);
     if (hf instanceof TFolder) {
       for (const f of hf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
-        const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+        const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(f) || {}).frontmatter);
         if (!fm || fm.type !== 'habit' || fm.status !== 'active' || fm.cadence !== 'daily') continue;
         const derived = fm.derived === 'journal';
         let done = journalDays;
@@ -2035,10 +2272,12 @@ class TodayView extends ItemView {
     }
     // Settings habits: yes/no on the daily note (launch section 8), after the habit notes.
     if (this.plugin.habits.length) {
+      /** @type {Map<string, Fm>} */
       const fmOf = new Map();
+      /** @param {string} name @returns {(day: string) => boolean} */
       const yesOn = (name) => (day) => {
-        if (!fmOf.has(day)) { const f = this.plugin.dailyFileOf(day); fmOf.set(day, f ? (app.metadataCache.getFileCache(f) || {}).frontmatter || {} : {}); }
-        return fmOf.get(day)[name] === true;
+        if (!fmOf.has(day)) { const f = this.plugin.dailyFileOf(day); fmOf.set(day, /** @type {Fm} */ (f ? (app.metadataCache.getFileCache(f) || {}).frontmatter || {} : {})); }
+        return /** @type {Fm} */ (fmOf.get(day))[name] === true;
       };
       for (const h of this.plugin.habits) {
         const yes = yesOn(h.name);
@@ -2047,12 +2286,13 @@ class TodayView extends ItemView {
     }
 
     // Mood: the latest check-in, any day
+    /** @type {TodayMood | null} */
     let mood = null;
     const mf = vaultFolders.mood ? app.vault.getAbstractFileByPath(vaultFolders.mood) : null;
     if (mf instanceof TFolder) {
       for (const f of mf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
-        const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+        const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(f) || {}).frontmatter);
         if (!fm || fm.type !== 'mood-checkin') continue;
         const d = toDayStr(fm.date);
         const score = Number(fm.score);
@@ -2063,12 +2303,13 @@ class TodayView extends ItemView {
     }
 
     // Active projects
+    /** @type {{ path: string, name: string }[]} */
     const projects = [];
     const pf = app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (pf instanceof TFolder) {
       for (const f of pf.children || []) {
         if (!(f instanceof TFile) || f.extension !== 'md') continue;
-        const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+        const fm = /** @type {Fm | undefined} */ ((app.metadataCache.getFileCache(f) || {}).frontmatter);
         if (fm && fm.type === 'project' && fm.status === 'active') projects.push({ path: f.path, name: f.basename });
       }
       projects.sort((a, b) => a.name.localeCompare(b.name));
@@ -2076,13 +2317,14 @@ class TodayView extends ItemView {
 
     // Recent notes and pins (launch section 4)
     const recent = recentNotes(app.vault.getMarkdownFiles().map((f) => ({ path: f.path, basename: f.basename, mtime: f.stat ? f.stat.mtime : 0 })));
-    const pins = this.plugin.pins.map((p) => { const f = app.vault.getAbstractFileByPath(p); return { path: p, name: f ? (f instanceof TFile ? f.basename : f.name) : p.split('/').pop(), folder: f instanceof TFolder, gone: !f }; });
+    const pins = this.plugin.pins.map((p) => { const f = app.vault.getAbstractFileByPath(p); return { path: p, name: f ? (f instanceof TFile ? f.basename : f.name) : /** @type {string} */ (p.split('/').pop()), folder: f instanceof TFolder, gone: !f }; });
 
     return { today, completed, items, lists, weather, events, journal, habits, mood, projects, recent, pins };
   }
 
   async refresh() {
     const seq = ++this.seq;
+    /** @type {TodayData} */
     let data;
     try { data = await this.collect(); } catch (e) { console.error('[LifeWorld] refresh failed', e); return; }
     if (seq !== this.seq) return; // a newer refresh started while this one awaited
@@ -2139,6 +2381,7 @@ class TodayView extends ItemView {
     const doneBtn = edit.createEl('button', { cls: 'a4t-btn a4t-primary', text: 'Done' });
     doneBtn.addEventListener('click', () => { this.setEditing(false); new Notice('Layout saved'); });
 
+    /** @type {Record<string, HTMLElement>} */
     this.zoneEls = {};
     this.zoneEls.top = this.page.createDiv({ cls: 'a4t-zone a4t-zone-top', attr: { 'data-zone': 'top' } });
     const grid = this.page.createDiv({ cls: 'a4t-grid' });
@@ -2155,7 +2398,7 @@ class TodayView extends ItemView {
     const icon = cur ? cur.icon : 'sun-moon';
     if (this.schemeBtn.dataset.icon !== icon) { this.schemeBtn.empty(); setIcon(this.schemeBtn, icon); this.schemeBtn.dataset.icon = icon; }
     this.schemeBtn.setAttr('aria-label', cur ? `Color scheme: ${cur.label}` : 'Color scheme');
-    if (this.schemeMenu) this.schemeMenu.querySelectorAll('[data-scheme]').forEach((b) => b.toggleClass('is-on', !!cur && b.dataset.scheme === cur.id));
+    if (this.schemeMenu) /** @type {NodeListOf<HTMLElement>} */ (this.schemeMenu.querySelectorAll('[data-scheme]')).forEach((b) => b.toggleClass('is-on', !!cur && b.dataset.scheme === cur.id));
   }
 
   closeSchemeMenu() {
@@ -2179,15 +2422,17 @@ class TodayView extends ItemView {
     }
     menu.createDiv({ cls: 'a4t-mm-note', text: 'Changes all of Obsidian, same as Settings › Appearance.' });
     const rr = this.contentEl.getBoundingClientRect();
-    const br = this.schemeBtn.getBoundingClientRect();
+    const br = /** @type {HTMLElement} */ (this.schemeBtn).getBoundingClientRect();
     menu.style.setProperty('--a4t-mx', `${Math.max(8, Math.min(br.left - rr.left, rr.width - 208))}px`);
     menu.style.setProperty('--a4t-my', `${br.bottom - rr.top + 6}px`);
-    this._schemeAway = (e) => { if (!menu.contains(e.target) && !this.schemeBtn.contains(e.target)) this.closeSchemeMenu(); };
+    /** @param {PointerEvent} e */
+    this._schemeAway = (e) => { if (!menu.contains(/** @type {Node} */ (e.target)) && !/** @type {HTMLElement} */ (this.schemeBtn).contains(/** @type {Node} */ (e.target))) this.closeSchemeMenu(); };
     document.addEventListener('pointerdown', this._schemeAway, true);
     this._schemeScroll = () => this.closeSchemeMenu();
     this.scroller.addEventListener('scroll', this._schemeScroll);
   }
 
+  /** @param {boolean} on */
   setEditing(on) {
     this.editing = on;
     this.closeMoveMenu();
@@ -2195,6 +2440,7 @@ class TodayView extends ItemView {
     if (!on) this.openPanel(false);
   }
 
+  /** @param {boolean} on */
   openPanel(on) {
     this.panelOpen = on;
     this.panel.hidden = !on;
@@ -2208,6 +2454,7 @@ class TodayView extends ItemView {
     if (this.panelOpen) this.renderPanel();
   }
 
+  /** @param {Layout} layout @param {string} [message] */
   async applyLayout(layout, message) {
     await this.plugin.saveLayout(layout);
     const tab = this.plugin.settingTab;
@@ -2220,7 +2467,7 @@ class TodayView extends ItemView {
   /* ---- header and clock ------------------------------------------------- */
 
   renderHeader() {
-    const d = this.data;
+    const d = /** @type {TodayData} */ (this.data);
     const now = new Date();
     this.kickerEl.setText(longDate(d.today));
     this.greetEl.setText(greetingLine(now.getHours(), this.plugin.userName));
@@ -2230,16 +2477,17 @@ class TodayView extends ItemView {
   }
 
   openCount() {
-    const d = this.data;
+    const d = /** @type {TodayData} */ (this.data);
     return [...d.lists.morning, ...d.lists.afternoon].filter((t) => !this.doneOf(t)).length;
   }
 
-  doneOf(t) { return t.optimistic != null ? t.optimistic : isTaskDone(t, this.data.today, this.data.completed); }
+  /** @param {TodayRowItem} t */
+  doneOf(t) { const d = /** @type {TodayData} */ (this.data); return t.optimistic != null ? t.optimistic : isTaskDone(t, d.today, d.completed); }
 
   renderClock() { if (this.clockEl) this.clockEl.setText(`it's ${clockText(new Date())}, one thing at a time.`); }
 
   renderWeatherAge() {
-    const el = this.page.querySelector('.a4t-w-upd');
+    const el = /** @type {HTMLElement | null} */ (this.page.querySelector('.a4t-w-upd'));
     const w = this.data && this.data.weather;
     if (!el || !w) return;
     const age = weatherAge(w.updated, new Date());
@@ -2249,10 +2497,11 @@ class TodayView extends ItemView {
 
   /* ---- widgets ---------------------------------------------------------- */
 
+  /** @param {string} id */
   widgetEl(id) {
     let el = this.widgetEls.get(id);
     if (el) return el;
-    const meta = allWidgets().find((w) => w.id === id);
+    const meta = /** @type {WidgetDef} */ (allWidgets().find((w) => w.id === id));
     el = createDiv({ cls: `a4t-w a4t-w-${id}`, attr: { 'data-w': id } });
     const tools = el.createDiv({ cls: 'a4t-wtools' });
     const grip = tools.createSpan({ cls: 'a4t-grip', attr: { 'aria-label': 'Drag to move' } });
@@ -2286,9 +2535,10 @@ class TodayView extends ItemView {
         // focus (and the half-typed text's caret) in the capture box.
         if (zoneEl.children[idx] !== el) zoneEl.insertBefore(el, zoneEl.children[idx] || null);
         // Typing boxes are drawn once, so a redraw never drops half-typed text.
-        if (id === 'capture') { if (!el.dataset.built) this.renderCapture(el.querySelector('.a4t-wbody')); el.dataset.built = '1'; }
-        else if (id === 'journalbox') { if (!el.dataset.built) this.renderJournalBox(el.querySelector('.a4t-wbody'), el); el.dataset.built = '1'; }
-        else this.renderWidget(id, el.querySelector('.a4t-wbody'), el);
+        const wb = /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody'));
+        if (id === 'capture') { if (!el.dataset.built) this.renderCapture(wb); el.dataset.built = '1'; }
+        else if (id === 'journalbox') { if (!el.dataset.built) this.renderJournalBox(wb, el); el.dataset.built = '1'; }
+        else this.renderWidget(id, wb, el);
       });
     }
     // Hidden widgets, and an add-on's widget that is gone, leave the page.
@@ -2296,6 +2546,7 @@ class TodayView extends ItemView {
     if (this.zoneEls.c3.lastElementChild !== this.clockEl) this.zoneEls.c3.appendChild(this.clockEl);
   }
 
+  /** @param {string} id @param {HTMLElement} body @param {HTMLElement} el @returns {unknown} */
   renderWidget(id, body, el) {
     body.empty();
     el.removeClass('a4t-card', 'a4t-warn-card', 'a4t-strip', 'a4t-link');
@@ -2308,9 +2559,10 @@ class TodayView extends ItemView {
     if (x) { const fresh = createDiv({ cls: 'a4t-wbody' }); body.replaceWith(fresh); body = fresh; }
     try {
       if (id === 'weather') return this.renderWeather(body, el);
-      if (id === 'morning') return this.renderTaskCard(body, el, 'Morning', 'Before one', this.data.lists.morning, 'nothing planned for the morning');
-      if (id === 'afternoon') return this.renderTaskCard(body, el, 'Afternoon', 'After one', this.data.lists.afternoon, 'afternoon is open');
-      if (id === 'todaytasks') return this.renderTaskCard(body, el, 'Today', "Today's tasks", [...this.data.lists.morning, ...this.data.lists.afternoon], 'nothing planned for today');
+      const data = /** @type {TodayData} */ (this.data);
+      if (id === 'morning') return this.renderTaskCard(body, el, 'Morning', 'Before one', data.lists.morning, 'nothing planned for the morning');
+      if (id === 'afternoon') return this.renderTaskCard(body, el, 'Afternoon', 'After one', data.lists.afternoon, 'afternoon is open');
+      if (id === 'todaytasks') return this.renderTaskCard(body, el, 'Today', "Today's tasks", [...data.lists.morning, ...data.lists.afternoon], 'nothing planned for today');
       if (id === 'overdue') return this.renderOverdue(body, el);
       if (id === 'plannerlink') return this.renderPlannerLink(body, el);
       if (id === 'habits') return this.renderHabits(body, el);
@@ -2322,18 +2574,20 @@ class TodayView extends ItemView {
       if (id === 'recent') return this.renderRecent(body, el);
       if (id === 'pinned') return this.renderPinned(body, el);
       if (id === 'clock') return this.renderClockWidget(body, el);
-      if (x) return Promise.resolve(x.render(body, el)).catch((e) => this.widgetFailed(id, body, e));
+      if (x) return Promise.resolve(/** @type {(body: HTMLElement, el: HTMLElement) => unknown} */ (x.render)(body, el)).catch((e) => this.widgetFailed(id, body, e));
     } catch (e) {
       this.widgetFailed(id, body, e);
     }
   }
 
+  /** @param {string} id @param {HTMLElement} body @param {unknown} e */
   widgetFailed(id, body, e) {
     console.error('[LifeWorld] widget failed', id, e);
     body.empty();
     body.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' });
   }
 
+  /** @param {HTMLElement} body @param {string} kicker @param {string} title @param {number} [countOrAction] @param {boolean} [warn] */
   cardHead(body, kicker, title, countOrAction, warn) {
     const head = body.createDiv({ cls: 'a4t-card-head' });
     const left = head.createDiv();
@@ -2343,9 +2597,10 @@ class TodayView extends ItemView {
     return head;
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderWeather(body, el) {
     el.addClass('a4t-strip');
-    const w = this.data.weather;
+    const w = /** @type {TodayData} */ (this.data).weather;
     if (!w) {
       const text = feedNotes.weather ? 'No weather feed yet.' : (this.plugin.weatherCfg.place ? (weatherError() || 'Reading the forecast…') : 'Pick your town in Settings › LifeWorld › Weather to see the forecast.');
       body.createDiv({ cls: 'a4t-muted', text });
@@ -2359,12 +2614,12 @@ class TodayView extends ItemView {
     if (w.rain_chance != null) {
       const r = body.createDiv({ cls: 'a4t-w-item' });
       setIcon(r.createSpan({ cls: 'a4t-ic' }), 'droplet');
-      r.appendText(`${w.rain_chance}%`);
+      r.appendText(`${String(w.rain_chance)}%`);
     }
     if (w.sunrise || w.sunset) {
       const s = body.createDiv({ cls: 'a4t-w-item' });
       setIcon(s.createSpan({ cls: 'a4t-ic' }), 'sun');
-      s.appendText(`${w.sunrise || '?'} – ${w.sunset || '?'}`);
+      s.appendText(`${String(w.sunrise || '?')} – ${String(w.sunset || '?')}`);
     }
     // The forecast's next hours or next days (Settings › Weather), one line.
     if (Array.isArray(w.next) && w.next.length) {
@@ -2384,6 +2639,7 @@ class TodayView extends ItemView {
     upd.toggleClass('is-stale', age.stale);
   }
 
+  /** @param {HTMLElement} body */
   renderCapture(body) {
     const box = body.createDiv({ cls: 'a4t-capture' });
     setIcon(box.createSpan({ cls: 'a4t-ic' }), 'pencil');
@@ -2417,9 +2673,10 @@ class TodayView extends ItemView {
       if (!box.hasClass('is-grown')) this.captureRestH = input.getBoundingClientRect().height;
       const restH = this.captureRestH || input.getBoundingClientRect().height;
       const startH = input.getBoundingClientRect().height; const startY = e.clientY;
-      const win = input.win || window;
+      const win = /** @type {Window} */ (input.win || window);
       try { grip.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
       box.addClass('is-resizing');
+      /** @param {PointerEvent} ev */
       const move = (ev) => {
         const h = captureDragHeight(startH, ev.clientY - startY, restH, win.innerHeight);
         if (h <= restH + 0.5) reset();
@@ -2435,6 +2692,7 @@ class TodayView extends ItemView {
 
   // Journal box (launch section 3, mockup v6): the capture box's look, under a card head; Enter saves
   // the line under "Journal" in today's daily note.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderJournalBox(body, el) {
     el.addClass('a4t-card');
     this.cardHead(body, 'Journal', 'Write a line');
@@ -2456,6 +2714,7 @@ class TodayView extends ItemView {
   }
 
   // A task source that could not be read: one short plain line in the task card (criterion 28).
+  /** @param {HTMLElement} body */
   sourceProblem(body) {
     const ext = this.plugin.extSource();
     const err = ext && ext.status().error;
@@ -2463,6 +2722,7 @@ class TodayView extends ItemView {
     return !!err;
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el @param {string} kicker @param {string} title @param {TodayRowItem[]} list @param {string} emptyText */
   renderTaskCard(body, el, kicker, title, list, emptyText) {
     el.addClass('a4t-card');
     this.cardHead(body, kicker, title, list.length);
@@ -2472,12 +2732,13 @@ class TodayView extends ItemView {
     list.forEach((t) => this.renderTask(body, t, false, lane));
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderOverdue(body, el) {
     el.addClass('a4t-card', 'a4t-warn-card');
     const done = this.overdueMoved;
     // Right after a move the cache can still hold the old dates for a moment;
     // the moved tasks never flicker back onto the card.
-    const list = this.data.lists.overdue.filter((t) => !(done && done.paths.has(t.path)));
+    const list = /** @type {TodayData} */ (this.data).lists.overdue.filter((t) => !(done && done.paths.has(t.path)));
     this.cardHead(body, 'Overdue', 'Slipped through', list.length, true);
     if (this.sourceProblem(body) && !list.length) return;
     if (!list.length) {
@@ -2503,6 +2764,8 @@ class TodayView extends ItemView {
     btn.addEventListener('click', () => this.moveAllOverdue(list, btn));
   }
 
+  /** @typedef {{ count: number, paths: Set<string>, undo: () => Promise<number>, timer: number | null }} OverdueMoved */
+  /** @param {HTMLElement} body @param {OverdueMoved} done */
   renderOverdueUndo(body, done) {
     const line = body.createDiv({ cls: 'a4t-od-undo' });
     setIcon(line.createSpan({ cls: 'a4t-ic' }), 'calendar-check');
@@ -2518,17 +2781,20 @@ class TodayView extends ItemView {
     });
   }
 
+  /** @param {boolean} rerender */
   clearOverdueMoved(rerender) {
     const done = this.overdueMoved;
     if (!done) return;
     if (done.timer) window.clearTimeout(done.timer);
+    /** @type {OverdueMoved | null | undefined} */
     this.overdueMoved = null;
     if (rerender) {
       const el = this.widgetEls.get('overdue');
-      if (el && el.isConnected && this.data) this.renderWidget('overdue', el.querySelector('.a4t-wbody'), el);
+      if (el && el.isConnected && this.data) this.renderWidget('overdue', /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody')), el);
     }
   }
 
+  /** @param {TodayItem[]} list @param {HTMLButtonElement} btn */
   async moveAllOverdue(list, btn) {
     if (btn.disabled) return;
     if (dayOf(new Date()) !== this.renderedDay) { new Notice('A new day started; the page has been refreshed.'); this.refresh(); return; }
@@ -2537,36 +2803,40 @@ class TodayView extends ItemView {
     if (ext) { // a task source: each one's day becomes today, there; no Undo (it lives outside the vault)
       let bad = 0; let rep = 0;
       ext.batch = true; // one reload at the end, not one per task
-      try { for (const t of list) { try { await ext.place(t, this.data.today, t.plannedHalf || null); } catch { if (t.ext && t.ext.recurring) rep++; else bad++; } } } finally { ext.batch = false; }
+      try { for (const t of list) { try { await ext.place(/** @type {ExtItem} */ (t), /** @type {TodayData} */ (this.data).today, t.plannedHalf || null); } catch { if (t.ext && t.ext.recurring) rep++; else bad++; } } } finally { ext.batch = false; }
       await ext.reload();
       const moved = list.length - bad - rep;
       new Notice([moved ? `${moved} moved to today.` : '', rep ? `${rep} repeating task${rep === 1 ? ' stays' : 's stay'} as ${rep === 1 ? 'it is' : 'they are'}: move ${rep === 1 ? 'it' : 'them'} in Todoist to keep the repeat.` : '', bad ? `Could not move ${bad} task${bad === 1 ? '' : 's'}.` : ''].filter(Boolean).join(' '));
       this.scheduleRefresh();
       return;
     }
-    const lists = this.data.lists;
-    const plan = planOverdueMove({ morning: lists.morning, afternoon: lists.afternoon, overdue: list });
+    const data = /** @type {TodayData} */ (this.data);
+    const lists = data.lists;
+    const plan = planOverdueMove(/** @type {ReturnType<typeof buildTaskLists>} */ ({ morning: lists.morning, afternoon: lists.afternoon, overdue: list }));
     let res;
-    try { res = await this.plugin.moveOverdueToToday(plan, this.data.today); }
+    try { res = await this.plugin.moveOverdueToToday(plan, data.today); }
     catch (e) { console.error('[LifeWorld] move all failed', e); new Notice('Could not move the overdue tasks.'); btn.disabled = false; return; }
     if (res.failed.length) new Notice(`Could not move ${res.failed.length} task${res.failed.length === 1 ? '' : 's'}.`);
     this.clearOverdueMoved(false);
     if (res.moved.length) {
+      /** @type {OverdueMoved} */
       const done = { count: res.moved.length, paths: new Set(res.moved), undo: res.undo, timer: null };
       done.timer = window.setTimeout(() => { if (this.overdueMoved === done) this.clearOverdueMoved(true); }, OVERDUE_UNDO_MS);
       this.overdueMoved = done;
     }
     const el = this.widgetEls.get('overdue');
-    if (el && el.isConnected) this.renderWidget('overdue', el.querySelector('.a4t-wbody'), el);
+    if (el && el.isConnected) this.renderWidget('overdue', /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody')), el);
     this.scheduleRefresh();
   }
 
+  /** @param {HTMLElement} parent @param {TodayRowItem} t @param {boolean} overdue @param {string} lane */
   renderTask(parent, t, overdue, lane) {
-    const today = this.data.today;
+    const data = /** @type {TodayData} */ (this.data);
+    const today = data.today;
     const done = this.doneOf(t);
     // Dependencies (Projects mockup round 4): open blockers dim the row and add a lock chip.
-    const blockers = done ? [] : openBlockersOf(this.app, t, this.data.completed);
-    const row = parent.createDiv({ cls: `a4t-task${done ? ' is-done' : ''}${blockers.length ? ' is-blocked' : ''}`, attr: { 'data-path': t.path } });
+    const blockers = done ? [] : openBlockersOf(this.app, t, data.completed);
+    const row = /** @type {TodayRow} */ (parent.createDiv({ cls: `a4t-task${done ? ' is-done' : ''}${blockers.length ? ' is-blocked' : ''}`, attr: { 'data-path': t.path } }));
     const tick = row.createEl('button', { cls: 'a4t-tick', attr: { 'aria-label': done ? 'Mark not done' : 'Mark done' } });
     setIcon(tick, 'check');
     const main = row.createDiv({ cls: 'a4t-task-main' });
@@ -2581,6 +2851,7 @@ class TodayView extends ItemView {
     }
     tl.appendText(t.title);
     const meta = main.createDiv({ cls: 'a4t-task-meta' });
+    /** @param {string} text @param {string} [cls] @param {string} [icon] */
     const chip = (text, cls, icon) => {
       const c = meta.createSpan({ cls: `a4t-chip${cls ? ' ' + cls : ''}` });
       if (icon) setIcon(c.createSpan({ cls: 'a4t-ic' }), icon);
@@ -2597,7 +2868,7 @@ class TodayView extends ItemView {
         openProjectPage(this.app, t.projectLink || t.project, e, t.path);
       });
     }
-    if (overdue) chip(t.due ? `due ${shortDue(t.due)}` : `planned ${shortDue(t.plannedDay)}`, 'is-warn');
+    if (overdue) chip(t.due ? `due ${shortDue(t.due)}` : `planned ${shortDue(/** @type {string} */ (t.plannedDay))}`, 'is-warn');
     else if (!t.recurrenceRaw && t.due === today) chip('due today');
     else if (!t.recurrenceRaw && t.due && t.due !== t.plannedDay) chip(`due ${shortDue(t.due)}`, t.due < today ? 'is-warn' : ''); // "Just plan it": the deadline of a task planned for another day
     if (blockers.length) blockedChip(meta, blockers, (p) => this.plugin.openPath(p, true), 'a4t');
@@ -2614,14 +2885,14 @@ class TodayView extends ItemView {
       row.addClass('is-busy');
       row.toggleClass('is-done', want);
       tick.setAttr('aria-label', want ? 'Mark not done' : 'Mark done');
-      this.plateEl.setText(plateText(this.openCount() + (overdue ? 0 : (want ? -1 : 1)), this.data.lists.total));
+      this.plateEl.setText(plateText(this.openCount() + (overdue ? 0 : (want ? -1 : 1)), /** @type {TodayData} */ (this.data).lists.total));
       try {
         const now = await this.plugin.toggleTask(t, today);
         this.pending.set(t.path, { done: now, day: today, until: Date.now() + 4000 });
         t.optimistic = now;
       } catch (err) {
         console.error('[LifeWorld] tick failed', err);
-        new Notice(`Could not update "${t.title}". ${err && err.message ? err.message : ''}`.trim());
+        new Notice(`Could not update "${t.title}". ${errField(err, 'message') || ''}`.trim());
         row.toggleClass('is-done', !want);
       } finally {
         row.removeClass('is-busy');
@@ -2639,19 +2910,23 @@ class TodayView extends ItemView {
    * Planner writes (applyPlacement: Due set, or just planned, per Settings ›
    * Planning, 0.1.16), with its orderForInsert. ---- */
 
+  /** @param {string | null} half @param {string | null} [day] */
   laneList(half, day) {
-    const d = day || this.data.today;
-    const lists = d === this.data.today ? this.data.lists : buildTaskLists(this.data.items, d, this.data.completed);
+    const data = /** @type {TodayData} */ (this.data);
+    const d = day || data.today;
+    const lists = d === data.today ? data.lists : buildTaskLists(data.items, d, data.completed);
     return half === 'pm' ? lists.afternoon : lists.morning;
   }
 
+  /** @param {TodayItem} t @param {string | null} half @param {string | null} [day] @param {number | null} [index] */
   async moveTask(t, half, day, index) {
     if (dayOf(new Date()) !== this.renderedDay) { new Notice('A new day started; the page has been refreshed.'); this.refresh(); return; }
-    const target = day || this.data.today;
+    const data = /** @type {TodayData} */ (this.data);
+    const target = day || data.today;
     // A task from a source moves by day only: it keeps no morning or afternoon of its own.
     if (t.ext) {
-      if (target === this.data.today) { new Notice('This task moves by day only. Set a time where it lives to put it in the afternoon.'); this.scheduleRefresh(); return; }
-      try { await this.plugin.extSource().place(t, target, half); new Notice('Moved to tomorrow'); } catch (err) { console.error('[LifeWorld] move failed', err && err.plain ? err.plain : 'error'); new Notice(err && err.plain ? err.plain : `Could not move "${t.title}".`); }
+      if (target === data.today) { new Notice('This task moves by day only. Set a time where it lives to put it in the afternoon.'); this.scheduleRefresh(); return; }
+      try { await /** @type {NonNullable<ReturnType<TodayPlugin['extSource']>>} */ (this.plugin.extSource()).place(/** @type {ExtItem} */ (t), target, half); new Notice('Moved to tomorrow'); } catch (err) { const plain = String(errField(err, 'plain') || ''); console.error('[LifeWorld] move failed', plain || 'error'); new Notice(plain || `Could not move "${t.title}".`); }
       this.scheduleRefresh();
       return;
     }
@@ -2671,10 +2946,11 @@ class TodayView extends ItemView {
         for (let k = 0; k < others.length; k++) {
           if (others[k].plannedOrder === plan.others[k]) continue;
           const f = this.app.vault.getAbstractFileByPath(others[k].path);
-          if (f instanceof TFile) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = plan.others[k]; }));
+          const renumbered = plan.others;
+          if (f instanceof TFile) await this.app.fileManager.processFrontMatter(f, (raw) => writable(raw, (fm) => { fm.planned_order = renumbered[k]; }));
         }
       }
-      const where = target !== this.data.today ? 'Moved to tomorrow' : `Moved to ${half === 'pm' ? 'Afternoon' : 'Morning'}`;
+      const where = target !== /** @type {TodayData} */ (this.data).today ? 'Moved to tomorrow' : `Moved to ${half === 'pm' ? 'Afternoon' : 'Morning'}`;
       if (dropsTime) undoNotice(`${where}. The ${timeText(t.time)} time was taken off.`, async () => { await undo(); this.scheduleRefresh(); });
       else new Notice(where);
     } catch (err) {
@@ -2690,9 +2966,10 @@ class TodayView extends ItemView {
     if (this._moveAway) { document.removeEventListener('pointerdown', this._moveAway, true); this._moveAway = null; }
     if (this._moveScroll) { this.scroller.removeEventListener('scroll', this._moveScroll); this._moveScroll = null; }
     if (this.moveMenu) { this.moveMenu.remove(); this.moveMenu = null; }
-    this.contentEl.querySelectorAll('.a4t-t-more.is-open').forEach((b) => b.removeClass('is-open'));
+    /** @type {NodeListOf<HTMLElement>} */ (this.contentEl.querySelectorAll('.a4t-t-more.is-open')).forEach((b) => b.removeClass('is-open'));
   }
 
+  /** @param {TodayItem} t @param {HTMLElement} btn @param {string} lane */
   openMoveMenu(t, btn, lane) {
     const wasOpen = btn.hasClass('is-open');
     this.closeMoveMenu();
@@ -2702,6 +2979,7 @@ class TodayView extends ItemView {
     const menu = this.contentEl.createDiv({ cls: 'a4t-movemenu' });
     this.moveMenu = menu;
     menu.createDiv({ cls: 'a4t-mm-k', text: 'Move to' });
+    /** @param {string} label @param {string} key @param {boolean} disabled @param {() => void} run */
     const opt = (label, key, disabled, run) => {
       const b = menu.createEl('button', { attr: { 'data-mv': key } });
       b.appendText(label);
@@ -2711,7 +2989,7 @@ class TodayView extends ItemView {
     };
     opt('Morning', 'am', lane === 'am' || !!t.ext, () => this.moveTask(t, 'am'));
     opt('Afternoon', 'pm', lane === 'pm' || !!t.ext, () => this.moveTask(t, 'pm'));
-    opt('Tomorrow', 'tomorrow', repeats, () => this.moveTask(t, t.plannedHalf === 'pm' ? 'pm' : 'am', addDays(this.data.today, 1)));
+    opt('Tomorrow', 'tomorrow', repeats, () => this.moveTask(t, t.plannedHalf === 'pm' ? 'pm' : 'am', addDays(/** @type {TodayData} */ (this.data).today, 1)));
     if (repeats) menu.createDiv({ cls: 'a4t-mm-note', text: 'Repeats on its own schedule' });
     const rr = this.contentEl.getBoundingClientRect();
     const br = btn.getBoundingClientRect();
@@ -2720,7 +2998,8 @@ class TodayView extends ItemView {
     if (top + 190 > rr.height) top = Math.max(8, br.top - rr.top - 190);
     menu.style.setProperty('--a4t-mx', `${left}px`);
     menu.style.setProperty('--a4t-my', `${top}px`);
-    this._moveAway = (e) => { if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) this.closeMoveMenu(); };
+    /** @param {PointerEvent} e */
+    this._moveAway = (e) => { if (!menu.contains(/** @type {Node} */ (e.target)) && e.target !== btn && !btn.contains(/** @type {Node} */ (e.target))) this.closeMoveMenu(); };
     document.addEventListener('pointerdown', this._moveAway, true);
     this._moveScroll = () => this.closeMoveMenu();
     this.scroller.addEventListener('scroll', this._moveScroll);
@@ -2728,11 +3007,13 @@ class TodayView extends ItemView {
 
   // Task drag: starts after a 6 px move so a plain click still opens the
   // task; never while Edit layout is on (that drag moves whole widgets).
+  /** @param {PointerEvent} e @param {TodayItem} t @param {TodayRow} row @param {string} lane */
   startTaskDrag(e, t, row, lane) {
     if (this.editing || this.drag || this.tdrag || (e.button != null && e.button !== 0)) return;
     const sx = e.clientX; const sy = e.clientY;
     const lanesNow = () => ['am', 'pm'].map((h) => ({ h, el: this.widgetEls.get(h === 'am' ? 'morning' : 'afternoon') }))
-      .filter((x) => x.el && x.el.isConnected).map((x) => ({ h: x.h, body: x.el.querySelector('.a4t-wbody'), card: x.el }));
+      .filter((x) => x.el && x.el.isConnected).map((x) => { const card = /** @type {HTMLElement} */ (x.el); return { h: x.h, body: /** @type {HTMLElement} */ (card.querySelector('.a4t-wbody')), card }; });
+    /** @param {PointerEvent} ev */
     const move = (ev) => {
       if (!this.tdrag) {
         if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
@@ -2741,22 +3022,25 @@ class TodayView extends ItemView {
         const r = row.getBoundingClientRect();
         const ph = createDiv({ cls: 'a4t-t-ph' });
         row.after(ph);
+        /** @type {{ t: TodayItem, row: TodayRow, ph: HTMLElement, dx: number, dy: number, half: string | null, index: number } | null | undefined} */
         this.tdrag = { t, row, ph, dx: sx - r.left, dy: sy - r.top, half: null, index: 0 };
         row.style.setProperty('--a4t-w', `${r.width}px`);
         row.addClass('is-tdragging');
       }
-      const d = this.tdrag;
+      const d = /** @type {NonNullable<typeof this.tdrag>} */ (this.tdrag);
       // An absolute row is placed from its offsetParent's padding box, and
       // that is the card (.a4t-w is position: relative), not the page.
       // Measuring from the page put the ghost one card-offset too low (1.2.1).
-      const op = row.offsetParent || this.page;
+      const op = /** @type {HTMLElement} */ (row.offsetParent || this.page);
       const pr = op.getBoundingClientRect();
       row.style.setProperty('--a4t-x', `${ev.clientX - d.dx - pr.left - op.clientLeft + op.scrollLeft}px`);
       row.style.setProperty('--a4t-y', `${ev.clientY - d.dy - pr.top - op.clientTop + op.scrollTop}px`);
       const sr = this.scroller.getBoundingClientRect();
       if (ev.clientY < sr.top + 40) this.scroller.scrollTop -= 14;
       else if (ev.clientY > sr.bottom - 40) this.scroller.scrollTop += 14;
-      let best = null; let bd = Infinity;
+      /** @type {{ h: string, body: HTMLElement, card: HTMLElement } | null} */
+      let best = null;
+      let bd = Infinity;
       for (const l of lanesNow()) {
         const r = l.card.getBoundingClientRect();
         const dx = ev.clientX < r.left ? r.left - ev.clientX : (ev.clientX > r.right ? ev.clientX - r.right : 0);
@@ -2764,12 +3048,14 @@ class TodayView extends ItemView {
         if (dx * 4 + dy < bd) { bd = dx * 4 + dy; best = l; }
       }
       for (const l of lanesNow()) l.card.toggleClass('is-ttarget', l === best);
-      const rows = Array.from(best.body.querySelectorAll(':scope > .a4t-task')).filter((x) => x !== row);
+      const pick = /** @type {{ h: string, body: HTMLElement, card: HTMLElement }} */ (best);
+      const rows = Array.from(pick.body.querySelectorAll(':scope > .a4t-task')).filter((x) => x !== row);
       const before = rows.find((x) => { const b = x.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; });
-      if (before) before.before(d.ph); else best.body.appendChild(d.ph);
-      d.half = best.h;
+      if (before) before.before(d.ph); else pick.body.appendChild(d.ph);
+      d.half = pick.h;
       d.index = before ? rows.indexOf(before) : rows.length;
     };
+    /** @param {PointerEvent} ev */
     const up = (ev) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -2791,6 +3077,7 @@ class TodayView extends ItemView {
     window.addEventListener('pointercancel', up);
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderPlannerLink(body, el) {
     // The Planner switched off: no shortcut to it (phase 2 section 6).
     el.toggleClass('a4t-off', !this.plugin.plannerOn());
@@ -2802,10 +3089,11 @@ class TodayView extends ItemView {
     b.addEventListener('click', () => this.plugin.openPlanner());
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderHabits(body, el) {
     el.addClass('a4t-card');
     this.cardHead(body, 'Habits', 'Daily practice');
-    const list = this.data.habits;
+    const list = /** @type {TodayData} */ (this.data).habits;
     if (!list.length) { body.createDiv({ cls: 'a4t-empty', text: vaultFolders.habits && this.app.vault.getAbstractFileByPath(vaultFolders.habits) ? 'no active daily habits' : 'no habits yet, add them in settings' }); return; }
     const wrap = body.createDiv({ cls: 'a4t-habits' });
     list.forEach((h) => {
@@ -2822,24 +3110,25 @@ class TodayView extends ItemView {
           return;
         }
         if (b.disabled) return;
-        const f = h.prop ? null : this.app.vault.getAbstractFileByPath(h.path);
+        const f = h.prop ? null : this.app.vault.getAbstractFileByPath(/** @type {string} */ (h.path));
         if (!h.prop && !(f instanceof TFile)) return;
         const today = dayOf(new Date());
         if (today !== this.renderedDay) { this.refresh(); return; }
         b.disabled = true;
         try {
-          const on = h.prop ? await this.plugin.toggleHabitProp(h.prop) : await this.plugin.toggleHabit(f, today);
+          const on = h.prop ? await this.plugin.toggleHabitProp(h.prop) : await this.plugin.toggleHabit(/** @type {TFile} */ (f), today);
           b.toggleClass('is-on', on);
           n.setText(String(Math.max(0, h.streak + (on === h.doneToday ? 0 : (on ? 1 : -1)))));
-        } catch (err) { console.error('[LifeWorld] habit failed', err); new Notice(err && err.plain ? err.plain : `Could not update ${h.name}.`); }
+        } catch (err) { console.error('[LifeWorld] habit failed', err); new Notice(String(errField(err, 'plain') || `Could not update ${h.name}.`)); }
         finally { b.disabled = false; this.scheduleRefresh(); }
       });
     });
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderMood(body, el) {
     el.addClass('a4t-card');
-    const m = this.data.mood;
+    const m = /** @type {TodayData} */ (this.data).mood;
     const head = this.cardHead(body, 'Mood', m ? `Last check-in · ${m.score}` : 'How are you?');
     const b = head.createEl('button', { cls: 'a4t-btn a4t-small', text: 'Check in' });
     b.addEventListener('click', () => this.plugin.newMoodCheckin());
@@ -2851,7 +3140,7 @@ class TodayView extends ItemView {
     ring.style.setProperty('--a4t-s', String(Math.max(0, Math.min(100, m.score))));
     ring.addEventListener('click', () => this.plugin.openPath(m.path, true));
     const right = row.createDiv();
-    right.createDiv({ cls: 'a4t-muted a4t-small-text', text: moodWhen(m.date, m.time, this.data.today) });
+    right.createDiv({ cls: 'a4t-muted a4t-small-text', text: moodWhen(m.date, m.time, /** @type {TodayData} */ (this.data).today) });
     if (m.felt.length) {
       const feel = right.createDiv({ cls: 'a4t-feel' });
       m.felt.slice(0, 6).forEach((f) => feel.createSpan({ cls: 'a4t-chip', text: f }));
@@ -2859,29 +3148,33 @@ class TodayView extends ItemView {
     all();
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderCalendar(body, el) {
     el.addClass('a4t-card');
     this.cardHead(body, 'Calendar', 'Today & next 7 days');
-    const list = this.data.events;
+    const data = /** @type {TodayData} */ (this.data);
+    const list = data.events;
     if (!list.length) { body.createDiv({ cls: 'a4t-empty', text: 'no events this week' }); return; }
     list.forEach((e) => {
-      const row = body.createDiv({ cls: `a4t-event${e.date === this.data.today ? ' is-today' : ''}` });
+      const row = body.createDiv({ cls: `a4t-event${e.date === data.today ? ' is-today' : ''}` });
       const when = row.createDiv({ cls: 'a4t-ev-when' });
-      when.appendText(eventDayLabel(e.date, this.data.today));
+      when.appendText(eventDayLabel(e.date, data.today));
       when.createSpan({ text: e.allDay ? 'all day' : fmt12(e.time) });
       const what = row.createDiv({ text: e.summary });
       if (e.calendar) what.createSpan({ cls: 'a4t-muted a4t-small-text', text: ` · ${e.calendar}` });
     });
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderProjects(body, el) {
     // The Projects pages switched off: no Active projects card (launch section 1).
     el.toggleClass('a4t-off', !this.plugin.projectsOn());
     el.addClass('a4t-card');
-    const list = this.data.projects;
+    const list = /** @type {TodayData} */ (this.data).projects;
     this.cardHead(body, 'Active projects', list.length ? `${list.length} in motion` : 'Nothing active');
     if (!list.length) { body.createDiv({ cls: 'a4t-empty', text: 'no active projects' }); return; }
     const own = this.plugin.projectsPlugin();
+    /** @type {ReturnType<PartTypes['a4-projects']['areaIndex']> | null} */
     let ix = null;
     try { ix = own && typeof own.areaIndex === 'function' ? own.areaIndex() : null; } catch (e) { console.error('LifeWorld: the area list failed', e); }
     for (const p of projectLines(list, ix)) {
@@ -2893,11 +3186,13 @@ class TodayView extends ItemView {
   }
 
   // Recent notes (launch section 4): note rows like Active projects; a click opens, Cmd/Ctrl-click a new tab.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderRecent(body, el) {
     el.addClass('a4t-card');
     this.cardHead(body, 'Recent notes', 'Last edited');
-    if (!this.data.recent.length) { body.createDiv({ cls: 'a4t-empty', text: 'no notes yet' }); return; }
-    for (const n of this.data.recent) {
+    const recent = /** @type {TodayData} */ (this.data).recent;
+    if (!recent.length) { body.createDiv({ cls: 'a4t-empty', text: 'no notes yet' }); return; }
+    for (const n of recent) {
       const b = body.createEl('button', { cls: 'a4t-prow', attr: { 'aria-label': `Open ${n.basename}` } });
       b.createSpan({ text: n.basename });
       b.addEventListener('click', (e) => this.plugin.openPath(n.path, Keymap.isModEvent(e)));
@@ -2905,10 +3200,11 @@ class TodayView extends ItemView {
   }
 
   // Pinned shortcuts (launch section 4): picked in Settings; a note opens, a folder shows in the file list.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderPinned(body, el) {
     el.addClass('a4t-card');
     this.cardHead(body, 'Pinned', 'Your shortcuts');
-    const list = this.data.pins.filter((p) => !p.gone);
+    const list = /** @type {TodayData} */ (this.data).pins.filter((p) => !p.gone);
     if (!list.length) { body.createDiv({ cls: 'a4t-empty', text: 'pick notes and folders in settings' }); return; }
     for (const p of list) {
       const b = body.createEl('button', { cls: 'a4t-prow', attr: { 'aria-label': p.folder ? `Show folder ${p.name}` : `Open ${p.name}` } });
@@ -2919,16 +3215,19 @@ class TodayView extends ItemView {
 
   // World clock (launch section 4, the dial look in mockup v6; one line per place, 2026-10-20): a dial and
   // the time here, then one line per added place. The device's own time zone data: works with no internet. Ticks every second.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderClockWidget(body, el) {
     el.addClass('a4t-card');
     const places = this.plugin.places;
     this.cardHead(body, 'World clock', `${places.length + 1} place${places.length ? 's' : ''}`);
     const top = body.createDiv({ cls: 'a4t-clk-top' });
     const svg = top.createSvg('svg', { cls: 'a4t-clk-face', attr: { viewBox: '0 0 62 62', 'aria-hidden': 'true' } });
+    /** @param {string} cls @param {number} x1 @param {number} y1 @param {number} x2 @param {number} y2 */
     const line = (cls, x1, y1, x2, y2) => svg.createSvg('line', { cls, attr: { x1, y1, x2, y2 } });
     svg.createSvg('circle', { cls: 'a4t-clk-dial', attr: { cx: 31, cy: 31, r: 29 } });
     const ticks = svg.createSvg('g', { cls: 'a4t-clk-ticks' });
     for (let i = 0; i < 12; i++) ticks.createSvg('line', { attr: { x1: 31, y1: 3.5, x2: 31, y2: i % 3 ? 5.5 : 7.5, transform: `rotate(${i * 30} 31 31)` } });
+    /** @type {Record<string, SVGElement>} */
     const hands = { h: line('a4t-clk-h', 31, 31, 31, 18.5), m: line('a4t-clk-m', 31, 31, 31, 11), s: line('a4t-clk-s', 31, 35, 31, 9) };
     svg.createSvg('circle', { cls: 'a4t-clk-pin', attr: { cx: 31, cy: 31, r: 1.6 } });
     const txt = top.createDiv();
@@ -2936,7 +3235,7 @@ class TodayView extends ItemView {
     const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
     const rows = places.map((p) => {
-      const li = list.createEl('li', { cls: 'a4t-clk-place' });
+      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
       li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
       return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
     });
@@ -2944,7 +3243,7 @@ class TodayView extends ItemView {
       const now = new Date();
       const here = clockAt(now, null);
       const a = handAngles(here);
-      for (const k of ['h', 'm', 's']) hands[k].setAttr('transform', `rotate(${a[k]} 31 31)`);
+      for (const k of /** @type {('h' | 'm' | 's')[]} */ (['h', 'm', 's'])) hands[k].setAttr('transform', `rotate(${a[k]} 31 31)`);
       big.setText(here.big);
       zone.empty(); zone.appendText(here.zone); zone.createEl('em', { text: ' · ' }); zone.appendText('Here'); zone.createEl('em', { text: ' · ' }); zone.appendText(here.date);
       for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(c.time); r.day.setText(c.day); }
@@ -2953,9 +3252,10 @@ class TodayView extends ItemView {
     this.clockPaint = () => (body.isConnected ? paint() : null);
   }
 
+  /** @param {HTMLElement} body @param {HTMLElement} el */
   renderJournal(body, el) {
     el.addClass('a4t-card');
-    const j = this.data.journal;
+    const j = /** @type {TodayData} */ (this.data).journal;
     this.cardHead(body, 'Latest journal', j ? longDate(j.date) : 'No entries yet');
     if (!j) { body.createDiv({ cls: 'a4t-empty', text: 'no journal entries yet' }); return; }
     body.createEl('p', { cls: 'a4t-journal', text: j.text ? `${j.text}${j.cut ? '…' : ''}` : '(empty entry)' });
@@ -2989,6 +3289,7 @@ class TodayView extends ItemView {
         setIcon(b.createSpan({ cls: 'a4t-ic' }), 'plus');
         b.appendText('Add');
         b.addEventListener('click', () => {
+          /** @type {Record<string, number>} */
           const heights = {};
           for (const z of ['c1', 'c2', 'c3']) heights[z] = this.zoneEls[z].offsetHeight;
           this.applyLayout(addWidget(this.plugin.layout, m.id, heights), `${m.name} added`);
@@ -3000,10 +3301,11 @@ class TodayView extends ItemView {
 
   /* ---- drag (Pointer Events: one path for mouse, pen and touch) ---------- */
 
+  /** @param {PointerEvent} e @param {string} id */
   startDrag(e, id) {
     if (!this.editing || this.drag || (e.button != null && e.button !== 0)) return;
     e.preventDefault();
-    const el = this.widgetEls.get(id);
+    const el = /** @type {HTMLElement} */ (this.widgetEls.get(id));
     const r = el.getBoundingClientRect();
     const ph = createDiv({ cls: 'a4t-ph' });
     ph.style.setProperty('--a4t-h', `${r.height}px`);
@@ -3012,6 +3314,7 @@ class TodayView extends ItemView {
     el.style.setProperty('--a4t-w', `${r.width}px`);
     el.addClass('is-dragging');
     this.moveGhost(e);
+    /** @param {PointerEvent} ev */
     this._onMove = (ev) => this.onDragMove(ev);
     this._onUp = () => this.endDrag(false);
     window.addEventListener('pointermove', this._onMove);
@@ -3019,20 +3322,26 @@ class TodayView extends ItemView {
     window.addEventListener('pointercancel', this._onUp);
   }
 
+  /** @param {PointerEvent} e */
   moveGhost(e) {
     const pr = this.page.getBoundingClientRect();
-    this.drag.el.style.setProperty('--a4t-x', `${e.clientX - this.drag.dx - pr.left}px`);
-    this.drag.el.style.setProperty('--a4t-y', `${e.clientY - this.drag.dy - pr.top}px`);
+    const drag = /** @type {NonNullable<typeof this.drag>} */ (this.drag);
+    drag.el.style.setProperty('--a4t-x', `${e.clientX - drag.dx - pr.left}px`);
+    drag.el.style.setProperty('--a4t-y', `${e.clientY - drag.dy - pr.top}px`);
   }
 
+  /** @param {PointerEvent} e */
   onDragMove(e) {
     if (!this.drag) return;
+    const drag = this.drag;
     this.moveGhost(e);
     // Auto-scroll near the edges of the scrolling area.
     const sr = this.scroller.getBoundingClientRect();
     if (e.clientY < sr.top + 40) this.scroller.scrollTop -= 14;
     else if (e.clientY > sr.bottom - 40) this.scroller.scrollTop += 14;
-    let zone = null; let best = Infinity;
+    /** @type {string} */
+    let zone = ZONES[0];
+    let best = Infinity;
     for (const z of ZONES) {
       const r = this.zoneEls[z].getBoundingClientRect();
       const dx = e.clientX < r.left ? r.left - e.clientX : (e.clientX > r.right ? e.clientX - r.right : 0);
@@ -3044,14 +3353,15 @@ class TodayView extends ItemView {
     const zoneEl = this.zoneEls[zone];
     const sibs = Array.from(zoneEl.children).filter((c) => c.hasClass('a4t-w') && !c.hasClass('is-dragging'));
     const before = sibs.find((s) => { const r = s.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
-    if (before) before.before(this.drag.ph); else zoneEl.insertBefore(this.drag.ph, this.clockEl.parentElement === zoneEl ? this.clockEl : null);
+    if (before) before.before(drag.ph); else zoneEl.insertBefore(drag.ph, this.clockEl.parentElement === zoneEl ? this.clockEl : null);
   }
 
+  /** @param {boolean} cancel */
   endDrag(cancel) {
     if (!this.drag) return;
-    window.removeEventListener('pointermove', this._onMove);
-    window.removeEventListener('pointerup', this._onUp);
-    window.removeEventListener('pointercancel', this._onUp);
+    window.removeEventListener('pointermove', /** @type {(e: PointerEvent) => void} */ (this._onMove));
+    window.removeEventListener('pointerup', /** @type {() => void} */ (this._onUp));
+    window.removeEventListener('pointercancel', /** @type {() => void} */ (this._onUp));
     const { id, el, ph } = this.drag;
     const zoneEl = ph.parentElement;
     const zone = zoneEl && zoneEl.getAttr ? zoneEl.getAttr('data-zone') : null;
@@ -3076,6 +3386,7 @@ export default TodayPlugin;
 /* Caveat: Copyright 2014 The Caveat Project Authors. Patrick Hand: Copyright (c) 2010-2012 Patrick Wagesreiter.
    Kalam: Copyright (c) 2014, Indian Type Foundry. Gochi Hand: Copyright (c) 2011, Juan Pablo del Peral.
    Latin subsets as served by Google Fonts (woff2); licence texts in src/today/fonts/, shipped at the end of main.js. */
+/** @type {Record<string, string>} */
 var LW_FONT_DATA = {
   caveat: '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',
   patrickhand: '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',

@@ -90,7 +90,7 @@
  */
 'use strict';
 
-import { makeSource, isExtPath, thingsOffered, keyOf, setKey, cleanTag } from '../core/sources'; // where tasks live (launch sections 5, 5b)
+import { makeSource, isExtPath, thingsOffered, keyOf, setKey, cleanTag, errField } from '../core/sources'; // where tasks live (launch sections 5, 5b)
 import { Plugin, ItemView, MarkdownView, TFile, TFolder, Notice, setIcon, PluginSettingTab, Setting, Platform, SuggestModal, Modal, Component, getFrontMatterInfo, Keymap, MarkdownRenderer, Menu, parseYaml, stringifyYaml, editorInfoField, editorLivePreviewField } from 'obsidian';
 
 /* ========================================================================== *
@@ -107,24 +107,33 @@ const CLOSED_STATUSES = ['done', 'failed', 'dropped'];
 const PROJECT_STATUSES = ['active', 'paused', 'waiting', 'blocked', 'backlog', 'done', 'failed', 'dropped', 'idea', 'cold-storage'];
 // Shelved: not open and not closed; they live on the board's Ideas and Cold Storage tabs.
 const SHELVED_STATUSES = ['idea', 'cold-storage'];
+/** @type {Record<string, number>} */
 const OPEN_ORDER = { active: 0, paused: 1, waiting: 2, blocked: 3, backlog: 4 };
 // The projects board's columns, in order (spec 5). Moves only go to these.
 const BOARD_COLUMNS = ['backlog', 'active', 'waiting', 'paused', 'blocked', 'done'];
+/** @type {Record<string, string>} */
 const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting', paused: 'Paused', blocked: 'Blocked', done: 'Done' };
+/** @type {Record<string, string>} */
 const COLUMN_SUB = { backlog: 'Ready to start', active: 'Actively moving', waiting: 'Needs a response', paused: 'Active, but not for now', blocked: 'Waiting on something', done: 'Finished work' };
 // Page title per board tab (mockup).
+/** @type {Record<string, string>} */
 const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed' };
 // The tasks board (spec 14): the task statuses the vault already has, plus the planner's Someday. No new status.
 const TASK_COLUMNS = ['open', 'in-progress', 'blocked', 'someday', 'done', 'closed'];
+/** @type {Record<string, string>} */
 const TASK_COLUMN_LABEL = { open: 'Open', 'in-progress': 'In progress', blocked: 'Blocked', someday: 'Someday', done: 'Done', closed: 'Closed' };
+/** @type {Record<string, string>} */
 const TASK_COLUMN_SUB = { open: 'Ready to do', 'in-progress': 'Being worked on', blocked: 'Stuck on something', someday: 'No day, kept for later', done: 'Finished', closed: 'Finished without doing it' };
+/** @type {Record<string, string>} */
 const TASK_BOARD_TITLE = { projects: 'What needs doing', activity: 'What changed' };
 
 /* Activity (spec 17): the board's history, in plugin data only, never in a
  * note. settings.activity = [{ at: ms, text: 'You moved X to Waiting.' }],
  * newest first, at most ACTIVITY_CAP; the Activity tab reads it as is. */
 const ACTIVITY_CAP = 200;
-function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(list) ? list : [])].slice(0, ACTIVITY_CAP); }
+/** @typedef {{ at: number, text: string }} ActivityEntry */
+/** @param {unknown} list @param {string} text @param {number} at @returns {ActivityEntry[]} */
+function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(list) ? /** @type {ActivityEntry[]} */ (list) : [])].slice(0, ACTIVITY_CAP); }
 
 /* ========================================================================== *
  * SHARED with a4-today and a4-planner (verbatim copies; do not edit here
@@ -147,6 +156,7 @@ import { vaultFolders, planning, inTaskFolders, readable, writable, toNote, isRe
  * in .obsidian/plugins/tasknotes/data.json on 2026-10-04) as the fallback.
  * ========================================================================== */
 
+/** @type {Record<string, string>} */
 const DEFAULT_FIELDS = {
   title: 'title', status: 'status', priority: 'priority', due: 'due', scheduled: 'scheduled', contexts: 'contexts', projects: 'projects',
   timeEstimate: 'timeEstimate', completedDate: 'completedDate', dateCreated: 'dateCreated', dateModified: 'dateModified',
@@ -172,21 +182,23 @@ const DEFAULT_PRIORITY_LIST = [
 // The fields Settings › Your vault › Property names covers (core/vault.js PROPS).
 const TRANSLATED_FIELDS = ['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'reminders', 'recurrence', 'completedDate', 'dateCreated', 'dateModified', 'completeInstances', 'skippedInstances', 'blockedBy'];
 // TaskNotes settings (live object or saved copy) -> the engine's config.
+/** @param {unknown} tn @returns {EngineCfg} */
 function engineConfig(tn) {
-  const s = tn && typeof tn === 'object' ? tn : {};
-  const fm = s.fieldMapping && typeof s.fieldMapping === 'object' ? s.fieldMapping : {};
+  const s = /** @type {Fm} */ (tn && typeof tn === 'object' ? tn : {});
+  const fm = /** @type {Fm} */ (s.fieldMapping && typeof s.fieldMapping === 'object' ? s.fieldMapping : {});
+  /** @type {Record<string, string>} */
   const F = {};
-  for (const k of Object.keys(DEFAULT_FIELDS)) F[k] = typeof fm[k] === 'string' && fm[k].trim() ? fm[k] : DEFAULT_FIELDS[k];
+  for (const k of Object.keys(DEFAULT_FIELDS)) { const v = fm[k]; F[k] = typeof v === 'string' && v.trim() ? v : DEFAULT_FIELDS[k]; }
   // Property names changed in Settings › Your vault: the engine reads and writes task notes through
   // LifeWorld's own names (core/vault.js puts them back under the note's names), so those win.
   if (isRenamed()) for (const k of TRANSLATED_FIELDS) F[k] = DEFAULT_FIELDS[k];
   const statuses = Array.isArray(s.customStatuses) && s.customStatuses.length
-    ? s.customStatuses.filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), isCompleted: !!x.isCompleted, autoArchive: !!x.autoArchive, autoArchiveDelay: Number(x.autoArchiveDelay) || 0, order: Number(x.order) || 0 }))
+    ? /** @type {Fm[]} */ (s.customStatuses).filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), isCompleted: !!x.isCompleted, autoArchive: !!x.autoArchive, autoArchiveDelay: Number(x.autoArchiveDelay) || 0, order: Number(x.order) || 0 }))
     : DEFAULT_STATUS_LIST.map((x) => ({ ...x }));
   const priorities = Array.isArray(s.customPriorities) && s.customPriorities.length
-    ? s.customPriorities.filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), weight: Number(x.weight) || 0 }))
+    ? /** @type {Fm[]} */ (s.customPriorities).filter((x) => x && x.value != null).map((x) => ({ value: String(x.value), label: String(x.label || x.value), weight: Number(x.weight) || 0 }))
     : DEFAULT_PRIORITY_LIST.map((x) => ({ ...x }));
-  const defaults = s.taskCreationDefaults && typeof s.taskCreationDefaults === 'object' ? s.taskCreationDefaults : {};
+  const defaults = /** @type {Fm} */ (s.taskCreationDefaults && typeof s.taskCreationDefaults === 'object' ? s.taskCreationDefaults : {});
   return {
     F, statuses, priorities,
     // Settings › Your vault, the folders every part reads (TaskNotes' own folder settings are not used).
@@ -204,17 +216,24 @@ function engineConfig(tn) {
   };
 }
 // The parts of TaskNotes' settings worth keeping a copy of (no secrets).
+/** @param {Fm | null | undefined} s */
 function snapshotTaskNotes(s) {
   if (!s || typeof s !== 'object') return null;
+  /** @type {Fm} */
   const out = {};
   for (const k of ['fieldMapping', 'customStatuses', 'customPriorities', 'tasksFolder', 'archiveFolder', 'moveArchivedTasks', 'taskTag', 'defaultTaskStatus',
-    'defaultTaskPriority', 'storeTitleInFilename', 'maintainDueDateOffsetInRecurring', 'taskIdentificationMethod', 'taskFilenameFormat']) if (s[k] !== undefined) out[k] = JSON.parse(JSON.stringify(s[k]));
-  if (s.taskCreationDefaults) out.taskCreationDefaults = { defaultTags: s.taskCreationDefaults.defaultTags || '', defaultProjects: s.taskCreationDefaults.defaultProjects || '', defaultContexts: s.taskCreationDefaults.defaultContexts || '' };
+    'defaultTaskPriority', 'storeTitleInFilename', 'maintainDueDateOffsetInRecurring', 'taskIdentificationMethod', 'taskFilenameFormat']) if (s[k] !== undefined) out[k] = /** @type {unknown} */ (JSON.parse(JSON.stringify(s[k])));
+  const tcd = /** @type {Fm | undefined} */ (s.taskCreationDefaults);
+  if (tcd) out.taskCreationDefaults = { defaultTags: tcd.defaultTags || '', defaultProjects: tcd.defaultProjects || '', defaultContexts: tcd.defaultContexts || '' };
   return out;
 }
+/** @param {EngineCfg} cfg @param {unknown} status */
 function isCompletedIn(cfg, status) { const s = cfg.statuses.find((x) => x.value === String(status)); return !!(s && s.isCompleted); }
+/** @param {EngineCfg} cfg */
 function completedStatusesOf(cfg) { const l = cfg.statuses.filter((x) => x.isCompleted).map((x) => x.value); return l.length ? l : DEFAULT_COMPLETED_STATUSES; }
+/** @param {EngineCfg} cfg */
 function firstCompletedStatus(cfg) { return completedStatusesOf(cfg)[0] || 'done'; }
+/** @param {EngineCfg} cfg @param {unknown} status */
 function statusConfigOf(cfg, status) { return cfg.statuses.find((x) => x.value === String(status)) || null; }
 
 /* ========================================================================== *
@@ -222,13 +241,16 @@ function statusConfigOf(cfg, status) { return cfg.statuses.find((x) => x.value =
  * ========================================================================== */
 
 // getCurrentTimestamp(): local wall time with milliseconds and the offset.
+/** @param {Date} now */
 function tnTimestamp(now) {
   const off = -now.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';
+  /** @param {number} n */
   const p = (n) => String(Math.abs(n)).padStart(2, '0');
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}${sign}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)}`;
 }
 // getDatePart(): the calendar-day part of a stored date or date-time.
+/** @param {unknown} v */
 function tnDatePart(v) {
   if (v == null || v === '') return '';
   const t = String(v).trim();
@@ -239,7 +261,9 @@ function tnDatePart(v) {
   if (sp > -1 && /^\d{4}-\d{2}-\d{2}$/.test(t.slice(0, sp))) return t.slice(0, sp);
   return toDayStr(t) || '';
 }
+/** @param {unknown} v @returns {string[]} */
 function strList(v) { return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; }
+/** @param {unknown} v */
 function nonEmpty(v) { return v == null || v === '' ? undefined : (typeof v === 'string' ? v : (v instanceof Date ? dayOf(v) : String(v))); }
 
 /* ========================================================================== *
@@ -252,10 +276,12 @@ function nonEmpty(v) { return v == null || v === '' ? undefined : (typeof v === 
  * ========================================================================== */
 
 // The recurring-relevant part of a task note, as TaskNotes' TaskInfo holds it.
+/** @param {Fm | null | undefined} fm @param {Record<string, string>} F @returns {TnTask} */
 function tnTaskOf(fm, F) {
   const f = fm || {};
+  const rec = f[F.recurrence];
   return {
-    recurrence: typeof f[F.recurrence] === 'string' && f[F.recurrence].trim() ? f[F.recurrence] : undefined,
+    recurrence: typeof rec === 'string' && rec.trim() ? rec : undefined,
     recurrence_anchor: f[F.recurrenceAnchor] === 'completion' ? 'completion' : (f[F.recurrenceAnchor] ? String(f[F.recurrenceAnchor]) : undefined),
     scheduled: nonEmpty(f[F.scheduled]),
     due: nonEmpty(f[F.due]),
@@ -266,13 +292,17 @@ function tnTaskOf(fm, F) {
   };
 }
 // createRRule(): DTSTART from the rule, else scheduled, else dateCreated.
+/** @param {TnTask} task */
 function ruleOfTask(task) {
   if (!task.recurrence) return null;
   const fallback = task.scheduled ? tnDatePart(task.scheduled) : (task.dateCreated ? tnDatePart(task.dateCreated) : null);
   return parseRRule(task.recurrence, fallback);
 }
+/** @param {unknown} rec */
 function explicitDtstart(rec) { const m = /DTSTART:(\d{4})(\d{2})(\d{2})/.exec(String(rec || '')); return m ? `${m[1]}-${m[2]}-${m[3]}` : null; }
+/** @param {string} rec */
 function intervalOf(rec) { const m = /INTERVAL=(\d+)/.exec(rec); return m ? parseInt(m[1], 10) : 1; }
+/** @param {string} rec */
 function lookAheadDays(rec) {
   const i = intervalOf(rec);
   if (rec.includes('FREQ=DAILY')) return Math.max(30, i * 2);
@@ -281,6 +311,7 @@ function lookAheadDays(rec) {
   if (rec.includes('FREQ=YEARLY')) return Math.max(800, i * 366 * 2);
   return 365;
 }
+/** @param {string} rec */
 function searchDays(rec) {
   const m = /(?:^|;)INTERVAL=(\d+)(?:;|$)/.exec(rec); const i = m ? parseInt(m[1], 10) : 1;
   if (rec.includes('FREQ=DAILY')) return Math.max(30, i * 2);
@@ -290,14 +321,17 @@ function searchDays(rec) {
   return 365;
 }
 // generateRecurringInstances(): occurrence days in [start, end].
+/** @param {TnTask} task @param {string} start @param {string} end @returns {string[]} */
 function instancesBetween(task, start, end) {
   const rule = ruleOfTask(task);
   if (!rule || end < start) return [];
+  /** @type {string[]} */
   const out = [];
-  let d = start < rule.dtstart ? rule.dtstart : start;
+  let d = start < /** @type {string} */ (rule.dtstart) ? /** @type {string} */ (rule.dtstart) : start;
   for (; d <= end; d = addDays(d, 1)) if (occursOn(rule, d)) out.push(d);
   return out;
 }
+/** @param {TnTask & { recurrence: string }} task @param {string} today */
 function nextScheduledBased(task, today) {
   const look = lookAheadDays(task.recurrence);
   const dt = explicitDtstart(task.recurrence);
@@ -306,6 +340,7 @@ function nextScheduledBased(task, today) {
   for (const d of instancesBetween(task, start, addDays(today, look))) if (!done.has(d) && d >= today) return d;
   return null;
 }
+/** @param {TnTask & { recurrence: string }} task @param {string} today */
 function nextCompletionBased(task, today) {
   const look = lookAheadDays(task.recurrence);
   const dt = explicitDtstart(task.recurrence);
@@ -314,14 +349,21 @@ function nextCompletionBased(task, today) {
   for (const d of instancesBetween(task, start, addDays(start, look))) if ((!dt || d > dt) && d >= today && !skipped.has(d)) return d;
   return null;
 }
+/** @param {TnTask} task @param {string} today @returns {string | null} */
 function nextUncompleted(task, today) {
   if (!task.recurrence) return null;
-  return (task.recurrence_anchor || 'scheduled') === 'completion' ? nextCompletionBased(task, today) : nextScheduledBased(task, today);
+  return (task.recurrence_anchor || 'scheduled') === 'completion' ? nextCompletionBased(/** @type {TnTask & { recurrence: string }} */ (task), today) : nextScheduledBased(/** @type {TnTask & { recurrence: string }} */ (task), today);
 }
 // updateToNextScheduledOccurrence()
+/** @param {TnTask} task @param {boolean} maintainOffset @param {string} today */
 function nextDates(task, maintainOffset, today) {
   const next = nextUncompleted(task, today);
-  let scheduled = null; let due = null; let nextDue = null;
+  /** @type {string | null} */
+  let scheduled = null;
+  /** @type {string | null} */
+  let due = null;
+  /** @type {string | null} */
+  let nextDue = null;
   if (next) {
     const os = task.scheduled ? toDayStr(tnDatePart(task.scheduled)) : null;
     const od = task.due ? toDayStr(tnDatePart(task.due)) : null;
@@ -339,15 +381,18 @@ function nextDates(task, maintainOffset, today) {
   return { scheduled, due };
 }
 // formatDtstartValue(): date-only -> YYYYMMDD; a date-time -> local clock + 'Z' (TaskNotes' own format).
+/** @param {unknown} s @param {(t: string) => Date} [parseLocal] */
 function dtstartValue(s, parseLocal) {
   const t = String(s).trim();
   if (/T\d{2}:\d{2}/.test(t)) {
     const d = parseLocal ? parseLocal(t) : new Date(t);
+    /** @param {number} n */
     const p = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}T${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}Z`;
   }
   return tnDatePart(t).replace(/-/g, '');
 }
+/** @param {{ recurrence?: string, scheduled?: string, dateCreated?: string }} task */
 function addDtstart(task) {
   if (!task.recurrence) return null;
   if (task.recurrence.includes('DTSTART:')) return task.recurrence;
@@ -355,26 +400,30 @@ function addDtstart(task) {
   if (!src) return null;
   return `DTSTART:${dtstartValue(src)};${task.recurrence}`;
 }
+/** @param {string | null | undefined} rec @param {string} day */
 function updateDtstart(rec, day) {
   if (!rec) return null;
   const v = dtstartValue(day);
   if (rec.includes('DTSTART:')) return rec.replace(/DTSTART:[^;]+;?/, `DTSTART:${v};`);
   return `DTSTART:${v};${rec}`;
 }
+/** @param {TnTask} task @param {string} target */
 function owningDay(task, target) {
   if ((task.recurrence_anchor || 'scheduled') === 'completion' || task.googleCalendarExceptionOriginalScheduled) return null;
   if (instancesBetween(task, target, target).includes(target)) return target;
   const done = new Set([...task.complete_instances, ...task.skipped_instances]);
-  const past = instancesBetween(task, addDays(target, -searchDays(task.recurrence)), target);
+  const past = instancesBetween(task, addDays(target, -searchDays(/** @type {string} */ (task.recurrence))), target);
   for (let i = past.length - 1; i >= 0; i--) if (!done.has(past[i])) return past[i];
   return nextUncompleted(task, target);
 }
+/** @param {string | undefined} scheduled @param {string} day */
 function moveScheduledTo(scheduled, day) {
   if (!scheduled) return day;
   const part = tnDatePart(scheduled);
   return `${day}${scheduled.slice(part.length)}`;
 }
 // TaskNotes' getRecurringTaskActionDate() with no explicit day.
+/** @param {TnTask} task @param {string} today */
 function actionDay(task, today) {
   if (task.recurrence_anchor !== 'completion' && task.scheduled) return tnDatePart(task.scheduled);
   return today;
@@ -382,6 +431,7 @@ function actionDay(task, today) {
 
 // buildRecurringTaskCompletePlan() + applyRecurringTaskCompleteFrontmatterChange().
 // Mutates fm; returns { day, done } (the instance and its new state).
+/** @param {Fm} fm @param {EngineCfg} cfg @param {{ today: string, day?: string | null, stamp: string }} opts */
 function applyRecurringToggle(fm, cfg, opts) {
   const F = cfg.F;
   const task = tnTaskOf(fm, F);
@@ -422,6 +472,7 @@ function applyRecurringToggle(fm, cfg, opts) {
   return { day: dateStr, done: newComplete, next: updated.scheduled ? tnDatePart(updated.scheduled) : null };
 }
 // writeOptionalFrontmatterField() with the task's own current value.
+/** @param {Fm} fm @param {string} key */
 function writeOptional(fm, key) {
   const v = fm[key];
   if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) { delete fm[key]; return; }
@@ -432,10 +483,13 @@ function writeOptional(fm, key) {
  * TaskNotes-compatible engine: property writes (TaskService.updateProperty)
  * ========================================================================== */
 
+/** @param {unknown} s */
 function coerceStatus(s) { const l = String(s).toLowerCase(); return l === 'true' || l === 'false' ? l === 'true' : String(s); }
+/** @param {unknown} v */
 function statusString(v) { if (typeof v === 'boolean') return v ? 'true' : 'false'; if (typeof v === 'string') return v; if (typeof v === 'number') return String(v); return ''; }
 
 // One property, TaskNotes' order of writes. Mutates fm.
+/** @param {Fm} fm @param {EngineCfg} cfg @param {string} prop @param {unknown} value @param {{ day: string, stamp: string }} opts */
 function applyProperty(fm, cfg, prop, value, opts) {
   const F = cfg.F;
   const field = F[prop] || prop;
@@ -461,13 +515,15 @@ function applyProperty(fm, cfg, prop, value, opts) {
 }
 
 // toggleArchive(): archive tag and dateModified. Mutates fm.
+/** @param {Fm} fm @param {EngineCfg} cfg @param {boolean} archive @param {string} stamp */
 function applyArchive(fm, cfg, archive, stamp) {
   const tag = cfg.F.archiveTag;
   if (!archive) {
-    if (Array.isArray(fm.tags)) { const t = fm.tags.filter((x) => x !== tag); if (!t.length) delete fm.tags; else fm.tags = t; }
+    if (Array.isArray(fm.tags)) { const t = /** @type {unknown[]} */ (fm.tags).filter((x) => x !== tag); if (!t.length) delete fm.tags; else fm.tags = t; }
   } else {
     if (!fm.tags) fm.tags = []; else if (!Array.isArray(fm.tags)) fm.tags = [fm.tags];
-    if (!fm.tags.includes(tag)) fm.tags.push(tag);
+    const tags = /** @type {unknown[]} */ (fm.tags);
+    if (!tags.includes(tag)) tags.push(tag);
   }
   fm[cfg.F.dateModified] = stamp;
   return fm;
@@ -477,19 +533,23 @@ function applyArchive(fm, cfg, archive, stamp) {
 
 // The clock time a task rings at, from what is stored: a one-off task's due
 // time; a repeating task's start time (`scheduled`, else its DTSTART).
+/** @param {Fm | null | undefined} fm */
 function ringTimeOf(fm) {
   if (!fm) return null;
   return ringField(fm) === 'scheduled' ? (timeOf(fm.scheduled) || ruleTimeOf(fm.recurrence)) : timeOf(fm.due);
 }
 // One entry in TaskNotes' format, as its quick reminders make it (no description).
+/** @param {string} field @param {number} before @param {number} idMs */
 function reminderEntry(field, before, idMs) { return { id: `rem_${idMs}`, type: 'relative', relatedTo: field, offset: offsetIso(before) }; }
 // The reminder on the ringing field: minutes before (0 = at the time) or null
 // (none). Other entries (absolute ones, the other field) stay as found. The
 // key goes when the list is empty, as TaskNotes does. -> true when changed.
+/** @param {Fm} fm @param {Record<string, string>} F @param {number | null} before @param {number} idMs */
 function applyReminder(fm, F, before, idMs) {
   const key = F.reminders || 'reminders';
   const field = ringField(fm);
-  const list = asList(fm[key]);
+  const list = /** @type {Fm[]} */ (asList(fm[key]));
+  /** @param {Fm} r */
   const ours = (r) => !!r && typeof r === 'object' && r.type === 'relative' && r.relatedTo === field && offsetMinutes(r.offset) != null;
   const mine = list.filter(ours);
   if (before == null ? !mine.length : (mine.length === 1 && offsetMinutes(mine[0].offset) === before)) return false;
@@ -501,38 +561,48 @@ function applyReminder(fm, F, before, idMs) {
 // A task that gets its first ringing time, with no choice made, rings "At the
 // time" (default approved 2026-10-05). One that already had a time
 // and no reminder keeps none.
+/** @param {Fm} fm @param {Record<string, string>} F @param {boolean} hadRing @param {number} idMs */
 function applyReminderDefault(fm, F, hadRing, idMs) {
   if (hadRing || !ringTimeOf(fm) || reminderOf(fm) != null) return false;
   return applyReminder(fm, F, 0, idMs);
 }
 // Repeat switched on or off: the reminder follows the field that rings.
+/** @param {Fm} fm @param {Record<string, string>} F @param {string} from @param {string} to */
 function retargetReminders(fm, F, from, to) {
   const key = F.reminders || 'reminders';
-  if (from === to || !Array.isArray(fm[key])) return;
-  fm[key] = fm[key].map((r) => (r && typeof r === 'object' && r.type === 'relative' && r.relatedTo === from ? { ...r, relatedTo: to } : r));
+  const list = fm[key];
+  if (from === to || !Array.isArray(list)) return;
+  fm[key] = /** @type {Fm[]} */ (list).map((r) => (r && typeof r === 'object' && r.type === 'relative' && r.relatedTo === from ? { ...r, relatedTo: to } : r));
 }
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: new task notes (TaskCreationService)
  * ========================================================================== */
 
+/** @param {string} s */
 function stripControl(s) { return s.replace(/./g, (c) => { const n = c.charCodeAt(0); return n <= 31 || (n >= 127 && n <= 159) ? '' : c; }); }
+/** @param {unknown} s */
 function titleForStorage(s) { if (!s || typeof s !== 'string') return 'untitled'; const t = stripControl(s.trim().replace(/\s+/g, ' ')).trim(); return t.length ? t : 'untitled'; }
+/** @param {unknown} s */
 function titleForFilename(s) {
   if (!s || typeof s !== 'string') return 'untitled';
   const t = stripControl(s.trim().replace(/\s+/g, ' ')).replace(/[<>:"/\\|?*#[\]]/g, '').replace(/^\.+|\.+$/g, '').trim();
   return t.length ? t : 'untitled';
 }
+/** @param {unknown} s */
 function sanitizeForFilename(s) {
   if (!s || typeof s !== 'string') return 'untitled';
   const t = stripControl(s.trim().replace(/\s+/g, ' ').replace(/[<>:"/\\|?*#[\]]/g, '')).replace(/^\.+|\.+$/g, '').trim();
   return t.length ? t : 'untitled';
 }
+/** @param {unknown} v */
 function splitDefaults(v) { return String(v || '').split(',').map((x) => x.trim()).filter(Boolean); }
+/** @param {unknown} t */
 function normTag(t) { return String(t == null ? '' : t).trim().replace(/^#+/, ''); }
 
 // -> { folder, base, frontmatter (ordered object), body }. The caller picks
 // the unique filename (name, name-2, name-3 ...) and stringifies the YAML.
+/** @param {NewTaskInput} input @param {EngineCfg} cfg @param {string} stamp @param {string} today */
 function planCreate(input, cfg, stamp, today) {
   const F = cfg.F;
   const raw = String(input.title || '').trim();
@@ -554,6 +624,7 @@ function planCreate(input, cfg, stamp, today) {
     dateCreated: stamp, dateModified: stamp, recurrence, completedDate,
   };
   if (data.recurrence && !data.recurrence.includes('DTSTART:')) { const r = addDtstart(data); if (r) data.recurrence = r; }
+  /** @type {Fm} */
   const fm = {};
   fm[F.title] = title; // removed below when the filename carries the title
   fm[F.status] = coerceStatus(status);
@@ -574,6 +645,7 @@ function planCreate(input, cfg, stamp, today) {
   return { folder: cfg.tasksFolder, base: sanitizeForFilename(fileTitle), fileTitle, title, frontmatter: fm, body };
 }
 // Final file text once the unique name is known.
+/** @param {ReturnType<typeof planCreate>} plan @param {string} uniqueName @param {EngineCfg} cfg @param {(o: Fm) => string} stringify */
 function createContent(plan, uniqueName, cfg, stringify) {
   const fm = { ...plan.frontmatter };
   const represented = cfg.storeTitleInFilename && uniqueName === plan.fileTitle && plan.title === plan.fileTitle;
@@ -587,20 +659,22 @@ function createContent(plan, uniqueName, cfg, stringify) {
  * Reading tasks and projects for the views (pure)
  * ========================================================================== */
 
+/** @param {unknown} link */
 function projectKeyOf(link) {
   const t = wikilinkTarget(link);
-  return t ? (t.split('#')[0].split('/').pop().replace(/\.md$/i, '').trim() || null) : null;
+  return t ? (/** @type {string} */ (t.split('#')[0].split('/').pop()).replace(/\.md$/i, '').trim() || null) : null;
 }
 
 // A task for Projects: the shared reader's fields plus what Projects shows.
 // Archived notes are read too (they fill the Done lists).
+/** @param {Fm | null | undefined} fm @param {string} path @param {string} basename @param {EngineCfg} cfg @param {boolean} [inArchive] @returns {ProjTask | null} */
 function readTask(fm, path, basename, cfg, inArchive) {
   if (!fm || typeof fm !== 'object') return null;
   const tags = asList(fm.tags).map(String);
   if (!tags.includes(cfg.taskTag)) return null;
   const archived = !!inArchive || fm.archived === true || tags.includes(cfg.F.archiveTag);
   const view = archived ? { ...fm, archived: false, tags: tags.filter((t) => t !== cfg.F.archiveTag) } : fm;
-  const it = taskFromFrontmatter(view, archived ? `${vaultFolders.tasks}/${basename}.md` : path, basename);
+  const it = /** @type {ProjTask | null} */ (taskFromFrontmatter(view, archived ? `${vaultFolders.tasks}/${basename}.md` : path, basename));
   if (!it) return null;
   it.path = path;
   it.archived = archived;
@@ -623,18 +697,25 @@ function readTask(fm, path, basename, cfg, inArchive) {
   return it;
 }
 
+/** @param {{ recurrenceRaw?: string | null, status: string }} t @param {EngineCfg} cfg */
 function isOpenTask(t, cfg) { return t.recurrenceRaw ? !isCompletedIn(cfg, t.status) : !isCompletedIn(cfg, t.status); }
+/** @param {ProjTask} t @param {string} today */
 function isLaterTask(t, today) { return !t.recurrenceRaw && !!t.start && t.start > today && !isSomeday(t); }
 // The shared rule (isOverdue): a one-off, unfinished task on a past day (due or planned).
+/** @param {ProjTask} t @param {string} today @param {EngineCfg} cfg */
 function isOverdueTask(t, today, cfg) { return !t.archived && isOverdue(t, today, completedStatusesOf(cfg)); }
+/** @param {ProjTask} t @param {EngineCfg} cfg */
 function isInboxTask(t, cfg) { return !t.archived && !t.recurrenceRaw && !t.projectLink && !t.plannedDay && !isSomeday(t) && isOpenTask(t, cfg); }
 
+/** @param {unknown} value @param {EngineCfg} cfg */
 function priorityWeight(value, cfg) { const p = cfg.priorities.find((x) => x.value === String(value)); return p ? p.weight : (String(value) === '' ? 0 : -1); }
 
 // Mockup's order for open tasks: overdue first, then priority, then the day it
 // sits on (no day last), then A to Z.
 // Blocked tasks (a blocker still open) go below the ones that can be done now.
+/** @param {ProjTask | null | undefined} t */
 function isBlockedTask(t) { return !!(t && t.openBlockers && t.openBlockers.length); }
+/** @param {ProjTask[]} list @param {string} today @param {EngineCfg} cfg */
 function sortOpenTasks(list, today, cfg) {
   return [...list].sort((a, b) => (isBlockedTask(a) - isBlockedTask(b)) || (isOverdueTask(b, today, cfg) - isOverdueTask(a, today, cfg))
     || priorityWeight(b.priority, cfg) - priorityWeight(a.priority, cfg)
@@ -644,8 +725,11 @@ function sortOpenTasks(list, today, cfg) {
 }
 
 // parent_area as written: the first non-empty entry ('' and [] count as none, review s1 #2).
+/** @param {unknown} v */
 function areaLinkOf(v) { return asList(v).map(String).find((x) => x.trim()) || null; }
+/** @param {Fm} fm */
 function sphereOfNote(fm) { const sp = typeof fm.sphere === 'string' ? fm.sphere.trim().toLowerCase() : ''; return sp === 'work' || sp === 'personal' ? sp : 'unsorted'; }
+/** @param {Fm | null | undefined} fm @param {string} path @param {string} basename @returns {ProjNote | null} */
 function readProject(fm, path, basename) {
   if (!fm || fm.type !== 'project') return null;
   return {
@@ -662,6 +746,7 @@ function readProject(fm, path, basename) {
 }
 
 // An area (GL-002 "Areas"): ongoing, no status; tasks find it by name, as they find a project.
+/** @param {Fm | null | undefined} fm @param {string} path @param {string} basename @returns {AreaNote | null} */
 function readArea(fm, path, basename) {
   if (!fm || fm.type !== 'area') return null;
   return {
@@ -673,18 +758,20 @@ function readArea(fm, path, basename) {
 // Puts each project's area on it (area, areaName, areaPath). resolve(link, fromPath) -> the note's
 // path or null. A link to a missing note or to anything but an area is no area: areaBad holds its
 // text for the project page. Mutates and returns `projects`.
+/** @param {ProjNote[]} projects @param {AreaNote[]} areas @param {(link: string, from: string) => string | null | undefined} resolve */
 function linkAreas(projects, areas, resolve) {
   const byPath = new Map(areas.map((a) => [a.path, a]));
   for (const p of projects) {
     if (!p.parentArea) continue;
     const t = wikilinkTarget(p.parentArea);
-    const a = t ? byPath.get(resolve(t.split('#')[0], p.path)) : null;
+    const a = t ? byPath.get(/** @type {string} */ (resolve(t.split('#')[0], p.path))) : null;
     if (a) Object.assign(p, { area: a.key, areaName: a.name, areaPath: a.path });
     else p.areaBad = wikilinkLabel(p.parentArea) || p.parentArea;
   }
   return projects;
 }
 // Areas for the Projects list: one sphere (or all) and the search, A to Z.
+/** @param {AreaNote[]} areas @param {unknown} query @param {string | null} [sphere] */
 function areaList(areas, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
   return areas.filter((a) => (!sphere || a.sphere === sphere) && (!q || a.name.toLowerCase().includes(q)))
@@ -692,6 +779,7 @@ function areaList(areas, query, sphere) {
 }
 // An area's page and card: its open projects (overview order), its finished ones (latest first),
 // and its own loose tasks counted the way a project's are.
+/** @param {AreaNote} area @param {ProjNote[]} projects @param {ProjTask[]} tasks @param {string} today @param {EngineCfg} cfg */
 function areaStats(area, projects, tasks, today, cfg) {
   const mine = projects.filter((p) => p.area === area.key);
   const open = mine.filter(isOpenProject).sort((a, b) => ((OPEN_ORDER[a.status] ?? 5) - (OPEN_ORDER[b.status] ?? 5)) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
@@ -699,6 +787,7 @@ function areaStats(area, projects, tasks, today, cfg) {
 }
 // "+ Add area": the note, as the form makes it. `client` is a note name (brackets optional); written
 // through the YAML writer.
+/** @param {string} name @param {string} sphere @param {unknown} client @param {string} today @param {(o: Fm) => string} stringify */
 function areaNote(name, sphere, client, today, stringify) {
   const c = String(client || '').trim().replace(/^\[\[|\]\]$/g, '').trim();
   const y = c ? stringify({ client: `[[${c}]]` }).replace(/\n?$/, '\n') : '';
@@ -706,12 +795,14 @@ function areaNote(name, sphere, client, today, stringify) {
 }
 // Turn a project into an area and back (spec decision 6). false = refused (not that type, or a
 // project still inside an area). Undo restores the whole note (writeWhole).
+/** @param {Fm | null | undefined} fm */
 function applyToArea(fm) {
   if (!fm || fm.type !== 'project' || areaLinkOf(fm.parent_area)) return false;
   fm.type = 'area';
   for (const k of ['status', 'end_date', 'stored_from']) delete fm[k];
   return true;
 }
+/** @param {Fm | null | undefined} fm @param {string | null} [goalLink] */
 function applyToProject(fm, goalLink) {
   if (!fm || fm.type !== 'area') return false;
   fm.type = 'project'; fm.status = 'active';
@@ -719,6 +810,7 @@ function applyToProject(fm, goalLink) {
   return true;
 }
 
+/** @param {{ key: string }} project @param {ProjTask[]} tasks @param {string} today @param {EngineCfg} cfg */
 function projectStats(project, tasks, today, cfg) {
   const all = tasks.filter((t) => t.projectKey === project.key);
   const open = all.filter((t) => isOpenTask(t, cfg) && !t.archived);
@@ -736,12 +828,15 @@ function projectStats(project, tasks, today, cfg) {
 // Open = what the overview lists (active, paused, waiting, blocked, backlog, anything
 // not closed or shelved). The one rule: the overview, the task pickers and the
 // sidebar's counts all use it.
+/** @param {ProjNote | null | undefined} p */
 function isOpenProject(p) { return !!p && !CLOSED_STATUSES.includes(p.status) && !SHELVED_STATUSES.includes(p.status); }
 
 // Overview lists: [{ sphere, label, projects }], active, paused, waiting, blocked, backlog, A to Z.
 // `sphere` ('work' / 'personal', from the sidebar's Work / Personal items) keeps that list only.
+/** @param {ProjNote[]} projects @param {string} filter @param {unknown} query @param {string | null} [sphere] */
 function overviewGroups(projects, filter, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
+  /** @type {{ sphere: string, label: string, projects: ProjNote[] }[]} */
   const out = [];
   for (const [sp, label] of [['work', 'Work'], ['personal', 'Personal'], ['unsorted', 'Unsorted']]) {
     if (sphere && sp !== sphere) continue;
@@ -753,6 +848,7 @@ function overviewGroups(projects, filter, query, sphere) {
 }
 // Projects board (spec 5): the six columns only; `area` keeps one sphere; the search
 // looks at the name, the why and `extra` (description, next step).
+/** @param {ProjNote | null | undefined} p @param {string | null} area @param {unknown} query @param {unknown[]} [extra] */
 function onBoard(p, area, query, extra) {
   const q = String(query || '').trim().toLowerCase();
   return !!p && BOARD_COLUMNS.includes(p.status) && (!area || p.sphere === area)
@@ -760,12 +856,16 @@ function onBoard(p, area, query, extra) {
 }
 // Tasks board column of a task status: none or blank sits in Open; a status the
 // board has no column for shows nowhere (as a project with an unknown status).
+/** @param {unknown} status */
 function taskColumn(status) { const s = String(status == null ? '' : status).trim(); return s === '' || s === 'none' ? 'open' : TASK_COLUMNS.includes(s) ? s : null; }
 // The columns this vault's task settings have (Someday is LifeWorld's own, always there).
+/** @param {EngineCfg} cfg */
 function taskColumns(cfg) { return TASK_COLUMNS.filter((k) => k === 'someday' || cfg.statuses.some((x) => x.value === k)); }
 // Tasks board cards: { t, p (its project or null), col }. An archived task that is
 // still open is left out (as the List's task search). Area: the project's; a task
 // with no project only when no area is chosen. Search: task or project name.
+/** @typedef {{ t: ProjTask, p: ProjNote | null, col: string | null }} BoardRow */
+/** @param {ProjTask[]} tasks @param {ProjNote[]} projects @param {EngineCfg} cfg @param {string | null} area @param {unknown} query @returns {BoardRow[]} */
 function taskBoardRows(tasks, projects, cfg, area, query) {
   const byKey = new Map(projects.map((p) => [p.key, p]));
   const q = String(query || '').trim().toLowerCase();
@@ -777,22 +877,25 @@ function taskBoardRows(tasks, projects, cfg, area, query) {
 }
 // One column's cards: Done and Closed newest finished first, the latest DONE_PREVIEW
 // (as the done preview); the others in the List's open-task order.
+/** @param {BoardRow[]} rows @param {string} col @param {string} today @param {EngineCfg} cfg @returns {BoardRow[]} */
 function taskColumnCards(rows, col, today, cfg) {
   if (col === 'done' || col === 'closed') {
+    /** @param {BoardRow} x */
     const day = (x) => x.t.completedDate || x.t.modified || '';
     return [...rows].sort((a, b) => day(b).localeCompare(day(a)) || a.t.title.localeCompare(b.t.title)).slice(0, DONE_PREVIEW);
   }
   const by = new Map(rows.map((x) => [x.t.path, x]));
-  return sortOpenTasks(rows.map((x) => x.t), today, cfg).map((t) => by.get(t.path));
+  return sortOpenTasks(rows.map((x) => x.t), today, cfg).map((t) => /** @type {BoardRow} */ (by.get(t.path)));
 }
 
 // A card's text as plain words: links show their name ([[a/B|C]] -> C, [[a/B]] -> B,
 // [x](url) -> x), embeds go, backticks and bold/italic marks are taken off. For titles and
 // "why" too, so it leaves line starts alone ("- 3 degrees"); firstBodyLine strips those.
+/** @param {unknown} text */
 function plainLine(text) {
   return String(text || '')
     .replace(/!\[\[[^\]]*\]\]|!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[\[([^\]]+)\]\]/g, (m, x) => wikilinkLabel(m) || x)
+    .replace(/\[\[([^\]]+)\]\]/g, (m, /** @type {string} */ x) => wikilinkLabel(m) || x)
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // shortcut: a URL with ( ) in it leaves a stray ), fine for a card
     .replace(/`+/g, '')
     .replace(/(\*\*|~~|==|\*)(\S(?:.*?\S)?)\1/g, '$2')
@@ -802,6 +905,7 @@ function plainLine(text) {
 // A note's short description: its first body line that is not a heading, an embed or in a
 // code block and has words left once cleaned (plainLine).
 // Only real syntax is skipped: "#1 priority", "#beach" and "!important call" are text.
+/** @param {unknown} text */
 function firstBodyLine(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
   let fence = false;
@@ -820,41 +924,51 @@ function firstBodyLine(text) {
 // through the YAML writer; the other values are fixed or checked by the caller.
 // The one line is kept exactly as typed (spaces included); only line breaks become a
 // space, so it stays one line, and the ends are trimmed.
+/** @param {string} title @param {unknown} line @param {unknown} why @param {string} sphere @param {string} today @param {(o: Fm) => string} stringify */
 function ideaNote(title, line, why, sphere, today, stringify) {
   const w = String(why || '').trim(), l = String(line || '').replace(/\r\n|\r|\n/g, ' ').trim();
   const y = w ? stringify({ why: w }).replace(/\n?$/, '\n') : '';
   return `---\ntype: project\nstatus: idea\ncreated: ${today}\nsphere: ${sphere}\n${y}---\n\n# ${title}\n\n${l ? `${l}\n` : ''}`;
 }
 // "Oct 12, 4:10 PM": card dates and Activity times.
+/** @param {number} ms */
 function stampText(ms) { return new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(' at ', ', '); }
+/** @param {ProjNote[]} projects @param {unknown} [query] @param {string | null} [sphere] */
 function closedProjects(projects, query, sphere) {
   const q = String(query || '').trim().toLowerCase();
   return projects.filter((p) => CLOSED_STATUSES.includes(p.status) && (!sphere || p.sphere === sphere) && (!q || p.name.toLowerCase().includes(q)))
     .sort((a, b) => String(b.endDate || '').localeCompare(String(a.endDate || '')) || a.name.localeCompare(b.name));
 }
 // Tasks that belong to a project of one sphere (no sphere: all of them).
+/** @param {ProjTask[]} tasks @param {ProjNote[]} projects @param {string | null} [sphere] */
 function sphereTasks(tasks, projects, sphere) {
   if (!sphere) return tasks;
   const keys = new Set(projects.filter((p) => p.sphere === sphere).map((p) => p.key));
   return tasks.filter((t) => t.projectKey && keys.has(t.projectKey));
 }
+/** @type {Record<string, string>} */
 const SPHERE_LABEL = { work: 'Work', personal: 'Personal', unsorted: 'Unsorted' };
 // Task search (2+ characters): open tasks first, then done ones; at most `max`.
+/** @param {ProjTask[]} tasks @param {unknown} query @param {EngineCfg} cfg @param {number} [max] */
 function searchTasks(tasks, query, cfg, max) {
   const q = String(query || '').trim().toLowerCase();
   if (q.length < 2) return [];
+  /** @param {ProjTask} t */
   const fileName = (t) => String(t.path || '').split('/').pop().replace(/\.md$/i, '');
   const hit = tasks.filter((t) => t.title.toLowerCase().includes(q) || fileName(t).toLowerCase().includes(q) || String(t.project || '').toLowerCase().includes(q));
   return hit.sort((a, b) => (isOpenTask(b, cfg) - isOpenTask(a, cfg)) || a.title.localeCompare(b.title)).slice(0, max || 30);
 }
 // Find a task (mockup approved 2026-10-06): the Projects page search
 // (searchTasks) over every task the page would list, Someday included.
+/** @param {ProjTask[]} tasks @param {unknown} query @param {EngineCfg} cfg @param {number} [max] */
 function findTasks(tasks, query, cfg, max) {
   return searchTasks(tasks.filter((t) => !t.archived || !isOpenTask(t, cfg)), query, cfg, max || 50);
 }
 // The toast after Unschedule: Due comes off too, except with "Just plan it" (Settings › Planning).
+/** @param {{ due: string | null }} t */
 function unscheduledText(t) { return !t.due ? 'Unscheduled' : (planning.setsDue ? 'Unscheduled. The due date was taken off' : 'Plan taken off. It stays on its due day'); }
 // The grey line under a result: its project, then its day (or done / someday).
+/** @param {ProjTask} t @param {string} today @param {EngineCfg} cfg */
 function findNote(t, today, cfg) {
   const proj = t.project || t.projectKey || 'no project';
   let when;
@@ -868,14 +982,17 @@ function findNote(t, today, cfg) {
   return `${proj} · ${when}`;
 }
 // Where the typed text sits in `text` (case ignored): [before, match, after], or null.
+/** @param {unknown} text @param {unknown} query */
 function findMark(text, query) {
   const s = String(text || ''); const q = String(query || '').trim();
   if (q.length < 2) return null;
   const i = s.toLowerCase().indexOf(q.toLowerCase());
   return i < 0 ? null : [s.slice(0, i), s.slice(i, i + q.length), s.slice(i + q.length)];
 }
+/** @param {ProjTask[]} tasks @param {EngineCfg} cfg */
 function doneGroups(tasks, cfg) {
   const done = tasks.filter((t) => !isOpenTask(t, cfg)); // a repeating task counts once its status is finished (series over)
+  /** @param {ProjTask} t */
   const day = (t) => t.completedDate || t.modified || '';
   done.sort((a, b) => day(b).localeCompare(day(a)) || a.title.localeCompare(b.title));
   return done.map((t) => ({ day: day(t), task: t }));
@@ -883,6 +1000,7 @@ function doneGroups(tasks, cfg) {
 
 // Project status change -> the frontmatter writes (GL-002 end_date rule).
 // stored_from lives only while the note is in cold storage (GL-002).
+/** @param {Fm} fm @param {string} status @param {string} today */
 function applyProjectStatus(fm, status, today) {
   fm.status = status;
   if (CLOSED_STATUSES.includes(status)) { if (!fm.end_date) fm.end_date = today; }
@@ -894,11 +1012,15 @@ function applyProjectStatus(fm, status, today) {
 // Board actions (projects board, section 4). Every one changes only these
 // fields; fieldsOf/undoFields are the Undo.
 const MOVE_FIELDS = ['status', 'end_date', 'stored_from', 'why', 'goal', 'parent_area'];
-function fieldsOf(fm) { const o = {}; for (const k of MOVE_FIELDS) if (fm[k] !== undefined) o[k] = fm[k]; return o; }
+/** @param {Fm} fm */
+function fieldsOf(fm) { /** @type {Fm} */ const o = {}; for (const k of MOVE_FIELDS) if (fm[k] !== undefined) o[k] = fm[k]; return o; }
 // Undo puts a field back only while it still holds what the move wrote, so a
 // later hand edit survives; returns the moved fields it left alone.
+/** @param {Fm} fm @param {Fm} before @param {Fm} after */
 function undoFields(fm, before, after) {
+  /** @param {unknown} a @param {unknown} b */
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  /** @type {string[]} */
   const kept = [];
   for (const k of MOVE_FIELDS) {
     if (!same(fm[k], after[k])) { if (!same(before[k], after[k])) kept.push(k); continue; }
@@ -906,9 +1028,11 @@ function undoFields(fm, before, after) {
   }
   return kept;
 }
+/** @param {Fm | null | undefined} fm */
 function statusOf(fm) { return String((fm && fm.status) || '').trim().toLowerCase(); }
 // Move to Cold Storage: remember the column it left; an empty answer keeps the old why.
 // Storing twice (two dialogs) keeps the first column; a Done project keeps its finish date.
+/** @param {Fm} fm @param {unknown} why @param {string} today */
 function applyColdStorage(fm, why, today) {
   const from = statusOf(fm), end = fm.end_date;
   applyProjectStatus(fm, 'cold-storage', today);
@@ -919,6 +1043,7 @@ function applyColdStorage(fm, why, today) {
   return fm;
 }
 // Where Restore sends a note: its stored_from column, else Backlog.
+/** @param {Fm | null | undefined} fm */
 function restoreTarget(fm) {
   const s = String((fm && fm.stored_from) || '').trim().toLowerCase();
   return BOARD_COLUMNS.includes(s) ? { status: s, fellBack: false } : { status: 'backlog', fellBack: true };
@@ -926,6 +1051,7 @@ function restoreTarget(fm) {
 // The project page's status menu: an idea leaves only by Promote (goal asked), a
 // stored project only by Restore (its saved column); nothing becomes an idea, and
 // Cold Storage only from a board column. null = not offered. Same value: null.
+/** @param {string} from @param {string} to @param {unknown} storedFrom */
 function statusRoute(from, to, storedFrom) {
   if (from === to) return null;
   if (from === 'idea') return to === 'backlog' ? 'promote' : null;
@@ -936,17 +1062,23 @@ function statusRoute(from, to, storedFrom) {
 }
 // The status menu's plain write: the note on disk decides, so a page drawn before the
 // note was shelved cannot move it past Promote or Restore. false = refused.
+/** @param {Fm} fm @param {string} status @param {string} today */
 function applyPlainStatus(fm, status, today) { return !SHELVED_STATUSES.includes(statusOf(fm)) && applyProjectStatus(fm, status, today); }
+/** @param {Fm} fm @param {string} today */
 function applyRestore(fm, today) { const r = restoreTarget(fm); applyProjectStatus(fm, r.status, today); return r; }
+/** @param {Fm | null | undefined} fm */
 function hasGoalLink(fm) { return asList(fm && fm.goal).some((g) => String(g).includes('[[')); }
 // Promote an idea: Backlog, with the goal link when one was picked.
+/** @param {Fm} fm @param {string | null | undefined} goalLink @param {string} today */
 function applyPromote(fm, goalLink, today) {
   if (goalLink) fm.goal = goalLink;
   return applyProjectStatus(fm, 'backlog', today);
 }
 
 // A task's project link, written the way the menu bar capture add-on writes it.
+/** @param {unknown} path */
 function projectLinkFor(path) { return `[[${String(path).replace(/\.md$/i, '')}]]`; }
+/** @param {Fm} fm @param {Record<string, string>} F @param {string | null | undefined} link */
 function applyProjectLink(fm, F, link) {
   const list = asList(fm[F.projects]).slice();
   if (link) { if (list.length) list[0] = link; else list.push(link); fm[F.projects] = list; }
@@ -959,6 +1091,7 @@ function applyProjectLink(fm, F, link) {
  * ========================================================================== */
 
 const STEP_RE = /^([-*+]) \[( |x|X)\] (.*)$/;
+/** @param {string} text */
 function frontmatterEnd(text) {
   if (!text.startsWith('---\n')) return 0;
   const i = text.indexOf('\n---', 4);
@@ -967,10 +1100,12 @@ function frontmatterEnd(text) {
   return nl < 0 ? text.length : nl + 1;
 }
 // -> [{ line, done, text }] for unindented checkbox lines outside code blocks.
+/** @param {unknown} text */
 function readSteps(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
   const start = s.slice(0, frontmatterEnd(s)).split('\n').length - 1;
   const lines = s.split('\n');
+  /** @type {{ line: number, done: boolean, text: string }[]} */
   const out = [];
   let fence = false;
   for (let i = start; i < lines.length; i++) {
@@ -981,6 +1116,7 @@ function readSteps(text) {
   }
   return out;
 }
+/** @param {unknown} text @param {number} line @param {boolean} done */
 function setStepDone(text, line, done) {
   const lines = String(text).split('\n');
   const m = STEP_RE.exec(lines[line] || '');
@@ -989,6 +1125,7 @@ function setStepDone(text, line, done) {
   return lines.join('\n');
 }
 // New step after the last step; with no steps yet, first in the body.
+/** @param {unknown} text @param {unknown} title */
 function addStep(text, title) {
   const s = String(text || '');
   const clean = String(title).replace(/\s+/g, ' ').trim();
@@ -1009,7 +1146,9 @@ function addStep(text, title) {
   return `${head}${head ? '\n' : ''}${line}\n\n${body}`;
 }
 // The step line and its indented continuation lines.
+/** @param {string[]} lines @param {number} line */
 function stepBlock(lines, line) { let end = line + 1; while (end < lines.length && /^\s{2,}\S/.test(lines[end])) end++; return [line, end]; }
+/** @param {unknown} text @param {number} line @param {number} dir */
 function moveStep(text, line, dir) {
   const lines = String(text).split('\n');
   const steps = readSteps(text);
@@ -1022,6 +1161,7 @@ function moveStep(text, line, dir) {
   lines.splice(a[0], b[1] - a[0], ...second, ...first);
   return lines.join('\n');
 }
+/** @param {unknown} text @param {number} line */
 function removeStep(text, line) {
   const lines = String(text).split('\n');
   if (!STEP_RE.test(lines[line] || '')) return null;
@@ -1046,11 +1186,18 @@ const CLOCK_RE = '(\\d{1,2}(?::\\d{2})?\\s?(?:am|pm|a\\.m\\.|p\\.m\\.)|\\d{1,2}:
 //    add am or pm for a time.
 //  - A clock time sets the half (before 1 PM is Morning). Starts takes no
 //    half-day word: it means "not before then", with or without a time.
+/** @typedef {{ error?: string, day?: string, time?: string | null, half?: 'am' | 'pm' | null, ask?: boolean, kept?: boolean }} WhenRead */
+/** @param {unknown} text @param {string} today @param {{ day?: string | null, time?: string | null } | null} [cur] @param {string} [kind] @returns {WhenRead | null} */
 function parseWhen(text, today, cur, kind) {
   let s = ` ${String(text || '').toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim()} `;
   if (!s.trim()) return null;
   const c = cur || {};
-  let time = null; let half = null; let tonight = false; let ask = false;
+  /** @type {string | null | undefined} */
+  let time = null;
+  /** @type {'am' | 'pm' | null} */
+  let half = null;
+  let tonight = false; let ask = false;
+  /** @param {RegExpExecArray} m */
   const cutAt = (m) => { s = `${s.slice(0, m.index)} ${s.slice(m.index + m[0].length)}`; };
   let m = new RegExp(`\\s(?:at\\s)?${CLOCK_RE}(?=\\s)`).exec(s);
   if (m) { time = parseClock(m[1]); if (!time) return { error: 'time' }; cutAt(m); }
@@ -1073,14 +1220,17 @@ function parseWhen(text, today, cur, kind) {
 }
 
 // "Thu, Oct 8" with "(today)" / "(tomorrow)", and the year when it isn't this one.
+/** @param {string} day @param {string} today */
 function dayLong(day, today) {
   const { m, d, y } = partsOf(day);
   const base = `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}${y !== Number(today.slice(0, 4)) ? ` ${y}` : ''}`;
   return base + (day === today ? ' (today)' : day === addDays(today, 1) ? ' (tomorrow)' : '');
 }
+/** @param {unknown} h */
 function capHalf(h) { return h === 'am' ? 'Morning' : h === 'pm' ? 'Afternoon' : ''; }
 
 // When a reminder rings: { day, time } moved `before` minutes earlier.
+/** @param {string} day @param {string} time @param {unknown} before */
 function ringAt(day, time, before) {
   const [h, mi] = time.split(':').map(Number);
   const total = h * 60 + mi - (Number(before) || 0);
@@ -1088,11 +1238,13 @@ function ringAt(day, time, before) {
   return { day: addDays(day, dd), time: `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}` };
 }
 // '4:15 PM', or 'Wed 4:30 PM' when it rings on another day than `day`.
+/** @param {string} day @param {string} time @param {unknown} before */
 function ringText(day, time, before) {
   const r = ringAt(day, time, before);
   return `${r.day !== day ? `${WEEKDAYS_SHORT[weekdayOf(r.day)]} ` : ''}${timeText(r.time)}`;
 }
 // "reminder at 4:15 PM (15 min before)" / "reminder at 4:30 PM" / "no reminder".
+/** @param {string} day @param {string} time @param {number | null} before */
 function reminderLine(day, time, before) {
   if (before == null) return 'no reminder';
   return `reminder at ${ringText(day, time, before)}${before ? ` (${reminderWords(before)})` : ''}`;
@@ -1101,6 +1253,7 @@ function reminderLine(day, time, before) {
 // The orange "what will be saved" line under a typing box and in the picker.
 // Only a due time rings (and a repeating task's start time, each time).
 // rem: the reminder that will be kept (minutes before, null = none); left out = at the time.
+/** @param {WhenRead | null} r @param {string} kind @param {string} today @param {boolean} [repeating] @param {number | null} [rem] */
 function whenPreview(r, kind, today, repeating, rem) {
   if (!r) return '';
   if (r.error === 'day') return "Didn't catch the day. Try: tomorrow at 4pm, next tuesday 9am, oct 20";
@@ -1108,7 +1261,7 @@ function whenPreview(r, kind, today, repeating, rem) {
   if (r.error === 'start-half') return 'Starts takes a clock time (9am), not morning or afternoon';
   const due = kind === 'due';
   const before = rem === undefined ? 0 : rem;
-  const parts = [`${due ? 'Due' : 'Starts'} ${dayLong(r.day, today)}${r.time ? `, ${timeText(r.time)}` : ''}`];
+  const parts = [`${due ? 'Due' : 'Starts'} ${dayLong(/** @type {string} */ (r.day), today)}${r.time ? `, ${timeText(r.time)}` : ''}`];
   if (due && r.time && repeating) parts.push(capHalf(halfOfTime(r.time)), "a repeating task rings at its start time");
   else if (due && r.time) parts.push(capHalf(halfOfTime(r.time)), reminderLine(r.day, r.time, before));
   else if (due && r.half) parts.push(`${capHalf(r.half)}, no set time`, 'no reminder');
@@ -1117,21 +1270,29 @@ function whenPreview(r, kind, today, repeating, rem) {
   if (r.ask) parts.push(r.time ? `keeps ${timeText(r.time)}; add am or pm to change it` : 'add am or pm for a time');
   return parts.join(' · ');
 }
+/** @type {[string, string][]} */
 const REPEAT_PRESETS = [
   ['', "Doesn't repeat"], ['FREQ=DAILY', 'Every day'], ['FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', 'Every weekday (Mon to Fri)'],
   ['FREQ=WEEKLY', 'Every week on this day'], ['FREQ=WEEKLY;INTERVAL=2', 'Every 2 weeks'], ['FREQ=MONTHLY', 'Every month on this date'], ['FREQ=YEARLY', 'Every year'],
 ];
+/** @param {unknown} raw */
 function ruleBody(raw) { return String(raw || '').replace(/DTSTART(?:;[^:]*)?:[^;]+;?/i, '').replace(/^RRULE:/i, '').replace(/^;/, '').trim(); }
 
 /* ---- small display helpers ----------------------------------------------- */
+/** @param {string} day */
 function longDay(day) { const { y, m, d } = partsOf(day); return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`; }
+/** @param {string} month */
 function monthGrid(month) { const first = `${month}-01`; const mon = addDays(first, -((weekdayOf(first) + 6) % 7)); return Array.from({ length: 42 }, (_, i) => addDays(mon, i)); }
+/** @param {string} month @param {number} n */
 function shiftMonth(month, n) { const [y, m] = month.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`; }
+/** @param {string} month */
 function monthTitle(month) { const [y, m] = month.split('-').map(Number); return `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1]} ${y}`; }
+/** @param {string} today */
 function nextMonday(today) { return addDays(today, ((8 - weekdayOf(today)) % 7) || 7); }
 
 // Body of a project note for the page: frontmatter dropped, and the
 // project-tasks list embed (this page already lists the tasks) left out.
+/** @param {unknown} text */
 function projectBodyForPage(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
   let body = s.slice(frontmatterEnd(s));
@@ -1143,6 +1304,7 @@ function projectBodyForPage(text) {
 // Project notes (spec: project notes panel). The "## Notes" section of a project note: from the
 // end of its heading line to the next # or ## heading (### entries stay inside), code blocks and
 // frontmatter skipped. -> { start, end } character offsets, or null when the note has none.
+/** @param {string} s */
 function notesSectionRange(s) {
   const fm = frontmatterEnd(s);
   let pos = 0; let fence = false; let start = -1;
@@ -1159,6 +1321,7 @@ function notesSectionRange(s) {
 // The note text with a new dated entry as the last one under "## Notes" ("## Notes" added at the
 // end when missing). Only adds text: every existing character stays where it was.
 const NOTE_ESCAPE = /^(#{1,6}(?=\s|$)|```|~~~|%%|<!--|\$\$)/;
+/** @param {unknown} text @param {string} day @param {unknown} note */
 function appendProjectNote(text, day, note) {
   const s = String(text || '');
   // One line, as typed; a leading heading, code fence, comment or math opener is escaped with "\" so it
@@ -1173,11 +1336,17 @@ function appendProjectNote(text, day, note) {
 }
 // The entries under "## Notes", newest first: one per ### heading, its date the first [[YYYY-MM-DD]]
 // link in the heading, its text the rest of the heading, or (when that's empty) its first paragraph.
+/** @param {unknown} text */
 function projectNotes(text) {
   const s = String(text || '').replace(/\r\n/g, '\n');
   const r = notesSectionRange(s);
   if (!r) return [];
-  const out = []; let cur = null; let fence = false;
+  /** @typedef {{ day: string, title: string, body: string[] }} NoteEntry */
+  /** @type {NoteEntry[]} */
+  const out = [];
+  /** @type {NoteEntry | null} */
+  let cur = null;
+  let fence = false;
   for (const line of s.slice(r.start, r.end).split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
     const h = !fence && /^###[ \t]+(.*)$/.exec(line);
@@ -1187,6 +1356,7 @@ function projectNotes(text) {
       out.push(cur);
     } else if (cur && !fence) cur.body.push(line.trim().replace(/^\\(?=#|```|~~~|%%|<!--|\$\$)/, ''));
   }
+  /** @param {string[]} b */
   const para = (b) => { const rest = b.slice(Math.max(0, b.findIndex(Boolean))); const j = rest.indexOf(''); return (j < 0 ? rest : rest.slice(0, j)).join(' '); };
   // File order is oldest first; newest first by date, same-day entries latest-added first, undated last.
   return out.map((e) => ({ day: e.day, text: e.title || para(e.body) })).reverse().sort((a, b) => b.day.localeCompare(a.day));
@@ -1197,8 +1367,10 @@ const NOTES_PREVIEW = 3;
 // (no cap): the task's own project first (A to Z), then the other projects
 // (by project name, then A to Z; Inbox tasks last). A search narrows both
 // groups. Which rows are greyed out is decided by the caller, not here.
+/** @template {{ title: string, projectKey?: string | null, project?: string | null }} C @param {C[]} cands @param {string | null | undefined} projectKey @param {unknown} query */
 function depPickGroups(cands, projectKey, query) {
   const q = String(query || '').trim().toLowerCase();
+  /** @param {unknown} a @param {unknown} b */
   const az = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
   const hit = cands.filter((c) => !q || String(c.title).toLowerCase().includes(q));
   const mine = projectKey ? hit.filter((c) => c.projectKey === projectKey).sort((a, b) => az(a.title, b.title)) : [];
@@ -1210,22 +1382,28 @@ function depPickGroups(cands, projectKey, query) {
 // The picker offers "Create task" when the typed text is not exactly (any case) a listed task's title.
 // The task project pickers (task card, Inbox): "Areas" (A to Z), then "Projects" (`keep` filters
 // and `order` sorts them). One Areas list on top reads clearer than a Work / Personal split. -> [{ label, notes }]
+/** @param {(ProjNote | AreaNote)[]} notes @param {unknown} query @param {(p: ProjNote) => boolean} keep @param {(a: ProjNote, b: ProjNote) => number} order */
 function projectPickGroups(notes, query, keep, order) {
   const q = String(query || '').trim().toLowerCase();
+  /** @param {ProjNote | AreaNote} x */
   const hit = (x) => !q || x.name.toLowerCase().includes(q);
   const areas = notes.filter((x) => x.isArea && hit(x)).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  const projects = notes.filter((x) => !x.isArea && keep(x) && hit(x)).sort(order);
-  return [{ label: 'Areas', notes: areas }, { label: 'Projects', notes: projects }].filter((g) => g.notes.length);
+  const projects = /** @type {ProjNote[]} */ (notes.filter((x) => !x.isArea)).filter((x) => keep(x) && hit(x)).sort(order);
+  /** @type {{ label: string, notes: (ProjNote | AreaNote)[] }[]} */
+  const groups = [{ label: 'Areas', notes: areas }, { label: 'Projects', notes: projects }];
+  return groups.filter((g) => g.notes.length);
 }
 
 // One picker row: the name, a check mark on the task's own project or area, and the status of a
 // project that is waiting, blocked or in the backlog (no "area" or "paused" label).
+/** @param {HTMLElement} host @param {ProjNote | AreaNote} p @param {string | null | undefined} currentKey @param {(p: ProjNote | AreaNote) => void} onPick */
 function projectPickRow(host, p, currentKey, onPick) {
   const b = el(host, 'button', 'a4pj-pop-q'); el(b, 'span', null, p.name);
   if (p.key === currentKey) { b.setAttr('aria-current', 'true'); setIcon(el(b, 'span', 'a4pj-k a4pj-k-cur'), 'check'); } else if (!p.isArea && p.status !== 'active' && p.status !== 'paused') el(b, 'span', 'a4pj-k', p.status);
   b.addEventListener('click', () => onPick(p));
 }
 
+/** @param {unknown} query @param {{ title: unknown }[]} listed */
 function depCreateOffer(query, listed) {
   const q = String(query || '').trim();
   return q && !listed.some((c) => String(c.title).trim().toLowerCase() === q.toLowerCase()) ? q : null;
@@ -1254,6 +1432,7 @@ const logic = {
  * ========================================================================== */
 
 class TaskEngine {
+  /** @param {ProjectsPlugin} plugin */
   constructor(plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
@@ -1261,7 +1440,8 @@ class TaskEngine {
     this.api = this.makeApi();
   }
 
-  tn() { const p = this.app.plugins && this.app.plugins.plugins; return p ? p.tasknotes : null; }
+  /** @returns {TaskNotesPlugin | null | undefined} */
+  tn() { const p = this.app.plugins && this.app.plugins.plugins; return p ? /** @type {TaskNotesPlugin | undefined} */ (p.tasknotes) : null; }
   // TaskNotes' live settings when it is loaded, else the copy we kept.
   cfg() {
     const tn = this.tn();
@@ -1270,22 +1450,28 @@ class TaskEngine {
   }
   now() { return new Date(); }
   today() { return dayOf(this.now()); }
+  /** @param {Date} [d] */
   stamp(d) { return tnTimestamp(d || this.now()); }
+  /** @param {string} path */
   file(path) { const f = this.app.vault.getAbstractFileByPath(path); return f instanceof TFile ? f : null; }
   // A note's frontmatter; a task note's under LifeWorld's property names (Settings › Your vault).
-  fm(file) { const c = this.app.metadataCache.getFileCache(file); const fm = (c && c.frontmatter) || null; return file && inTaskFolders(file.path) ? readable(fm) : fm; }
+  /** @param {TFile} file */
+  fm(file) { const c = this.app.metadataCache.getFileCache(file); const fm = /** @type {Fm | null} */ ((c && c.frontmatter) || null); return file && inTaskFolders(file.path) ? readable(fm) : fm; }
 
   /* ---- reading ---------------------------------------------------------- */
 
+  /** @param {boolean} [withArchive] */
   collectTasks(withArchive) {
     const cfg = this.cfg();
+    /** @type {ProjTask[]} */
     const out = [];
+    /** @param {TFolder} folder @param {boolean} inArchive */
     const walk = (folder, inArchive) => {
       for (const c of folder.children || []) {
         if (c instanceof TFolder) walk(c, inArchive);
         else if (c instanceof TFile && c.extension === 'md') {
           const cache = this.app.metadataCache.getFileCache(c);
-          const t = readTask(readable(cache && cache.frontmatter), c.path, c.basename, cfg, inArchive);
+          const t = readTask(readable(/** @type {Fm | null} */ (cache && cache.frontmatter)), c.path, c.basename, cfg, inArchive);
           if (!t) continue;
           const items = (cache && cache.listItems) || [];
           const steps = items.filter((li) => li.task !== undefined && li.parent < 0);
@@ -1303,15 +1489,18 @@ class TaskEngine {
 
   // The projects folder in one walk: { projects (each with its area, linkAreas), areas }.
   collectNotes() {
-    const projects = []; const areas = [];
+    /** @type {(ProjNote & { mtime?: number })[]} */
+    const projects = [];
+    /** @type {(AreaNote & { mtime?: number })[]} */
+    const areas = [];
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
     if (!(root instanceof TFolder)) return { projects, areas };
     for (const c of root.children || []) {
       if (!(c instanceof TFile) || c.extension !== 'md') continue;
       const fm = this.fm(c);
-      const p = readProject(fm, c.path, c.basename);
+      const p = /** @type {(ProjNote & { mtime?: number }) | null} */ (readProject(fm, c.path, c.basename));
       if (p) { p.mtime = c.stat ? c.stat.mtime : 0; projects.push(p); continue; }
-      const a = readArea(fm, c.path, c.basename);
+      const a = /** @type {(AreaNote & { mtime?: number }) | null} */ (readArea(fm, c.path, c.basename));
       if (a) { a.mtime = c.stat ? c.stat.mtime : 0; areas.push(a); }
     }
     linkAreas(projects, areas, (link, from) => { const f = this.app.metadataCache.getFirstLinkpathDest(link, from); return f instanceof TFile ? f.path : null; });
@@ -1320,8 +1509,10 @@ class TaskEngine {
   collectProjects() { return this.collectNotes().projects; }
   collectAreas() { return this.collectNotes().areas; }
   // The project or area a task's projectKey names (tasks match by note name), or null.
+  /** @param {string | null | undefined} key */
   noteForKey(key) { if (!key) return null; const n = this.collectNotes(); return n.projects.find((p) => p.key === key) || n.areas.find((a) => a.key === key) || null; }
 
+  /** @param {unknown} file */
   isTaskFile(file) {
     if (!(file instanceof TFile) || file.extension !== 'md') return false;
     const cfg = this.cfg();
@@ -1335,11 +1526,15 @@ class TaskEngine {
   completedStatuses() { return completedStatusesOf(this.cfg()); }
   depField() { return this.cfg().F.blockedBy || 'blockedBy'; }
   // The task note a blockedBy link leads to (null when it leads nowhere).
+  /** @param {string} link @param {string} sourcePath */
   linkDest(link, sourcePath) { const f = this.app.metadataCache.getFirstLinkpathDest(link, sourcePath); return f instanceof TFile ? f : null; }
+  /** @param {string} path */
   linksOf(path) { const f = this.file(path); const fm = f ? this.fm(f) : null; return fm ? blockerLinks({ blockedBy: fm[this.depField()] }) : []; }
   // Blockers that still hold, for any item with .path and .blockedBy.
+  /** @param {{ path: string, blockedBy: string[] }} item */
   openBlockers(item) { return openBlockersOf(this.app, item, this.completedStatuses()); }
   // For the card: every entry, finished or not; a link to a deleted note is listed as missing.
+  /** @param {string} path */
   blockerEntries(path) {
     const done = this.completedStatuses();
     return this.linksOf(path).map((link) => {
@@ -1350,28 +1545,34 @@ class TaskEngine {
     });
   }
   // Tasks whose blockedBy leads to `path` (the "Blocks" list), A to Z.
+  /** @param {string} path */
   waitingOn(path) {
     const done = this.completedStatuses();
+    /** @type {{ path: string, title: string, holds: boolean }[]} */
     const out = [];
     for (const t of this.collectTasks(false)) {
       if (t.path === path) continue;
       if ((t.blockedBy || []).some((l) => { const f = this.linkDest(l, t.path); return f && f.path === path; })) {
-        const fm = this.fm(this.file(t.path));
+        const fm = this.fm(/** @type {TFile} */ (this.file(t.path)));
         out.push({ path: t.path, title: t.title, holds: blockerHolds(fm, t.path, done) });
       }
     }
     return out.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
   }
   // Open tasks that wait on `path` and on nothing else still open: ticking `path` frees them.
+  /** @param {string} path */
   freedBy(path) {
     return this.collectTasks(false).filter((t) => isOpenTask(t, this.cfg()) && t.blockedBy && t.blockedBy.length)
       .filter((t) => { const ob = this.openBlockers(t); return ob.length === 1 && ob[0].path === path; });
   }
   // Would "waiting blocked by blocker" close a circle? Walks the blocker's own
   // blockers (all of them, finished or not); a loop already in the files ends the walk.
+  /** @param {string} waitingPath @param {string} blockerPath */
   wouldLoop(waitingPath, blockerPath) {
     if (waitingPath === blockerPath) return true;
+    /** @type {Set<string>} */
     const seen = new Set();
+    /** @param {string} p @returns {boolean} */
     const walk = (p) => {
       if (p === waitingPath) return true;
       if (seen.has(p)) return false;
@@ -1382,7 +1583,9 @@ class TaskEngine {
     return walk(blockerPath);
   }
   // TaskNotes' entry for a new blocker, as its formatDependencyLink + serializeDependencies write it.
+  /** @param {TFile} blockerFile @param {string} sourcePath */
   depEntry(blockerFile, sourcePath) { return { uid: `[[${this.app.metadataCache.fileToLinktext(blockerFile, sourcePath, true)}]]`, reltype: 'FINISHTOSTART' }; }
+  /** @param {string} waitingPath @param {string} blockerPath */
   async addBlocker(waitingPath, blockerPath) {
     const bf = this.file(blockerPath);
     if (!bf || !this.file(waitingPath)) throw new Error('That task note is gone.');
@@ -1399,7 +1602,9 @@ class TaskEngine {
   }
   // The picker's "Create task" row: a new task (the plugin's own create, so TaskNotes' or built-in
   // format, default status, nothing else) in projectPath, then linked as if picked. Undo takes both back.
+  /** @param {{ path: string }} t @param {string} mode @param {string} title @param {string | null} [projectPath] */
   async createAndLink(t, mode, title, projectPath) {
+    /** @type {NewTaskInput} */
     const input = { title };
     if (projectPath) input.projects = [projectLinkFor(projectPath)];
     const made = await this.plugin.createTask(input);
@@ -1409,6 +1614,7 @@ class TaskEngine {
     return { result: made.result, undo: made.undo ? async () => { if (link && link.undo) await link.undo(); await made.undo(); } : null };
   }
   // Removes the entries that lead to blockerPath (or, for a deleted note, carry that link).
+  /** @param {string} waitingPath @param {string | null} blockerPath @param {string} [link] */
   async removeBlocker(waitingPath, blockerPath, link) {
     const F = this.depField(); const now = this.now();
     return this.write(waitingPath, (fm) => {
@@ -1431,23 +1637,31 @@ class TaskEngine {
   // Runs `fn` on the frontmatter and remembers what the touched keys held
   // before, so Undo can put them back through the frontmatter API too.
   // keepOrder: Undo also puts a removed key back in its old place (rename).
+  /** @template R @param {string} path @param {(fm: Fm) => R} fn @param {boolean} [keepOrder] @returns {Promise<Undoable<R | undefined>>} */
   async write(path, fn, keepOrder) {
     if (isExtPath(path)) throw new Error('This task lives outside a task note: change it where it lives.');
     const file = this.file(path);
     if (!file) throw new Error('That task note is gone.');
-    let before = null; let result; let order = null;
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
-      const copy = JSON.parse(JSON.stringify(fm));
+    /** @type {Record<string, { v: unknown } | null> | null} */
+    let before = null;
+    /** @type {R | undefined} */
+    let result;
+    /** @type {string[] | null} */
+    let order = null;
+    await this.app.fileManager.processFrontMatter(file, (/** @type {Fm} */ fm) => {
+      const parsed = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm)));
+      const copy = /** @type {Fm} */ (parsed);
       order = Object.keys(copy);
       result = writable(fm, fn);
       const keys = new Set([...Object.keys(copy), ...Object.keys(fm)]);
-      before = {};
-      for (const k of keys) if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) before[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
+      const was = /** @type {Record<string, { v: unknown } | null>} */ ({});
+      before = was;
+      for (const k of keys) if (JSON.stringify(copy[k]) !== JSON.stringify(fm[k])) was[k] = Object.prototype.hasOwnProperty.call(copy, k) ? { v: copy[k] } : null;
     });
     const undo = async () => {
       const f = this.file(path);
       if (!f) return;
-      await this.app.fileManager.processFrontMatter(f, (fm) => {
+      await this.app.fileManager.processFrontMatter(f, (/** @type {Fm} */ fm) => {
         for (const [k, b] of Object.entries(before || {})) { if (b) fm[k] = b.v; else delete fm[k]; }
         if (!keepOrder || !order) return;
         const now = { ...fm };
@@ -1459,18 +1673,21 @@ class TaskEngine {
     return { result, undo };
   }
 
+  /** @param {string} path */
   async complete(path) {
     const cfg = this.cfg();
-    const fm0 = this.fm(this.file(path) || {});
+    const fm0 = this.fm(/** @type {TFile} */ (this.file(path) || {}));
     if (fm0 && isCompletedIn(cfg, statusString(fm0[cfg.F.status]))) return { result: null, undo: async () => {} };
     return this.setStatus(path, firstCompletedStatus(cfg));
   }
+  /** @param {string} path */
   async uncomplete(path) {
     const cfg = this.cfg();
-    const fm0 = this.fm(this.file(path) || {});
+    const fm0 = this.fm(/** @type {TFile} */ (this.file(path) || {}));
     if (fm0 && !isCompletedIn(cfg, statusString(fm0[cfg.F.status]))) return { result: null, undo: async () => {} };
     return this.setStatus(path, cfg.defaultStatus);
   }
+  /** @param {string} path @param {string} status */
   async setStatus(path, status) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1480,36 +1697,42 @@ class TaskEngine {
     // Undo puts back an auto-archive this change cancelled (e.g. a Done task moved out of Done).
     return { result: w.result, undo: async () => { await w.undo(); if (queued || prev) await this.plugin.cancelArchive(path, prev); } };
   }
+  /** @param {string} path @param {string} prop @param {unknown} value */
   async setProperty(path, prop, value) {
     const cfg = this.cfg();
     const now = this.now();
-    if (prop === 'status') return this.setStatus(path, value);
+    if (prop === 'status') return this.setStatus(path, /** @type {string} */ (value));
     return this.write(path, (fm) => applyProperty(fm, cfg, prop, value, { day: dayOf(now), stamp: tnTimestamp(now) }));
   }
   // Repeating task: tick one occurrence (no day = TaskNotes' current one).
+  /** @param {string} path @param {string | null} [day] */
   async toggleInstance(path, day) {
     const cfg = this.cfg();
     const now = this.now();
-    const fm0 = this.fm(this.file(path) || {});
+    const fm0 = this.fm(/** @type {TFile} */ (this.file(path) || {}));
     if (fm0 && !ruleOfTask(tnTaskOf(fm0, cfg.F))) throw new Error("This task's repeat rule can't be read here.");
     return this.write(path, (fm) => applyRecurringToggle(fm, cfg, { day: day || null, today: dayOf(now), stamp: tnTimestamp(now) }));
   }
   // The overdue roll: the same write as Today's; with "Just plan it" a past plan comes along too.
+  /** @param {string} path @param {string} day @param {string | null} half @param {number} order */
   async move(path, day, half, order) {
-    return this.write(path, (fm) => { applyMove(fm, day, half, order); if (!planning.setsDue && fm.planned_day && toDayStr(fm.planned_day) < day) fm.planned_day = day; });
+    return this.write(path, (fm) => { applyMove(fm, day, half, order); if (!planning.setsDue && fm.planned_day && /** @type {string} */ (toDayStr(fm.planned_day)) < day) fm.planned_day = day; });
   }
   // Someday (mockup approved 2026-10-06; GL-002 status `someday`):
   // shared applySomeday plus dateModified, as any status change. Undo puts
   // the removed due date back in its old place.
+  /** @param {string} path */
   async someday(path) {
     const cfg = this.cfg();
     const now = this.now();
     return this.write(path, (fm) => { applySomeday(fm); fm[cfg.F.dateModified] = tnTimestamp(now); }, true);
   }
   // The day comes off, Due too (0.1.16, as the Planner): the caller's toast offers Undo.
+  /** @param {string} path */
   async unschedule(path) {
     return this.write(path, (fm) => { applyUnschedule(fm, planning.setsDue); });
   }
+  /** @param {string} path @param {string | null | undefined} projectPath */
   async setProject(path, projectPath) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1520,6 +1743,7 @@ class TaskEngine {
   // Morning); 'am' / 'pm' sets it; null removes it (Any time).
   // reminder: minutes before (0 = at the time), null = none, undefined = the
   // default (a first time rings "At the time"; anything else stays as it is).
+  /** @param {string} path @param {string | null | undefined} value @param {string | null} [half] @param {number | null} [reminder] */
   async setDue(path, value, half, reminder) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1536,6 +1760,7 @@ class TaskEngine {
     });
   }
   // The bell next to Due (or a repeating task's Starts): minutes before, or null for none.
+  /** @param {string} path @param {number | null} before */
   async setReminder(path, before) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1544,10 +1769,12 @@ class TaskEngine {
   // Start date, with or without a clock time. A repeating task's start is its
   // rule's DTSTART (TaskNotes writes a time there as the local clock + Z) and
   // its current occurrence (`scheduled`) carries the same time.
+  /** @param {string} path @param {string | null | undefined} value @param {number | null} [reminder] */
   async setStart(path, value, reminder) {
     const cfg = this.cfg();
-    const fm0 = this.fm(this.file(path) || {}) || {};
-    const rec = typeof fm0[cfg.F.recurrence] === 'string' && fm0[cfg.F.recurrence].trim() ? fm0[cfg.F.recurrence] : null;
+    const fm0 = this.fm(/** @type {TFile} */ (this.file(path) || {})) || {};
+    const rec0 = fm0[cfg.F.recurrence];
+    const rec = typeof rec0 === 'string' && rec0.trim() ? rec0 : null;
     if (!rec && value && isSomeday(fm0)) { const now = this.now(); return this.write(path, (fm) => { fm[cfg.F.status] = 'open'; applyProperty(fm, cfg, 'scheduled', value, { day: dayOf(now), stamp: tnTimestamp(now) }); }); }
     if (!rec) return this.setProperty(path, 'scheduled', value || undefined);
     if (!value) throw new Error('A repeating task always has a first day.');
@@ -1556,7 +1783,7 @@ class TaskEngine {
     return this.write(path, (fm) => {
       const had = ringTimeOf(fm);
       if (isSomeday(fm)) fm[cfg.F.status] = 'open'; // a new start day brings a repeating someday task back
-      fm[cfg.F.recurrence] = updateDtstart(fm[cfg.F.recurrence], value);
+      fm[cfg.F.recurrence] = updateDtstart(/** @type {string | null | undefined} */ (fm[cfg.F.recurrence]), value);
       const old = toDayStr(fm[cfg.F.scheduled]);
       const nd = nextDates(tnTaskOf({ ...fm, [cfg.F.scheduled]: old ? whenValue(old, t) : value }, cfg.F), cfg.maintainDueOffset, dayOf(now));
       fm[cfg.F.scheduled] = nd.scheduled || value;
@@ -1567,6 +1794,7 @@ class TaskEngine {
     });
   }
   // rule = RRULE body (no DTSTART) or '' to stop repeating.
+  /** @param {string} path @param {string} rule */
   async setRepeat(path, rule) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1578,7 +1806,7 @@ class TaskEngine {
         delete fm[F.recurrence];
         if (fm[F.scheduled] != null) delete fm[F.scheduled]; // TaskNotes' "current occurrence" pointer, not a start
       } else {
-        const cur = typeof fm[F.recurrence] === 'string' ? explicitDtstart(fm[F.recurrence]) : null;
+        const cur = typeof fm[F.recurrence] === 'string' ? explicitDtstart(fm[F.recurrence]) : null; // explicitDtstart takes unknown
         const from = cur || today;
         const first = firstOccurrence(rule, from);
         fm[F.recurrence] = `DTSTART:${first.replace(/-/g, '')};${rule}`;
@@ -1594,6 +1822,7 @@ class TaskEngine {
   // could not carry it (a URL, a ":"), and a stale `title` is removed, so the
   // name shown is always the one typed. With "store title in file name" off,
   // only `title` changes. Undo puts back both the file name and `title`.
+  /** @param {string} path @param {unknown} title */
   async rename(path, title) {
     const file = this.file(path);
     if (!file) throw new Error('That task note is gone.');
@@ -1622,6 +1851,7 @@ class TaskEngine {
     } };
   }
 
+  /** @param {NewTaskInput} input */
   async create(input) {
     const cfg = this.cfg();
     const now = this.now();
@@ -1631,7 +1861,9 @@ class TaskEngine {
     const plan = planCreate(input, cfg, tnTimestamp(now), dayOf(now));
     const folder = plan.folder;
     if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+    /** @param {string} p */
     const exists = async (p) => !!this.app.vault.getAbstractFileByPath(p) || await this.app.vault.adapter.exists(p, false);
+    /** @type {string | null} */
     let name = plan.base;
     if (await exists(`${folder}/${name}.md`)) {
       name = null;
@@ -1646,22 +1878,32 @@ class TaskEngine {
 
   /* ---- steps (body checkboxes) ------------------------------------------ */
 
+  /** @param {string} path @param {(text: string) => string | null} fn */
   async editBody(path, fn) {
     const file = this.file(path);
     if (!file) throw new Error('That task note is gone.');
-    let before = null; let after = null;
+    /** @type {string | null} */
+    let before = null;
+    /** @type {string | null} */
+    let after = null;
     await this.app.vault.process(file, (text) => { const out = fn(text); if (out == null || out === text) return text; before = text; after = out; return out; });
     if (before == null) return { result: false, undo: async () => {} };
     return { result: true, undo: async () => { const f = this.file(path); if (f) await this.app.vault.process(f, (t) => (t === after ? before : t)); } };
   }
+  /** @param {string} path */
   async steps(path) { const f = this.file(path); return f ? readSteps(await this.app.vault.cachedRead(f)) : []; }
+  /** @param {string} path @param {number} line @param {boolean} done */
   toggleStep(path, line, done) { return this.editBody(path, (t) => setStepDone(t, line, done)); }
+  /** @param {string} path @param {string} title */
   addStep(path, title) { return this.editBody(path, (t) => addStep(t, title)); }
+  /** @param {string} path @param {number} line @param {number} dir */
   moveStep(path, line, dir) { return this.editBody(path, (t) => moveStep(t, line, dir)); }
+  /** @param {string} path @param {number} line */
   removeStep(path, line) { return this.editBody(path, (t) => removeStep(t, line)); }
 
   /* ---- archive (AutoArchiveService.processItem + toggleArchive) --------- */
 
+  /** @param {string} path */
   async archive(path) {
     const cfg = this.cfg();
     const file = this.file(path);
@@ -1678,21 +1920,23 @@ class TaskEngine {
   /* ---- the TaskNotes-shaped surface Today and Planner call -------- */
 
   makeApi() {
+    /** @param {string} path */
     const info = (path) => { const f = this.file(path); const fm = f ? this.fm(f) : null; const cfg = this.cfg(); return { path, status: fm ? statusString(fm[cfg.F.status]) : '', complete_instances: fm ? strList(fm[cfg.F.completeInstances]) : [] }; };
     // Frontmatter can read stale right after a write; return what we wrote.
+    /** @param {string} path @param {() => Promise<unknown>} run */
     const after = async (path, run) => { await run(); return info(path); };
     return {
       apiVersion: 1,
       source: 'a4-projects',
-      hasCapability: (c) => ['tasks.read', 'tasks.write', 'recurring.write'].includes(c),
+      hasCapability: (/** @type {string} */ c) => ['tasks.read', 'tasks.write', 'recurring.write'].includes(c),
       lifecycle: { isReady: () => true },
       tasks: {
-        complete: (path) => after(path, () => this.complete(path)),
-        uncomplete: (path) => after(path, () => this.uncomplete(path)),
-        create: async (data) => { const r = await this.create(data || {}); return { ...info(r.result.path), path: r.result.path, title: r.result.title }; },
+        complete: (/** @type {string} */ path) => after(path, () => this.complete(path)),
+        uncomplete: (/** @type {string} */ path) => after(path, () => this.uncomplete(path)),
+        create: async (/** @type {NewTaskInput | null | undefined} */ data) => { const r = await this.create(data || {}); return { ...info(r.result.path), path: r.result.path, title: r.result.title }; },
       },
       recurring: {
-        toggleCompleteInstance: async (path, day) => {
+        toggleCompleteInstance: async (/** @type {string} */ path, /** @type {unknown} */ day) => {
           const r = await this.toggleInstance(path, day ? toDayStr(day) : null);
           const i = info(path);
           // The cache may lag the write by a moment: report the written list.
@@ -1710,6 +1954,7 @@ class TaskEngine {
  * ========================================================================== */
 
 // "Where your tasks live", as drawn (mockup v6). Things only on a Mac (criterion 17).
+/** @type {{ id: string, name: string, desc: string, key?: [string, string], tag?: string, mac?: boolean }[]} */
 const SOURCES = [
   { id: 'builtin', name: 'LifeWorld tasks', desc: 'One note per task. Works with the Projects pages, repeats and reminders.' },
   { id: 'tasknotes', name: 'TaskNotes plugin', desc: 'Your TaskNotes tasks. TaskNotes must be turned on.' },
@@ -1719,16 +1964,17 @@ const SOURCES = [
   { id: 'things', name: 'Things 3', tag: 'Mac only', desc: 'Your Things to-dos for today and overdue. Only offered on a Mac.', mac: true },
 ];
 
+/** @param {unknown} raw @returns {ProjSettings} */
 function normalizeSettings(raw) {
-  const s = raw && typeof raw === 'object' ? raw : {};
-  return {
+  const s = /** @type {Fm & { ui?: Fm }} */ (raw && typeof raw === 'object' ? raw : {});
+  return /** @type {ProjSettings} */ ({
     // A saved Things choice is kept on a phone (it syncs back to the Mac); the phone shows a short note instead.
     source: SOURCES.some((x) => x.id === s.source) ? s.source : 'builtin',
     cbTag: typeof s.cbTag === 'string' ? s.cbTag : '', // Checkboxes: "Only lines with this tag"
     cuList: typeof s.cuList === 'string' ? s.cuList : '', // ClickUp: the list new tasks go to
     hideProps: s.hideProps !== false,
     tnSnapshot: s.tnSnapshot && typeof s.tnSnapshot === 'object' ? s.tnSnapshot : null,
-    archiveQueue: Array.isArray(s.archiveQueue) ? s.archiveQueue.filter((x) => x && typeof x.taskPath === 'string' && Number.isFinite(x.archiveAfterTimestamp)) : [],
+    archiveQueue: Array.isArray(s.archiveQueue) ? /** @type {Fm[]} */ (s.archiveQueue).filter((x) => x && typeof x.taskPath === 'string' && Number.isFinite(x.archiveAfterTimestamp)) : [],
     ui: {
       closedOpen: !!(s.ui && s.ui.closedOpen),
       doneOpen: s.ui && s.ui.doneOpen && typeof s.ui.doneOpen === 'object' ? s.ui.doneOpen : {},
@@ -1738,8 +1984,8 @@ function normalizeSettings(raw) {
       view: s.ui && s.ui.view === 'board' ? 'board' : 'list',
       kind: s.ui && (s.ui.kind === 'tasks' || s.ui.kind === 'areas') ? s.ui.kind : 'projects',
     },
-    activity: Array.isArray(s.activity) ? s.activity.filter((e) => e && Number.isFinite(e.at) && typeof e.text === 'string').slice(0, ACTIVITY_CAP) : [],
-  };
+    activity: Array.isArray(s.activity) ? /** @type {Fm[]} */ (s.activity).filter((e) => e && Number.isFinite(e.at) && typeof e.text === 'string').slice(0, ACTIVITY_CAP) : [],
+  });
 }
 
 /* ========================================================================== *
@@ -1757,17 +2003,21 @@ function normalizeSettings(raw) {
  * links stay plain (2026-10-04).
  * ========================================================================== */
 
+/** @type {Record<string, string>} */
 const LINK_STATUS_COLORS = { none: '#cccccc', open: '#ff5a2d', 'in-progress': '#0066cc', blocked: '#aa00aa', done: '#00aa00', closed: '#00aa00' };
+/** @type {Record<string, string>} */
 const LINK_PRIORITY_COLORS = { none: '#cccccc', low: '#00aa00', normal: '#ffaa00', high: '#ff0000' };
 
 // value -> colour from TaskNotes' status or priority list (its live settings or our copy).
+/** @param {unknown} list @param {Record<string, string>} fallback */
 function colorMap(list, fallback) {
   const out = { ...fallback };
-  for (const x of Array.isArray(list) ? list : []) if (x && x.value != null && typeof x.color === 'string' && x.color) out[String(x.value)] = x.color;
+  for (const x of Array.isArray(list) ? /** @type {Fm[]} */ (list) : []) if (x && x.value != null && typeof x.color === 'string' && x.color) out[String(x.value)] = x.color;
   return out;
 }
 
 // "Due: Today", "Due: Oct 12", "Due: Oct 5 (overdue)", "Scheduled: Oct 12" (TaskNotes' wording).
+/** @param {string} label @param {unknown} day @param {string} today @param {boolean} overdueOk */
 function linkDateText(label, day, today, overdueOk) {
   if (!isDayStr(day)) return '';
   const { y, m, d } = partsOf(day);
@@ -1776,6 +2026,7 @@ function linkDateText(label, day, today, overdueOk) {
 }
 
 // Everything the widget draws, from a readTask() item. Pure, for tests.
+/** @param {ProjTask} t @param {EngineCfg} cfg @param {string} today @param {Record<string, string>} statusColors @param {Record<string, string>} priorityColors */
 function taskLinkView(t, cfg, today, statusColors, priorityColors) {
   const done = t.recurrenceRaw ? t.completeInstances.includes(today) : isCompletedIn(cfg, t.status);
   const status = done && t.recurrenceRaw ? firstCompletedStatus(cfg) : t.status;
@@ -1786,14 +2037,16 @@ function taskLinkView(t, cfg, today, statusColors, priorityColors) {
     done,
     statusColor: statusColors[status] || statusColors[cfg.defaultStatus] || 'var(--text-faint)',
     priorityColor: t.priority && priorityColors[t.priority] ? priorityColors[t.priority] : null,
-    priorityLabel: t.priority ? ((cfg.priorities.find((p) => p.value === t.priority) || {}).label || t.priority) : '',
+    priorityLabel: t.priority ? ((cfg.priorities.find((p) => p.value === t.priority) || { label: '' }).label || t.priority) : '',
     dates: dates.filter(Boolean),
     recurring: !!t.recurrenceRaw,
   };
 }
 
 // The [[...]] links in a piece of text (not embeds): where, the link path, the alias.
+/** @param {string} text @param {number} [offset] */
 function wikilinksIn(text, offset) {
+  /** @type {{ from: number, to: number, linkpath: string, alias: string | null }[]} */
   const out = [];
   const re = /\[\[([^[\]\n]+?)\]\]/g;
   let m;
@@ -1814,6 +2067,7 @@ function wikilinksIn(text, offset) {
 
 // A note line's task title: the words without the list, checkbox or quote marks in front, a
 // trailing block id, or one trailing full stop. '' when nothing is left.
+/** @param {unknown} line */
 function lineTaskTitle(line) {
   return String(line || '')
     .replace(/\s+\^[A-Za-z0-9-]+\s*$/, '')
@@ -1827,6 +2081,7 @@ function lineTaskTitle(line) {
 // Why a line cannot become a task: 'heading' (marking it would rename the heading and break
 // links to it; counted in the message), 'format' (blank, rule, table row, code fence, math or
 // comment marks: nothing to name a task), or null when it can.
+/** @param {unknown} line */
 function lineTaskSkip(line) {
   const s = String(line || '');
   if (/^\s{0,3}(?:>\s*)*#{1,6}(?:\s|$)/.test(s)) return 'heading';
@@ -1837,6 +2092,7 @@ function lineTaskSkip(line) {
 
 // Where the mark goes: the end of the line, or just before a trailing block id (Obsidian only
 // reads ^id at the very end, so links to that line keep working).
+/** @param {unknown} line */
 function markAt(line) {
   const s = String(line || '');
   const m = /\s+\^[A-Za-z0-9-]+\s*$/.exec(s);
@@ -1845,7 +2101,9 @@ function markAt(line) {
 
 // Finds each wanted line in the note as it is now: the line with the same text nearest to where it
 // was, each line used once. docLines: the note's lines; items: [{ line, text }]. -> line numbers, -1 = gone.
+/** @param {string[]} docLines @param {{ line: number, text: string }[]} items */
 function relocateLines(docLines, items) {
+  /** @type {Set<number>} */
   const used = new Set();
   return items.map((it) => {
     for (let d = 0; d < docLines.length; d++) {
@@ -1862,12 +2120,14 @@ function relocateLines(docLines, items) {
 // every link from the note that leads to a project note, in note order, repeats kept.
 // -> { project } when the note settles it, else { ask: true, candidates (most linked first),
 // preselect (a path, or null for no project) }. lastPick: path or null, chosen earlier.
+/** @param {{ self?: string | null, fmPaths?: string[], linkPaths?: string[] }} arg @param {string | null} [lastPick] */
 function textTaskProject({ self, fmPaths, linkPaths }, lastPick) {
   if (self) return { project: self };
   const fm = [...new Set(fmPaths || [])];
   if (fm.length === 1) return { project: fm[0] };
   const links = [...new Set(linkPaths || [])];
   if (!fm.length && links.length === 1) return { project: links[0] };
+  /** @param {string} p */
   const count = (p) => (linkPaths || []).filter((x) => x === p).length;
   const order = [...new Set([...fm, ...links])];
   const candidates = order.map((p, i) => ({ p, i, n: count(p) })).sort((a, b) => b.n - a.n || a.i - b.i).map((x) => x.p);
@@ -1876,7 +2136,9 @@ function textTaskProject({ self, fmPaths, linkPaths }, lastPick) {
 
 // The lines a selection covers, once each, top to bottom. A selection that ends at the very start
 // of a line does not take that line; a bare cursor takes its own line.
+/** @param {{ anchor: { line: number, ch: number }, head?: { line: number, ch: number } }[] | null | undefined} selections */
 function selectedLines(selections) {
+  /** @type {Set<number>} */
   const out = new Set();
   for (const s of selections || []) {
     const a = s.anchor; const h = s.head || s.anchor;
@@ -1887,27 +2149,35 @@ function selectedLines(selections) {
   return [...out].sort((x, y) => x - y);
 }
 
+/** @typedef {typeof import('@codemirror/state') & typeof import('@codemirror/view') & typeof import('@codemirror/language')} CodeMirror */
 class TaskLinks {
+  /** @param {ProjectsPlugin} plugin */
   constructor(plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
+    /** @type {Set<string>} */
     this.busy = new Set();
+    /** @type {number | null} */
     this.timer = null;
+    /** @type {Set<import('@codemirror/view').EditorView>} */
     this.views = new Set(); // live-preview editors that drew widgets
+    /** @type {import('@codemirror/state').StateEffectType<null> | null} */
     this.refreshEffect = null;
   }
   engine() { return this.plugin.engine; }
   colors() {
     const tn = this.engine().tn();
-    const s = (tn && tn.settings && tn.settings.customStatuses) ? tn.settings : (this.plugin.settings.tnSnapshot || {});
+    const s = /** @type {Fm} */ ((tn && tn.settings && tn.settings.customStatuses) ? tn.settings : (this.plugin.settings.tnSnapshot || {}));
     return { status: colorMap(s.customStatuses, LINK_STATUS_COLORS), priority: colorMap(s.customPriorities, LINK_PRIORITY_COLORS) };
   }
   // No widgets on a task note itself (the task card is the task UI there).
+  /** @param {string | null | undefined} sourcePath */
   skipSource(sourcePath) {
     const f = sourcePath ? this.app.vault.getAbstractFileByPath(sourcePath) : null;
     return f instanceof TFile && this.engine().isTaskFile(f);
   }
   // The task a link leads to, or null.
+  /** @param {string} linkpath @param {string | null | undefined} sourcePath */
   taskFor(linkpath, sourcePath) {
     const f = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath || '');
     const eng = this.engine();
@@ -1915,10 +2185,13 @@ class TaskLinks {
     const cfg = eng.cfg();
     return readTask(eng.fm(f), f.path, f.basename, cfg, f.path.startsWith(`${cfg.archiveFolder}/`));
   }
+  /** @param {ProjTask} t */
   viewOf(t) { const c = this.colors(); return taskLinkView(t, this.engine().cfg(), this.engine().today(), c.status, c.priority); }
+  /** @param {ProjTask} t @param {string} label */
   key(t, label) { const v = this.viewOf(t); return JSON.stringify([t.path, label, t.title, t.status, t.priority, t.due, t.scheduled, t.recurrenceRaw, t.completeInstances, v.done, v.statusColor, this.engine().today()]); }
 
   // The widget (both modes). linktext/sourcePath: how the original link opens.
+  /** @param {ProjTask} t @param {string} label @param {string} linktext @param {string | null | undefined} sourcePath */
   build(t, label, linktext, sourcePath) {
     const el = createSpan({ cls: 'a4pj-tl' });
     el.dataset.taskPath = t.path;
@@ -1926,35 +2199,37 @@ class TaskLinks {
     el.dataset.source = sourcePath || '';
     el.dataset.label = label || '';
     this.draw(el, t);
+    /** @param {Event} e */
     const stop = (e) => { e.stopPropagation(); };
     el.addEventListener('pointerdown', stop);
     el.addEventListener('mousedown', (e) => { e.stopPropagation(); if (e.button === 0) e.preventDefault(); });
     el.addEventListener('mouseup', stop);
     el.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
-      const now = this.taskFor(el.dataset.linktext, el.dataset.source);
-      if (e.target.closest('.a4pj-tl-dot')) { if (now) this.toggle(now, el); return; }
-      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, Keymap.isModEvent(e));
+      const now = this.taskFor(/** @type {string} */ (el.dataset.linktext), el.dataset.source);
+      if (/** @type {HTMLElement} */ (e.target).closest('.a4pj-tl-dot')) { if (now) this.toggle(now, el); return; }
+      this.app.workspace.openLinkText(/** @type {string} */ (el.dataset.linktext), /** @type {string} */ (el.dataset.source), Keymap.isModEvent(e));
     });
     el.addEventListener('auxclick', (e) => {
       if (e.button !== 1) return;
       e.preventDefault(); e.stopPropagation();
-      this.app.workspace.openLinkText(el.dataset.linktext, el.dataset.source, 'tab');
+      this.app.workspace.openLinkText(/** @type {string} */ (el.dataset.linktext), /** @type {string} */ (el.dataset.source), 'tab');
     });
     el.addEventListener('keydown', (e) => {
-      if (!e.target.closest('.a4pj-tl-dot') || (e.key !== 'Enter' && e.key !== ' ')) return;
+      if (!/** @type {HTMLElement} */ (e.target).closest('.a4pj-tl-dot') || (e.key !== 'Enter' && e.key !== ' ')) return;
       e.preventDefault(); e.stopPropagation();
-      const now = this.taskFor(el.dataset.linktext, el.dataset.source);
+      const now = this.taskFor(/** @type {string} */ (el.dataset.linktext), el.dataset.source);
       if (now) this.toggle(now, el);
     });
     const holder = { hoverPopover: null };
     el.addEventListener('mouseover', (e) => {
-      const title = e.target.closest('.a4pj-tl-title');
+      const title = /** @type {HTMLElement} */ (e.target).closest('.a4pj-tl-title');
       if (!title) return;
       this.app.workspace.trigger('hover-link', { event: e, source: 'preview', hoverParent: holder, targetEl: title, linktext: el.dataset.linktext, sourcePath: el.dataset.source });
     });
     return el;
   }
+  /** @param {HTMLElement} el @param {ProjTask} t */
   draw(el, t) {
     const v = this.viewOf(t);
     el.empty();
@@ -1972,6 +2247,7 @@ class TaskLinks {
     for (const d of v.dates) el.createSpan({ cls: 'a4pj-tl-date', text: d });
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} [el] */
   async toggle(t, el) {
     if (this.busy.has(t.path)) return;
     this.busy.add(t.path);
@@ -1980,19 +2256,19 @@ class TaskLinks {
     const today = eng.today();
     const wasDone = t.recurrenceRaw ? t.completeInstances.includes(today) : isCompletedIn(cfg, t.status);
     // Show it at once; the real state redraws when the note changes.
-    if (el) { el.toggleClass('is-done', !wasDone); const dot = el.querySelector('.a4pj-tl-dot'); if (dot) dot.style.backgroundColor = wasDone ? '' : this.colors().status[firstCompletedStatus(cfg)] || ''; }
+    if (el) { el.toggleClass('is-done', !wasDone); const dot = /** @type {HTMLElement | null} */ (el.querySelector('.a4pj-tl-dot')); if (dot) dot.style.backgroundColor = wasDone ? '' : this.colors().status[firstCompletedStatus(cfg)] || ''; }
     const freed = !wasDone && !t.recurrenceRaw ? eng.freedBy(t.path) : [];
     try {
       const w = await this.plugin.completeTask(t, !wasDone);
       const undo = w && w.undo ? async () => { await w.undo(); this.refreshSoon(); } : null;
       if (t.recurrenceRaw) {
-        const res = w && w.result;
+        const res = /** @type {{ day: string, done: boolean, next: string | null } | null | undefined} */ (w && w.result);
         this.plugin.toast.show(res ? (res.done ? `Done for ${shortDay(res.day, today)}${res.next ? `; next one ${shortDay(res.next, today)}` : ''}` : `Back to open for ${shortDay(res.day, today)}`) : 'Done', undo);
       } else if (!wasDone) this.plugin.toast.show(`Done: ${t.title}${unblocksText(freed)}`, undo);
       else this.plugin.toast.show('Back to open', undo);
     } catch (err) {
       console.error('[LifeWorld] task link tick failed', err);
-      new Notice(`Could not update "${t.title}". ${err && err.message ? err.message : ''}`.trim());
+      new Notice(`Could not update "${t.title}". ${errField(err, 'message') || ''}`.trim());
     } finally {
       this.busy.delete(t.path);
       this.refreshSoon();
@@ -2000,6 +2276,7 @@ class TaskLinks {
   }
 
   /* ---- reading view ---------------------------------------------------- */
+  /** @param {HTMLElement} el @param {import('obsidian').MarkdownPostProcessorContext | null | undefined} ctx */
   postProcess(el, ctx) {
     const src = ctx && ctx.sourcePath;
     if (this.skipSource(src)) return;
@@ -2012,7 +2289,7 @@ class TaskLinks {
       const t = this.taskFor(linkpath, src);
       if (!t) continue;
       const text = (a.textContent || '').trim();
-      const base = linkpath.split('/').pop();
+      const base = /** @type {string} */ (linkpath.split('/').pop());
       const label = text && text !== linktext && text !== linkpath && text !== base ? text : '';
       const w = this.build(t, label, linktext, src);
       a.before(w);
@@ -2020,9 +2297,9 @@ class TaskLinks {
     }
   }
   refreshReading() {
-    for (const w of Array.from(document.querySelectorAll('.markdown-rendered .a4pj-tl, .markdown-preview-view .a4pj-tl'))) {
+    for (const w of /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('.markdown-rendered .a4pj-tl, .markdown-preview-view .a4pj-tl')))) {
       if (w.dataset.cm) continue;
-      const t = this.taskFor(w.dataset.linktext.split('#')[0], w.dataset.source);
+      const t = this.taskFor(/** @type {string} */ (w.dataset.linktext).split('#')[0], w.dataset.source);
       if (!t) { const a = w.nextElementSibling; if (a && a.hasClass('a4pj-tl-hidden')) a.removeClass('a4pj-tl-hidden'); w.remove(); continue; }
       if (this.busy.has(t.path)) continue;
       this.draw(w, t);
@@ -2030,34 +2307,44 @@ class TaskLinks {
   }
 
   /* ---- live preview ---------------------------------------------------- */
+  /** @param {CodeMirror} cm */
   editorExtension({ RangeSetBuilder, StateEffect, Prec, ViewPlugin, Decoration, WidgetType, syntaxTree }) {
     const { views } = this;
+    /** @param {ProjTask} t @param {string} label @param {string} linktext @param {string} src */
     const draw = (t, label, linktext, src) => this.build(t, label, linktext, src);
     const refresh = StateEffect.define();
     this.refreshEffect = refresh;
     class LinkWidget extends WidgetType {
+      /** @param {ProjTask} t @param {string} label @param {string} linktext @param {string} src @param {string} key */
       constructor(t, label, linktext, src, key) { super(); this.t = t; this.label = label; this.linktext = linktext; this.src = src; this.k = key; }
+      /** @param {import('@codemirror/view').WidgetType} o */
       eq(o) { return o instanceof LinkWidget && o.k === this.k; }
       toDOM() { const el = draw(this.t, this.label, this.linktext, this.src); el.dataset.cm = '1'; return el; }
       ignoreEvent() { return true; }
     }
+    /** @param {import('@codemirror/state').EditorState} state */
     const isLive = (state) => { try { return !!state.field(editorLivePreviewField, false); } catch { return false; } };
+    /** @param {import('@codemirror/state').EditorState} state */
     const pathOf = (state) => { try { const i = state.field(editorInfoField, false); return i && i.file ? i.file.path : null; } catch { return null; } };
     // A [[link]] the editor itself treats as a link (not in code, not in the properties block).
+    /** @param {import('@codemirror/state').EditorState} state @param {number} pos */
     const isLinkToken = (state, pos) => {
       try {
         const n = syntaxTree(state).resolveInner(pos, 1);
         return /hmd-internal-link/.test(n.name) && !/code|frontmatter|comment/.test(n.name);
       } catch { return true; }
     };
+    /** @param {import('@codemirror/view').EditorView} view */
     const build = (view) => {
       try { return buildRaw(view); } catch (e) { console.error('[LifeWorld] task links: drawing failed', e); return Decoration.none; }
     };
+    /** @param {import('@codemirror/view').EditorView} view */
     const buildRaw = (view) => {
       const state = view.state;
       if (!isLive(state)) return Decoration.none;
       const src = pathOf(state);
       if (!src || this.skipSource(src)) return Decoration.none;
+      /** @type {import('@codemirror/state').RangeSetBuilder<import('@codemirror/view').Decoration>} */
       const b = new RangeSetBuilder();
       const sel = state.selection.ranges;
       // One pass over the viewport, widened to whole lines (visibleRanges can
@@ -2079,7 +2366,9 @@ class TaskLinks {
     // Highest precedence: Obsidian hides the [[ ]] marks with its own replace
     // decorations, and on a redraw those could otherwise win over the widget.
     return Prec.highest(ViewPlugin.fromClass(class {
+      /** @param {import('@codemirror/view').EditorView} view */
       constructor(view) { this.view = view; views.add(view); this.decorations = build(view); }
+      /** @param {import('@codemirror/view').ViewUpdate} u */
       update(u) {
         const changedMode = isLive(u.startState) !== isLive(u.state) || pathOf(u.startState) !== pathOf(u.state);
         const poked = u.transactions.some((tr) => tr.effects.some((e) => e.is(refresh)));
@@ -2105,12 +2394,14 @@ class TaskLinks {
     const p = this.plugin;
     p.registerMarkdownPostProcessor((el, ctx) => this.postProcess(el, ctx));
     // CodeMirror loads here, so a missing module turns off only Live Preview links, never the plugin (review p2-s8 #3).
+    /** @type {import('@codemirror/state').Extension[]} */
     const ext = [];
     p.registerEditorExtension(ext);
     Promise.all([import('@codemirror/state'), import('@codemirror/view'), import('@codemirror/language')])
-      .then((ms) => { ext.push(this.editorExtension(Object.assign({}, ...ms))); this.app.workspace.updateOptions(); })
+      .then((ms) => { ext.push(this.editorExtension(/** @type {CodeMirror} */ (Object.assign({}, ...ms)))); this.app.workspace.updateOptions(); })
       .catch((e) => console.warn('[LifeWorld] task links in Live Preview unavailable', e));
     // A note in the task folders (Settings › Your vault); by path, so a deleted note (no cache left) counts too.
+    /** @param {unknown} f */
     const isTask = (f) => f instanceof TFile && f.path.endsWith('.md') && inTaskFolders(f.path);
     p.registerEvent(this.app.metadataCache.on('changed', (f) => { if (isTask(f)) this.refreshSoon(); }));
     p.registerEvent(this.app.vault.on('rename', (f) => { if (isTask(f)) this.refreshSoon(); }));
@@ -2119,31 +2410,37 @@ class TaskLinks {
   }
   // Plugin off: put the plain links back in open reading views.
   stop() {
-    for (const w of Array.from(document.querySelectorAll('.a4pj-tl'))) { const a = w.nextElementSibling; if (a && a.hasClass && a.hasClass('a4pj-tl-hidden')) a.removeClass('a4pj-tl-hidden'); if (!w.dataset.cm) w.remove(); }
+    for (const w of /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll('.a4pj-tl')))) { const a = w.nextElementSibling; if (a && a.hasClass && a.hasClass('a4pj-tl-hidden')) a.removeClass('a4pj-tl-hidden'); if (!w.dataset.cm) w.remove(); }
   }
 }
 
 // The Find window: Obsidian's own prompt (the quick switcher look), so arrows,
 // Enter, Escape and the full-screen phone layout come with it.
+/** @extends {SuggestModal<ProjTask>} */
 class FindTaskModal extends SuggestModal {
+  /** @param {ProjectsPlugin} plugin */
   constructor(plugin) {
     super(plugin.app);
     this.plugin = plugin;
     this.cfg = plugin.engine.cfg();
     this.today = plugin.engine.today();
     this.tasks = plugin.engine.collectTasks(true);
+    /** @type {ProjTask[]} */
     this.shown = [];
     this.limit = 50;
+    this.query = '';
     this.setPlaceholder('Find a task or project…');
     this.setInstructions([{ command: '↑↓', purpose: 'to move' }, { command: '↵', purpose: 'to open the task' }, { command: 'esc', purpose: 'to close' }]);
     this.modalEl.addClass('a4pj-find');
   }
+  /** @param {string} query */
   getSuggestions(query) {
     this.query = query;
     this.shown = findTasks(this.tasks, query, this.cfg, this.limit);
     this.emptyStateText = String(query || '').trim().length < 2 ? 'Type a few letters of a task or project' : 'No task matches';
     return this.shown;
   }
+  /** @param {ProjTask} t @param {HTMLElement} row */
   renderSuggestion(t, row) {
     if (t === this.shown[0] && row.parentElement) {
       const head = createDiv({ cls: 'a4pj-find-head', text: `Tasks · ${this.shown.length}` });
@@ -2151,6 +2448,7 @@ class FindTaskModal extends SuggestModal {
     }
     row.addClass('mod-complex');
     const body = row.createDiv({ cls: 'suggestion-content' });
+    /** @param {HTMLElement} host @param {string} text */
     const mark = (host, text) => {
       const m = findMark(text, this.query);
       if (!m) { host.appendText(text); return; }
@@ -2161,13 +2459,19 @@ class FindTaskModal extends SuggestModal {
     if (findMark(t.title, this.query)) note.appendText(findNote(t, this.today, this.cfg)); else mark(note, findNote(t, this.today, this.cfg));
     if (!isOpenTask(t, this.cfg)) row.addClass('a4pj-find-done');
   }
+  /** @param {ProjTask} t */
   onChooseSuggestion(t) { this.plugin.openFile(t.path); }
 }
 
 /* Small dialogs for the board actions. Each calls done() once, on close:
  * the answer, or null / false when cancelled or dismissed. */
 class AskModal extends Modal {
-  constructor(app, question, value, done) { super(app); this.question = question; this.value = value || ''; this.done = done; this.answer = null; }
+  /** @param {import('obsidian').App} app @param {string} question @param {string | null | undefined} value @param {(answer: string | null) => void} done */
+  constructor(app, question, value, done) {
+    super(app); this.question = question; this.value = value || ''; this.done = done;
+    /** @type {string | null} */
+    this.answer = null;
+  }
   onOpen() {
     this.titleEl.setText(this.question);
     const input = this.contentEl.createEl('input', { type: 'text', cls: 'a4pj-ask-input' });
@@ -2183,6 +2487,7 @@ class AskModal extends Modal {
 }
 
 class ConfirmModal extends Modal {
+  /** @param {import('obsidian').App} app @param {string} title @param {string} text @param {string} okLabel @param {(ok: boolean) => void} done */
   constructor(app, title, text, okLabel, done) { super(app); this.title = title; this.text = text; this.okLabel = okLabel; this.done = done; this.ok = false; }
   onOpen() {
     this.titleEl.setText(this.title);
@@ -2194,10 +2499,22 @@ class ConfirmModal extends Modal {
   onClose() { this.contentEl.empty(); this.done(this.ok); }
 }
 
+/** @extends {SuggestModal<TFile>} */
 class GoalPickModal extends SuggestModal {
-  constructor(app, goals, name, done) { super(app); this.goals = goals; this.done = done; this.picked = null; this.setPlaceholder(`Which goal does "${name}" serve?`); }
+  /** @param {import('obsidian').App} app @param {TFile[]} goals @param {string} name @param {(goal: TFile | null) => void} done */
+  constructor(app, goals, name, done) {
+    super(app); this.goals = goals;
+    /** @type {((goal: TFile | null) => void) | null} */
+    this.done = done;
+    /** @type {TFile | null} */
+    this.picked = null;
+    this.setPlaceholder(`Which goal does "${name}" serve?`);
+  }
+  /** @param {string} q */
   getSuggestions(q) { const s = String(q || '').trim().toLowerCase(); return this.goals.filter((g) => g.basename.toLowerCase().includes(s)); }
+  /** @param {TFile} g @param {HTMLElement} row */
   renderSuggestion(g, row) { row.setText(g.basename); }
+  /** @param {TFile} g */
   onChooseSuggestion(g) { this.picked = g; this.finish(); }
   onClose() { window.setTimeout(() => this.finish(), 0); } // SuggestModal may close before it reports the choice
   finish() { const d = this.done; this.done = null; if (d) d(this.picked); }
@@ -2206,14 +2523,25 @@ class GoalPickModal extends SuggestModal {
 // The project box for "Create task" when the note does not settle it (mockup-text-to-task.html).
 // items: [{ path (null = no project), name, hint }], the preselected one first (SuggestModal
 // highlights the first row). done(item) once; null when closed without a choice.
+/** @typedef {{ path: string | null, name: string, hint: string }} ProjectChoice */
+/** @extends {SuggestModal<ProjectChoice>} */
 class TextTaskProjectModal extends SuggestModal {
+  /** @param {import('obsidian').App} app @param {ProjectChoice[]} items @param {number} count @param {(it: ProjectChoice | null) => void} done */
   constructor(app, items, count, done) {
-    super(app); this.items = items; this.done = done; this.picked = null; this.modalEl.addClass('a4pj-ttt');
+    super(app); this.items = items;
+    /** @type {((it: ProjectChoice | null) => void) | null} */
+    this.done = done;
+    /** @type {ProjectChoice | null} */
+    this.picked = null;
+    this.modalEl.addClass('a4pj-ttt');
     this.setPlaceholder(`Which project ${count === 1 ? 'is this task' : `are these ${count} tasks`} for?`);
     this.setInstructions([{ command: 'Up / Down', purpose: 'to move' }, { command: 'Enter', purpose: 'to choose' }, { command: 'Esc', purpose: 'to cancel' }]);
   }
+  /** @param {string} q */
   getSuggestions(q) { const s = String(q || '').trim().toLowerCase(); return this.items.filter((it) => it.name.toLowerCase().includes(s)); }
+  /** @param {ProjectChoice} it @param {HTMLElement} row */
   renderSuggestion(it, row) { row.addClass('a4pj-ttt-row'); row.createSpan({ cls: 'a4pj-ttt-name', text: it.name }); if (it.hint) row.createEl('small', { cls: 'a4pj-ttt-hint', text: it.hint }); }
+  /** @param {ProjectChoice} it */
   onChooseSuggestion(it) { this.picked = it; this.finish(); }
   onClose() { window.setTimeout(() => this.finish(), 0); } // SuggestModal may close before it reports the choice
   finish() { const d = this.done; this.done = null; if (d) d(this.picked); }
@@ -2222,9 +2550,11 @@ class TextTaskProjectModal extends SuggestModal {
 // "+ Add idea": title, one line, why, Work or Personal. Calls save(values) on OK
 // and closes only when it resolves a note (a taken name keeps the form open).
 class IdeaModal extends Modal {
+  /** @param {import('obsidian').App} app @param {string | null | undefined} area @param {(v: { title: string, line: string, why: string, sphere: string }) => Promise<unknown>} save */
   constructor(app, area, save) { super(app); this.area = area; this.save = save; }
   onOpen() {
     this.titleEl.setText('Add an idea');
+    /** @param {string} label @param {string} ph */
     const field = (label, ph) => { const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: label }); const i = w.createEl('input', { type: 'text', cls: 'a4pj-ask-input' }); i.placeholder = ph; i.setAttr('aria-label', label); return i; };
     const title = field('Title', 'Weekly beach cleanup group');
     const line = field('One line', 'What it is, in a sentence');
@@ -2255,10 +2585,12 @@ class IdeaModal extends Modal {
 // "+ Add area" (mockup screen 4): name, work or personal, optional client. Calls save(values) on
 // Add and closes only when it resolves a note (a taken name keeps the form open).
 class AreaModal extends Modal {
+  /** @param {import('obsidian').App} app @param {string | null | undefined} sphere @param {(v: { name: string, sphere: string, client: string }) => Promise<unknown>} save */
   constructor(app, sphere, save) { super(app); this.sphere = sphere; this.save = save; }
   onOpen() {
     this.titleEl.setText('Add an area');
     this.contentEl.createEl('p', { cls: 'a4pj-modal-note', text: 'Ongoing work that never finishes, like a client or a product. Projects and one-off tasks can live inside it.' });
+    /** @param {string} label @param {string} ph */
     const field = (label, ph) => { const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: label }); const i = w.createEl('input', { type: 'text', cls: 'a4pj-ask-input' }); i.placeholder = ph; i.setAttr('aria-label', label); return i; };
     const name = field('Name', 'Northwind Bakery');
     const w = this.contentEl.createDiv({ cls: 'a4pj-ask-field' }); w.createEl('label', { text: 'Work or personal' });
@@ -2285,6 +2617,9 @@ class AreaModal extends Modal {
 }
 
 class ProjectsPlugin extends Plugin {
+  /** @type {boolean | undefined} LifeWorld sets it before start: the task engine only, no pages (launch section 1) */
+  pagesOff = undefined;
+
   async onload() {
     this.settings = normalizeSettings(await this.loadData().catch(() => null));
     this.engine = new TaskEngine(this);
@@ -2342,29 +2677,35 @@ class ProjectsPlugin extends Plugin {
    * open the linked note instead of TaskNotes' edit box), and its two
    * right-click menu entries. Obsidian's Linked/Unlinked mentions are untouched. */
   hideTaskNotesOnTaskNotes() {
-    const inTaskNote = (t) => t && t.closest && t.closest('.a4pj-task-note .tasknotes-inline-widget');
+    /** @param {EventTarget | null} t */
+    const inTaskNote = (t) => { const e = /** @type {Element | null} */ (t); return e && e.closest && e.closest('.a4pj-task-note .tasknotes-inline-widget'); };
+    /** @param {MouseEvent} e */
     const swallow = (e) => {
       const w = inTaskNote(e.target); if (!w) return;
       e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
       if (e.type !== 'click' && e.type !== 'auxclick') return;
       if (e.type === 'auxclick' && e.button !== 1) return;
-      const card = w.querySelector('[data-task-path]');
-      const file = card && this.app.vault.getAbstractFileByPath(card.dataset.taskPath);
+      const card = /** @type {HTMLElement | null} */ (w.querySelector('[data-task-path]'));
+      const file = card && this.app.vault.getAbstractFileByPath(/** @type {string} */ (card.dataset.taskPath));
       if (file instanceof TFile) this.app.workspace.getLeaf(e.type === 'auxclick' || Keymap.isModEvent(e)).openFile(file);
     };
-    for (const type of ['click', 'auxclick', 'dblclick', 'contextmenu']) this.registerDomEvent(document, type, swallow, true);
+    for (const type of /** @type {('click' | 'auxclick' | 'dblclick' | 'contextmenu')[]} */ (['click', 'auxclick', 'dblclick', 'contextmenu'])) this.registerDomEvent(document, type, swallow, true);
     // Menu items are added by TaskNotes' own file-menu handler, which may run
     // before or after this one: drop what is there, and catch what comes later.
     this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
       if (!this.engine.isTaskFile(file) || !menu || !Array.isArray(menu.items)) return;
+      /** @typedef {{ section?: string, titleEl?: unknown } | null | undefined} MenuItemLike */
+      /** @param {MenuItemLike} it */
       const isTn = (it) => it && it.section === 'tasknotes';
       // TaskNotes adds a separator right before its entries; it goes with them.
+      /** @param {MenuItemLike} it */
       const isSep = (it) => it && !it.titleEl && !('section' in it);
-      const drop = () => { const a = menu.items; menu.items = a.filter((it, i) => !isTn(it) && !(isSep(it) && isTn(a[i + 1]))); };
+      const drop = () => { const a = /** @type {MenuItemLike[]} */ (menu.items); menu.items = a.filter((it, i) => !isTn(it) && !(isSep(it) && isTn(a[i + 1]))); };
       drop();
       if (!menu.lifeworldNoTn) {
         menu.lifeworldNoTn = true;
         const add = menu.addItem;
+        /** @this {import('obsidian').Menu} @param {(item: import('obsidian').MenuItem) => unknown} cb */
         menu.addItem = function (cb) { const r = add.call(this, cb); drop(); return r; };
       }
     }));
@@ -2379,7 +2720,7 @@ class ProjectsPlugin extends Plugin {
     this.refreshActivity();
   }
   // An Activity entry (Undo, sync) is not a note change, so the open Activity tab is redrawn here.
-  refreshActivity() { for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (l.view && l.view.tab === 'activity') l.view.scheduleRender(); }
+  refreshActivity() { for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {ProjectsView} */ (l.view); if (v && v.tab === 'activity') v.scheduleRender(); } }
 
   async save() { await this.saveData(this.settings); }
 
@@ -2412,8 +2753,9 @@ class ProjectsPlugin extends Plugin {
   // Checkbox tasks as the Projects pages read tasks (criterion 24).
   checkboxTasks() {
     if (!this.ext || this.ext.id !== 'checkbox') return [];
-    return this.ext.items().map((it) => ({ ...it, archived: false, start: it.ext.start || null, scheduled: null, dueTime: null, startTime: null, completedDate: it.ext.doneDay || null, dateCreated: it.ext.created || null, steps: { total: 0, done: 0 }, openBlockers: [], reminderSet: null }));
+    return this.ext.items().map((it) => /** @type {ProjTask} */ ({ ...it, archived: false, start: it.ext.start || null, scheduled: null, dueTime: null, startTime: null, completedDate: it.ext.doneDay || null, dateCreated: it.ext.created || null, steps: { total: 0, done: 0 }, openBlockers: [], reminderSet: null }));
   }
+  /** @param {string} id */
   async setSource(id) {
     this.settings.source = id;
     await this.save();
@@ -2422,13 +2764,15 @@ class ProjectsPlugin extends Plugin {
   }
 
   // Ticks/creates follow the task source: Built-in engine, or TaskNotes' API.
+  /** @returns {TaskApi | null} */
   tnApi() {
     const tn = this.engine.tn(); const api = tn && tn.api;
     if (!api || api.apiVersion !== 1 || typeof api.hasCapability !== 'function' || !api.hasCapability('tasks.write')) return null;
     return api;
   }
+  /** @param {ProjTask | ExtItem} t @param {boolean} wantDone @returns {Promise<{ result?: unknown, undo: (() => Promise<void>) | null }>} */
   async completeTask(t, wantDone) {
-    if (t.ext && this.ext) { await this.ext.toggle(t, this.engine.today()); return { undo: null }; }
+    if (t.ext && this.ext) { await this.ext.toggle(/** @type {ExtItem} */ (t), this.engine.today()); return { undo: null }; }
     if (!this.usesBuiltIn()) {
       const api = this.tnApi();
       if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › LifeWorld › Tasks.');
@@ -2439,19 +2783,20 @@ class ProjectsPlugin extends Plugin {
     if (t.recurrenceRaw) return this.engine.toggleInstance(t.path, null);
     return wantDone ? this.engine.complete(t.path) : this.engine.uncomplete(t.path);
   }
+  /** @param {NewTaskInput} input @returns {Promise<{ result: { path: string, title?: string }, undo: (() => Promise<void>) | null }>} */
   async createTask(input) {
     // Checkboxes: a "- [ ]" line under "Tasks" in that day's daily note (decision C), linked to its project.
     if (this.ext && this.ext.id === 'checkbox') {
       const day = toDayStr(input.due) || toDayStr(input.customFrontmatter && input.customFrontmatter.planned_day);
       const project = projectKeyOf(asList(input.projects)[0]);
-      const path = await this.ext.create({ title: input.title, day, project });
+      const path = /** @type {string} */ (await this.ext.create({ title: /** @type {string} */ (input.title), day, project }));
       return { result: { path, title: input.title }, undo: null };
     }
     if (!this.usesBuiltIn()) {
       const api = this.tnApi();
       if (!api) throw new Error('TaskNotes is not turned on. Switch the task source to Built-in in Settings › LifeWorld › Tasks.');
       const t = await api.tasks.create(input);
-      return { result: { path: t && (t.path || t.id), title: input.title }, undo: null };
+      return { result: { path: /** @type {string} */ (t && (t.path || t.id)), title: input.title }, undo: null };
     }
     return this.engine.create(input);
   }
@@ -2460,11 +2805,14 @@ class ProjectsPlugin extends Plugin {
 
   // The selected lines that can become tasks: [{ line, text, title }], how many already link to a
   // task (skipped) and how many are headings. Frontmatter, code, math, comment and table lines never count.
+  /** @param {import('obsidian').Editor} editor @param {TFile} file */
   textTaskLines(editor, file) {
-    const cache = this.app.metadataCache.getFileCache(file) || {};
+    const cache = /** @type {import('obsidian').CachedMetadata} */ (this.app.metadataCache.getFileCache(file) || {});
     const fmEnd = cache.frontmatterPosition ? cache.frontmatterPosition.end.line : -1;
     const blocks = (cache.sections || []).filter((x) => ['code', 'math', 'comment', 'table', 'html'].includes(x.type)).map((x) => [x.position.start.line, x.position.end.line]);
-    const out = []; let skipped = 0; let headings = 0;
+    /** @type {{ line: number, text: string, title: string }[]} */
+    const out = [];
+    let skipped = 0; let headings = 0;
     for (const line of selectedLines(editor.listSelections())) {
       if (line <= fmEnd || line >= editor.lineCount() || blocks.some(([a, b]) => line >= a && line <= b)) continue;
       const text = editor.getLine(line);
@@ -2478,6 +2826,7 @@ class ProjectsPlugin extends Plugin {
     return { lines: out, skipped, headings };
   }
 
+  /** @param {import('obsidian').Menu} menu @param {import('obsidian').Editor} editor @param {import('obsidian').MarkdownView | import('obsidian').MarkdownFileInfo} info */
   textTaskMenu(menu, editor, info) {
     const file = info && info.file;
     if (!(file instanceof TFile) || this.engine.isTaskFile(file)) return;
@@ -2490,37 +2839,48 @@ class ProjectsPlugin extends Plugin {
     const SECTION = 'a4pj-text-to-task';
     if (Array.isArray(menu.sections) && !menu.sections.includes(SECTION)) menu.sections.unshift(SECTION);
     menu.addItem((it) => it.setTitle(n === 1 ? 'Create task' : `Create ${n} tasks`).setIcon('list-plus').setSection(SECTION)
-      .onClick(() => this.createTasksFromLines(editor, file, picked).catch((e) => { console.error('[LifeWorld] create from lines', e); new Notice(`Could not create the tasks. ${e && e.message ? e.message : ''}`); })));
+      .onClick(() => this.createTasksFromLines(editor, file, picked).catch((e) => { console.error('[LifeWorld] create from lines', e); new Notice(`Could not create the tasks. ${errField(e, 'message') || ''}`); })));
   }
 
   // What the note says about its project: itself, its frontmatter, its links (project notes only).
+  /** @param {TFile} file */
   textTaskProjectFacts(file) {
     const mc = this.app.metadataCache;
     const n = this.engine.collectNotes();
+    /** @type {Map<string, ProjNote | AreaNote>} */
     const projects = new Map([...n.projects, ...n.areas].map((p) => [p.path, p])); // areas take tasks too
+    /** @param {unknown} link @param {string} from */
     const toProject = (link, from) => { const f = mc.getFirstLinkpathDest(String(link).split('#')[0].split('|')[0], from); return f && projects.has(f.path) ? f.path : null; };
-    const cache = mc.getFileCache(file) || {};
-    const fm = cache.frontmatter || {};
-    const fmPaths = ['project', 'projects', 'linked_projects'].flatMap((k) => asList(fm[k])).map((v) => wikilinkTarget(String(v)) || String(v)).map((l) => toProject(l, file.path)).filter(Boolean);
-    const linkPaths = [...(cache.frontmatterLinks || []), ...(cache.links || [])].map((l) => toProject(l.link, file.path)).filter(Boolean);
+    const cache = /** @type {import('obsidian').CachedMetadata} */ (mc.getFileCache(file) || {});
+    const fm = /** @type {Fm} */ (cache.frontmatter || {});
+    const fmPaths = /** @type {string[]} */ ( ['project', 'projects', 'linked_projects'].flatMap((k) => asList(fm[k])).map((v) => wikilinkTarget(String(v)) || String(v)).map((l) => toProject(l, file.path)).filter(Boolean));
+    const linkPaths = /** @type {string[]} */ ([...(cache.frontmatterLinks || []), ...(cache.links || [])].map((l) => toProject(l.link, file.path)).filter(Boolean));
     return { facts: { self: projects.has(file.path) ? file.path : null, fmPaths, linkPaths }, projects };
   }
 
   // Resolves the project path, null for no project, or undefined when the box was cancelled.
+  /** @param {TFile} file @param {number} count @returns {Promise<string | null | undefined>} */
   async textTaskPickProject(file, count) {
     const { facts, projects } = this.textTaskProjectFacts(file);
     const r = textTaskProject(facts, this.lastTextTaskProject);
     if (!r.ask) return r.project;
+    /** @param {string} p */
     const name = (p) => (projects.get(p) || { name: p }).name;
+    /** @param {string} p */
     const times = (p) => facts.linkPaths.filter((x) => x === p).length;
+    /** @param {string} p */
     const hint = (p) => { const n = times(p); return n ? `mentioned ${n === 1 ? 'once' : `${n} times`} here` : ''; };
+    /** @type {ProjectChoice} */
     const none = { path: null, name: 'No project (Inbox)', hint: '' };
     // After the note's own links (kept first on purpose): areas, then projects, A to Z, as in the task pickers.
-    const others = [...projects.values()].filter((p) => (p.isArea || isOpenProject(p)) && !r.candidates.includes(p.path)).sort((a, b) => (!a.isArea) - (!b.isArea) || a.name.localeCompare(b.name)).map((p) => ({ path: p.path, name: p.name, hint: '' }));
-    let items = [...r.candidates.map((p) => ({ path: p, name: name(p), hint: hint(p) })), ...others, none];
+    const candidates = /** @type {string[]} */ (r.candidates);
+    const others = [...projects.values()].filter((p) => (p.isArea || isOpenProject(p)) && !candidates.includes(p.path)).sort((a, b) => (!a.isArea) - (!b.isArea) || a.name.localeCompare(b.name)).map((p) => ({ path: p.path, name: p.name, hint: '' }));
+    /** @type {ProjectChoice[]} */
+    let items = [...candidates.map((p) => ({ path: p, name: name(p), hint: hint(p) })), ...others, none];
     const first = items.findIndex((it) => it.path === r.preselect);
     const top = first === -1 ? items.length - 1 : first; // a last pick no longer open: no project first
     if (top > 0) items = [items[top], ...items.slice(0, top), ...items.slice(top + 1)];
+    /** @type {ProjectChoice | null} */
     const it = await new Promise((res) => new TextTaskProjectModal(this.app, items, count, res).open());
     if (!it) return undefined;
     this.lastTextTaskProject = it.path; // only a choice made in the box counts as the last pick
@@ -2528,6 +2888,7 @@ class ProjectsPlugin extends Plugin {
   }
 
   // picked: the menu's own list, so the label's count is what gets created.
+  /** @param {import('obsidian').Editor} editor @param {TFile} file @param {ReturnType<ProjectsPlugin['textTaskLines']>} picked */
   async createTasksFromLines(editor, file, picked) {
     const { lines, skipped, headings } = picked;
     if (!lines.length) return;
@@ -2537,9 +2898,13 @@ class ProjectsPlugin extends Plugin {
     if (projectPath === undefined) return; // cancelled: nothing created, nothing marked
     const mc = this.app.metadataCache;
     const from = `[[${mc.fileToLinktext(file, this.engine.cfg().tasksFolder + '/x.md', true)}]]`;
-    const made = []; const failed = [];
+    /** @type {{ line: number, text: string, title: string, link: string }[]} */
+    const made = [];
+    /** @type {string[]} */
+    const failed = [];
     for (const l of lines) {
       try {
+        /** @type {NewTaskInput} */
         const input = { title: l.title, details: `From ${from}` };
         if (projectPath) input.projects = [projectLinkFor(projectPath)];
         const w = await this.createTask(input);
@@ -2550,12 +2915,13 @@ class ProjectsPlugin extends Plugin {
     }
     // Each line is found again now (the box and the creates take time). Still on screen in this
     // editor: one change, so one undo removes every mark. Otherwise straight into the note.
-    const view = this.app.workspace.getLeavesOfType('markdown').map((l) => l.view).find((v) => v && v.editor === editor);
+    const view = /** @type {import('obsidian').MarkdownView[]} */ (this.app.workspace.getLeavesOfType('markdown').map((l) => l.view)).find((v) => v && v.editor === editor);
     let marked = 0;
     if (made.length && view && view.file && view.file.path === file.path) {
+      /** @type {string[]} */
       const doc = []; for (let i = 0; i < editor.lineCount(); i++) doc.push(editor.getLine(i));
       const at = relocateLines(doc, made);
-      const changes = made.map((m, i) => (at[i] < 0 ? null : { from: { line: at[i], ch: markAt(m.text) }, text: ` [[${m.link}|task]]` })).filter(Boolean);
+      const changes = /** @type {import('obsidian').EditorChange[]} */ (made.map((m, i) => (at[i] < 0 ? null : { from: { line: at[i], ch: markAt(m.text) }, text: ` [[${m.link}|task]]` })).filter(Boolean));
       if (changes.length) editor.transaction({ changes });
       marked = changes.length;
     } else if (made.length) {
@@ -2565,7 +2931,8 @@ class ProjectsPlugin extends Plugin {
         return doc.join('\n');
       });
     }
-    const where = projectPath ? projectPath.split('/').pop().replace(/\.md$/i, '') : 'the Inbox';
+    const where = projectPath ? /** @type {string} */ (projectPath.split('/').pop()).replace(/\.md$/i, '') : 'the Inbox';
+    /** @type {string[]} */
     const parts = [];
     if (made.length) parts.push(`Created ${made.length} task${made.length === 1 ? '' : 's'} in ${where}`);
     if (skipped) parts.push(`${skipped} line${skipped === 1 ? ' was' : 's were'} already a task`);
@@ -2577,11 +2944,13 @@ class ProjectsPlugin extends Plugin {
 
   /* ---- auto-archive queue (same rule as TaskNotes' AutoArchiveService) -- */
 
+  /** @param {string} path @param {string} status @param {EngineCfg} cfg @param {Date} now */
   async archiveQueueOnStatus(path, status, cfg, now) {
     const sc = statusConfigOf(cfg, status);
     if (!sc) return false;
-    const fm = this.engine.fm(this.engine.file(path) || {}) || {};
-    const recurring = typeof fm[cfg.F.recurrence] === 'string' && fm[cfg.F.recurrence].trim();
+    const fm = this.engine.fm(/** @type {TFile} */ (this.engine.file(path) || {})) || {};
+    const rec = fm[cfg.F.recurrence];
+    const recurring = typeof rec === 'string' && rec.trim();
     this.settings.archiveQueue = this.settings.archiveQueue.filter((x) => x.taskPath !== path);
     let queued = false;
     if (sc.autoArchive && !recurring) {
@@ -2592,12 +2961,14 @@ class ProjectsPlugin extends Plugin {
     return queued;
   }
   // `restore`: the entry to put back in its place (Undo of a change that cancelled it).
+  /** @param {string} path @param {ArchiveEntry | null | undefined} restore */
   async cancelArchive(path, restore) {
     const before = this.settings.archiveQueue.length;
     this.settings.archiveQueue = this.settings.archiveQueue.filter((x) => x.taskPath !== path);
     if (restore) this.settings.archiveQueue.push(restore);
     if (restore || this.settings.archiveQueue.length !== before) await this.save();
   }
+  /** @param {number} [nowMs] */
   async processArchiveQueue(nowMs) {
     if (this.archiving) return;
     const q = this.settings.archiveQueue;
@@ -2627,6 +2998,7 @@ class ProjectsPlugin extends Plugin {
   /* ---- opening things --------------------------------------------------- */
 
   // opts.newTab (Cmd/Ctrl-click): a new Projects tab; otherwise the open one is reused.
+  /** @param {Record<string, unknown>} state @param {{ newTab?: boolean } | null} [opts] */
   async openProjects(state, opts) {
     if (this.pagesOff) return null; // the Projects pages are switched off (section 1)
     const ws = this.app.workspace;
@@ -2637,10 +3009,12 @@ class ProjectsPlugin extends Plugin {
     ws.setActiveLeaf(leaf, { focus: true });
     return leaf;
   }
+  /** @param {string} path @param {{ newTab?: boolean } | null} [opts] */
   openProject(path, opts) { return this.openProjects({ page: 'project', project: path }, opts); }
   // Public (Today, Planner): the project or area note whose page this plugin shows
   // for `ref`, a note's path or a task's project link or name. Matched
   // by name, the same way the project page collects its tasks. Null: no page.
+  /** @param {unknown} ref */
   projectPathFor(ref) {
     if (ref == null || ref === '') return null;
     const n = this.engine.collectNotes();
@@ -2656,6 +3030,7 @@ class ProjectsPlugin extends Plugin {
   // -> { areas: [{ key, name, path }], of: { projectKey or areaKey: areaKey } }
   areaIndex() {
     const n = this.engine.collectNotes();
+    /** @type {Record<string, string>} */
     const of = {};
     for (const a of n.areas) of[a.key] = a.key;
     for (const p of n.projects) if (p.area) of[p.key] = p.area;
@@ -2663,9 +3038,11 @@ class ProjectsPlugin extends Plugin {
   }
   // Public (Sidebar's Work / Personal counts): does the overview list this
   // project note (its frontmatter) as open? Same reading and rule as the page.
+  /** @param {Fm | null | undefined} fm */
   isOpenProjectNote(fm) { return isOpenProject(readProject(fm, '', '')); }
   // Public: open that project's page. Resolves false when there is none, so the
   // caller can open the note instead.
+  /** @param {unknown} ref @param {{ newTab?: boolean } | null} [opts] */
   async openProjectPage(ref, opts) {
     if (this.pagesOff) return false; // no pages: the caller opens the note (section 1)
     const path = this.projectPathFor(ref);
@@ -2673,55 +3050,66 @@ class ProjectsPlugin extends Plugin {
     await this.openProject(path, opts);
     return true;
   }
+  /** @param {string} id */
   has(id) { const c = this.app.commands; return !!(c && c.commands && c.commands[id]); }
+  /** @param {string} id */
   run(id) { const c = this.app.commands; if (c && c.commands && c.commands[id]) { c.executeCommandById(id); return true; } return false; }
   // Today or the Planner switched off: no button to it (phase 2 section 6).
   todayOn() { return this.has(TODAY_COMMAND); }
   plannerOn() { return this.has(PLANNER_COMMAND); }
+  /** @param {string | null} [projectKey] */
   openPlanner(projectKey) {
     if (!this.run(PLANNER_COMMAND)) { new Notice('The planner is not turned on.'); return; }
     if (!projectKey) return;
     window.setTimeout(() => {
       const leaf = this.app.workspace.getLeavesOfType('a4-planner')[0];
-      const v = leaf && leaf.view;
+      const v = /** @type {{ render?: () => void, project?: string | null } | null} */ (leaf && leaf.view);
       if (v && typeof v.render === 'function' && 'project' in v) { v.project = projectKey; v.render(); }
     }, 150);
   }
   // Public (Today, Planner, the "Find a task" command): the Find window.
   openFind() { const m = new FindTaskModal(this); m.open(); return m; }
   openToday() { if (!this.run(TODAY_COMMAND)) new Notice('The today page is not turned on.'); }
+  /** @param {string} path @param {boolean} [newTab] */
   openFile(path, newTab) { const f = this.engine.file(path); if (f) this.app.workspace.getLeaf(newTab === false ? false : 'tab').openFile(f); }
   // A task from a source (a checkbox line, ClickUp...) opens where it lives; a task note opens as before.
-  openTask(t, newTab) { if (t && t.ext && this.ext) this.ext.open(t, newTab !== false); else this.openFile(t.path, newTab); }
+  /** @param {ProjTask | ExtItem} t @param {boolean} [newTab] */
+  openTask(t, newTab) { if (t && t.ext && this.ext) this.ext.open(/** @type {ExtItem} */ (t), newTab !== false); else this.openFile(t.path, newTab); }
 
   /* ---- shared actions ---------------------------------------------------- */
 
   // Orders of the untimed tasks in a lane (timed ones sort first by the clock).
+  /** @param {ProjTask[]} items @param {string} day @param {string | null} half */
   laneOrders(items, day, half) {
     return sortByOrder(items.filter((it) => !it.time && taskOnDay(it, day) && (it.plannedHalf || null) === (half || null))).map((x) => x.plannedOrder);
   }
   // A placement (applyPlacement, the Planner's rule and Settings › Planning): the due time goes
   // along while the task stays in its half of the day; into the other half (or Any time) it comes off.
   // The result says so (dropsTime) for the toast; Undo puts it back.
+  /** @param {ProjTask | ExtItem} t @param {string} day @param {string | null} half @param {ProjTask[]} items @returns {Promise<{ undo: (() => Promise<void>) | null, result?: unknown, dropsTime?: string | null } | null>} */
   async placeTask(t, day, half, items) {
-    if (t.ext && this.ext) { await this.ext.place(t, day, half); return { undo: null }; }
+    if (t.ext && this.ext) { await this.ext.place(/** @type {ExtItem} */ (t), day, half); return { undo: null }; }
     if (t.recurrenceRaw) { new Notice('Repeating tasks follow their schedule.'); return null; }
     const orders = this.laneOrders(items.filter((x) => x.path !== t.path), day, half);
     const order = orderForInsert(orders, orders.length);
+    /** @type {Undoable<unknown> & { dropsTime?: string | null }} */
     const w = await this.engine.write(t.path, (fm) => { applyPlacement(fm, day, half, order, planning.setsDue); });
     if (w) w.dropsTime = planning.setsDue && t.time && t.due && halfOfTime(t.time) !== (half || null) ? t.time : null;
     return w;
   }
   // "Move all overdue to today": one write per task (applyMove), one Undo.
+  /** @param {string | null} projectKey */
   async moveOverdueToToday(projectKey) {
     const today = this.engine.today();
     const cfg = this.engine.cfg();
     const items = this.engine.collectTasks(false);
     const list = items.filter((t) => isOverdueTask(t, today, cfg) && (!projectKey || t.projectKey === projectKey));
     if (!list.length) { new Notice('Nothing is overdue.'); return 0; }
+    /** @type {(() => Promise<void>)[]} */
     const undos = [];
+    /** @type {Record<string, number[]>} */
     const lanes = {};
-    for (const t of list.sort((a, b) => a.plannedDay.localeCompare(b.plannedDay) || a.plannedOrder - b.plannedOrder)) {
+    for (const t of list.sort((a, b) => /** @type {string} */ (a.plannedDay).localeCompare(/** @type {string} */ (b.plannedDay)) || a.plannedOrder - b.plannedOrder)) {
       const half = t.plannedHalf || null;
       const key = half || '';
       if (!lanes[key]) lanes[key] = this.laneOrders(items.filter((x) => !list.includes(x)), today, half);
@@ -2741,8 +3129,10 @@ class ProjectsPlugin extends Plugin {
    * The metadata cache lags a just-made write, so every guard reads the note
    * itself: inside the write, or (Delete, Promote's goal) a fresh read. */
 
+  /** @param {string} name */
   refused(name) { new Notice(`Could not do that to "${name}". Try again in a moment.`); return false; }
   // Only the place and kind of file; whether it is a project is decided from the note itself.
+  /** @param {string} path */
   projectFile(path) {
     const f = this.engine.file(path);
     if (f && f.extension === 'md' && f.path.startsWith(`${vaultFolders.projects}/`)) return f;
@@ -2750,17 +3140,24 @@ class ProjectsPlugin extends Plugin {
     return null;
   }
   // The frontmatter read from disk (not the cache); null when unreadable.
+  /** @param {TFile} f @returns {Promise<Fm | null>} */
   async freshFm(f) {
     try {
       const info = getFrontMatterInfo(await this.app.vault.read(f));
-      return info.exists ? parseYaml(info.frontmatter) : null;
+      const yaml = /** @type {unknown} */ (info.exists ? parseYaml(info.frontmatter) : null);
+      return /** @type {Fm | null} */ (yaml);
     } catch (e) { console.error('[LifeWorld] could not read', f.path, e); return null; }
   }
   // The write; returns its Undo, or null when it failed or was refused (not a
   // project, or apply returned false). apply returning 'same' = already
   // there: null, no notice.
+  /** @param {TFile} f @param {(fm: Fm) => unknown} apply @returns {Promise<(() => Promise<boolean>) | null>} */
   async writeProject(f, apply) {
-    let before, after, ok = false, same = false;
+    /** @type {Fm} */
+    let before = {};
+    /** @type {Fm} */
+    let after = {};
+    let ok = false, same = false;
     try {
       await this.app.fileManager.processFrontMatter(f, (fm) => {
         if (fm.type !== 'project') return;
@@ -2772,6 +3169,7 @@ class ProjectsPlugin extends Plugin {
     // Resolves true only when at least one field was put back.
     return async () => {
       if (this.engine.file(f.path) !== f) { new Notice(`Could not undo: "${f.basename}" was deleted.`); return false; }
+      /** @type {string[]} */
       let kept = [];
       try { await this.app.fileManager.processFrontMatter(f, (fm) => { kept = undoFields(fm, before, after); }); }
       catch (e) { console.error('[LifeWorld] undo failed', f.path, e); new Notice(`Could not undo the change to "${f.basename}".`); return false; }
@@ -2781,6 +3179,7 @@ class ProjectsPlugin extends Plugin {
     };
   }
   // A failed save never fails the move itself: the note is already changed.
+  /** @param {string} text */
   async logActivity(text) {
     this.settings.activity = addActivity(this.settings.activity, text, Date.now());
     this.refreshActivity();
@@ -2789,10 +3188,12 @@ class ProjectsPlugin extends Plugin {
   // Board actions only; the List, Today and hand edits are not logged (spec 17).
   // Undo adds its own entry when it put something back; history is never rewritten.
   // Not awaited: the entry is in memory at once, the toast does not wait for the disk.
+  /** @param {string} text @param {() => Promise<boolean>} undo */
   logged(text, undo) {
     this.logActivity(text);
     return async () => { if (await undo()) await this.logActivity(`Undone: ${text[0].toLowerCase()}${text.slice(1)}`); };
   }
+  /** @param {string} path @param {string} status */
   async moveProject(path, status) {
     const f = this.projectFile(path);
     if (!f || !BOARD_COLUMNS.includes(status)) return false;
@@ -2815,6 +3216,7 @@ class ProjectsPlugin extends Plugin {
   // Closed on a repeating task ends the series (team call 2026-10-13); the toast
   // says so. Someday: the Someday action (a one-off task loses its day and due
   // date). Out of Someday: the status only, no date invented.
+  /** @param {ProjTask} t @param {string} column */
   async moveTask(t, column) {
     const cfg = this.engine.cfg();
     if (t.archived || !taskColumns(cfg).includes(column)) return false; // nothing takes a task out of the archive
@@ -2823,26 +3225,30 @@ class ProjectsPlugin extends Plugin {
     const fm = this.engine.fm(f) || {};
     if (taskColumn(statusString(fm[cfg.F.status])) === column) return false; // dropped back in its own column: silent
     const today = this.engine.today(), label = TASK_COLUMN_LABEL[column];
-    let w, msg = `Moved "${t.title}" to ${label}`, text = `You moved the task "${t.title}" to ${label}.`;
+    /** @type {{ result?: unknown, undo: (() => Promise<void>) | null } | undefined} */
+    let w;
+    let msg = `Moved "${t.title}" to ${label}`, text = `You moved the task "${t.title}" to ${label}.`;
     try {
       if (column === 'done' && t.recurrenceRaw) {
         const task = tnTaskOf(fm, cfg.F), day = actionDay(task, today), d = owningDay(task, day) || day;
         // The tick toggles: a second Done must not undo the first.
         if (strList(fm[cfg.F.completeInstances]).includes(d)) { new Notice(`"${t.title}" is already done for ${shortDay(d, today)}. It repeats, so it stays open.`); return false; }
         w = await this.completeTask(t, true);
-        const r = (w && w.result) || { day: d };
+        const r = /** @type {{ day: string, next?: string | null }} */ ((w && w.result) || { day: d });
         msg = `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}. It repeats, so it stays ${isSomeday({ status: statusString(fm[cfg.F.status]) }) ? 'in Someday' : 'open'}`;
         text = `You marked the task "${t.title}" done for ${shortDay(r.day, today)}.`;
       } else if (column === 'someday') {
         // A finished one-off task is reopened first (as unticking does), so no completedDate stays behind.
         const reopen = !t.recurrenceRaw && isCompletedIn(cfg, statusString(fm[cfg.F.status])) ? await this.engine.setStatus(t.path, cfg.defaultStatus) : null;
+        /** @type {Undoable<unknown> | undefined} */
         let sd;
         try { sd = await this.engine.someday(t.path); } catch (e) {
           // Never leave a finished task reopened by a half move: put it back as it was.
           if (reopen) await reopen.undo().catch((u) => console.error('[LifeWorld] task move rollback failed', t.path, u));
           throw e;
         }
-        w = { undo: async () => { try { await sd.undo(); } finally { if (reopen) await reopen.undo(); } } };
+        const sdone = sd;
+        w = { undo: async () => { try { await sdone.undo(); } finally { if (reopen) await reopen.undo(); } } };
         if (t.due && !t.recurrenceRaw) msg += '. The due date was taken off';
       } else {
         w = await this.engine.setStatus(t.path, column);
@@ -2857,6 +3263,7 @@ class ProjectsPlugin extends Plugin {
   // Only from a board column (the cards that offer it).
   // Re-checked after the dialog: a second dialog on a stored note only updates the why.
   // `log` false: the project page's status menu, not the board (spec 17 logs board actions only).
+  /** @param {string} path @param {boolean} [log] */
   async coldStoreProject(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -2872,11 +3279,13 @@ class ProjectsPlugin extends Plugin {
     this.toast.show(`Moved "${f.basename}" to Cold Storage`, log ? this.logged(`You moved ${f.basename} to Cold Storage.`, undo) : undo);
     return true;
   }
+  /** @param {string} path @param {boolean} [log] */
   async restoreProject(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
     const today = this.engine.today();
-    let r;
+    /** @type {{ status: string, fellBack: boolean }} */
+    let r = { status: '', fellBack: false };
     const undo = await this.writeProject(f, (fm) => { if (statusOf(fm) !== 'cold-storage') return false; r = applyRestore(fm, today); });
     if (!undo) return false;
     if (r.fellBack) new Notice(`"${f.basename}" had no earlier column saved, so it went to Backlog.`);
@@ -2885,6 +3294,7 @@ class ProjectsPlugin extends Plugin {
   }
   // The goal is mandatory outside ideas: the fresh read decides whether to ask,
   // the write refuses a promote that would still leave no goal.
+  /** @param {string} path @param {boolean} [log] */
   async promoteIdea(path, log = true) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -2906,6 +3316,7 @@ class ProjectsPlugin extends Plugin {
   // Cold Storage cards only (spec 10). Only this note, to the vault's own
   // .trash folder whatever the trash setting; tasks, goal and links untouched.
   // No write to check inside, so it reads the note itself, before and after the confirm.
+  /** @param {string} path */
   async deleteProjectPermanently(path) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -2925,6 +3336,7 @@ class ProjectsPlugin extends Plugin {
   }
   // Edit on a board card (and Edit idea, section 8): only `why`; an empty answer
   // keeps it. Not logged: spec 17 logs moves, not edits.
+  /** @param {string} path @param {unknown} why */
   async setProjectWhy(path, why) {
     const w = String(why || '').trim();
     if (!w) return false;
@@ -2937,24 +3349,27 @@ class ProjectsPlugin extends Plugin {
   }
   // "+ Add project" (spec 13): an add-on's own new project form (LifeWorld's setNewNoteForm), unchanged.
   // preset (an area page's "+ New project"): { sphere, area: the area note's path }, chosen in the form.
+  /** @param {Record<string, unknown>} [preset] */
   addProject(preset) {
     try { if (ADDON.form && ADDON.form.open('project', preset)) return true; } catch (e) { console.error('LifeWorld: the add-on new-note form failed', e); }
     new Notice('The new project form comes from an add-on, and none is turned on.');
     return false;
   }
   // "+ Add idea" (spec 11): a short form, then one new project note with status idea.
+  /** @param {string | null} [area] */
   addIdea(area) { new IdeaModal(this.app, area, (v) => this.createIdea(v)).open(); }
   // The only note this plugin creates for the board. Resolves the new file, or
   // null (the form stays open) when the name is taken or the write failed.
   // No Undo: removing a note is Delete permanently's job only (spec 19).
+  /** @param {{ title: string, line: string, why: string, sphere: string }} v */
   async createIdea({ title, line, why, sphere }) {
     const t = String(title || '').replace(/\s+/g, ' ').trim();
     if (!t || !['work', 'personal'].includes(sphere)) return null;
     const name = sanitizeForFilename(t);
     const path = `${vaultFolders.projects}/${name}.md`;
     // Case-blind, like the Mac's disk: "beach cleanup" clashes with "Beach Cleanup".
-    const dir = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
-    const taken = ((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${name}.md`.toLowerCase());
+    const dir = /** @type {TFolder | null} */ (this.app.vault.getAbstractFileByPath(vaultFolders.projects));
+    const taken = /** @type {TFile | undefined} */ (((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${name}.md`.toLowerCase()));
     if (taken) { new Notice(`There is already a project called "${taken.basename}".`); return null; }
     let f;
     try { f = await this.app.vault.create(path, ideaNote(t, line, why, sphere, this.engine.today(), stringifyYaml)); }
@@ -2967,6 +3382,7 @@ class ProjectsPlugin extends Plugin {
 
   // The project page's Area choice: parent_area set to the area (path-qualified, as task links are)
   // or removed. The area is checked on disk-fresh data; Undo for 5 seconds.
+  /** @param {string} path @param {string | null} areaPath */
   async setProjectArea(path, areaPath) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -2984,13 +3400,17 @@ class ProjectsPlugin extends Plugin {
   // One write that keeps the whole frontmatter for Undo (turning a note into an area or back).
   // apply(fm) false = refused. Undo puts the old frontmatter back exactly (keys and order), only
   // while the note still holds what this wrote.
+  /** @param {TFile} f @param {(fm: Fm) => unknown} apply @returns {Promise<(() => Promise<boolean>) | null>} */
   async writeWhole(f, apply) {
-    let before = null, after = null;
+    /** @type {unknown} */
+    let before = null;
+    /** @type {unknown} */
+    let after = null;
     try {
       await this.app.fileManager.processFrontMatter(f, (fm) => {
-        const b = JSON.parse(JSON.stringify(fm));
+        const b = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm)));
         if (apply(fm) === false) return;
-        before = b; after = JSON.parse(JSON.stringify(fm));
+        before = b; after = /** @type {unknown} */ (JSON.parse(JSON.stringify(fm)));
       });
     } catch (e) { console.error('[LifeWorld] write failed', f.path, e); new Notice(`Could not change "${f.basename}".`); return null; }
     if (!before) { this.refused(f.basename); return null; }
@@ -3009,6 +3429,7 @@ class ProjectsPlugin extends Plugin {
     };
   }
   // Project page menu: only for a project in no area (applyToArea re-checks the note itself).
+  /** @param {string} path */
   async turnIntoArea(path) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -3019,6 +3440,7 @@ class ProjectsPlugin extends Plugin {
   }
   // Area page menu: only while no project is inside it. A project needs a goal (GL-002), so one is
   // asked for first when the area has none, as Promote does.
+  /** @param {string} path */
   async turnIntoProject(path) {
     const f = this.projectFile(path);
     if (!f) return false;
@@ -3037,13 +3459,15 @@ class ProjectsPlugin extends Plugin {
   }
   // "+ Add area": a short form, then one new area note. Resolves the file, or null (the form stays
   // open) when the name is taken (any case, projects and areas share the folder) or the write failed.
+  /** @param {string | null} [sphere] */
   addArea(sphere) { new AreaModal(this.app, sphere, (v) => this.createArea(v)).open(); }
+  /** @param {{ name: string, sphere: string, client: string }} v */
   async createArea({ name, sphere, client }) {
     const t = String(name || '').replace(/\s+/g, ' ').trim();
     if (!t || !['work', 'personal'].includes(sphere)) return null;
     const base = sanitizeForFilename(t);
-    const dir = this.app.vault.getAbstractFileByPath(vaultFolders.projects);
-    const taken = ((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${base}.md`.toLowerCase());
+    const dir = /** @type {TFolder | null} */ (this.app.vault.getAbstractFileByPath(vaultFolders.projects));
+    const taken = /** @type {TFile | undefined} */ (((dir && dir.children) || []).find((c) => c.name.toLowerCase() === `${base}.md`.toLowerCase()));
     if (taken) { new Notice(`There is already a project or area called "${taken.basename}".`); return null; }
     if (!dir) await this.app.vault.createFolder(vaultFolders.projects).catch(() => {});
     let f;
@@ -3056,19 +3480,23 @@ class ProjectsPlugin extends Plugin {
   // Open goals (not achieved), A to Z, for Promote.
   goalFiles() {
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.goals);
+    /** @type {TFile[]} */
     const out = [];
     if (root instanceof TFolder) for (const c of root.children) {
       const fm = c instanceof TFile && c.extension === 'md' ? this.engine.fm(c) : null;
-      if (fm && fm.type === 'goal' && statusOf(fm) !== 'achieved') out.push(c);
+      if (fm && fm.type === 'goal' && statusOf(fm) !== 'achieved') out.push(/** @type {TFile} */ (c));
     }
     return out.sort((a, b) => a.basename.localeCompare(b.basename));
   }
+  /** @param {string} name @returns {Promise<TFile | null>} */
   pickGoal(name) {
     const goals = this.goalFiles();
     if (!goals.length) { new Notice('There are no open goals yet. Make the goal first, then promote this idea.'); return Promise.resolve(null); }
     return new Promise((resolve) => new GoalPickModal(this.app, goals, name, resolve).open());
   }
+  /** @param {string} question @param {string} [value] @returns {Promise<string | null>} */
   ask(question, value) { return new Promise((resolve) => new AskModal(this.app, question, value, resolve).open()); }
+  /** @param {string} title @param {string} text @param {string} okLabel @returns {Promise<boolean>} */
   confirmAction(title, text, okLabel) { return new Promise((resolve) => new ConfirmModal(this.app, title, text, okLabel, resolve).open()); }
 }
 
@@ -3077,7 +3505,14 @@ class ProjectsPlugin extends Plugin {
  * ========================================================================== */
 
 class Toast {
-  constructor() { this.el = null; this.timer = null; this.undo = null; }
+  constructor() {
+    /** @type {HTMLElement | null} */
+    this.el = null;
+    /** @type {number | null} */
+    this.timer = null;
+    /** @type {(() => Promise<unknown>) | null} */
+    this.undo = null;
+  }
   ensure() {
     if (this.el && this.el.isConnected) return;
     this.el = document.body.createDiv({ cls: 'a4pj-toast' });
@@ -3088,16 +3523,18 @@ class Toast {
       if (u) { try { await u(); } catch (e) { console.error('[LifeWorld] undo failed', e); new Notice('Could not undo that.'); } }
     });
   }
+  /** @param {string} message @param {(() => Promise<unknown>) | null} [undo] */
   show(message, undo) {
     this.ensure();
     this.msg.setText(message);
     this.undo = undo || null;
     this.btn.toggleClass('is-hidden', !undo);
     // Phone: sit above Obsidian's floating toolbar, measured, not guessed.
-    const nav = document.querySelector('.mobile-navbar');
-    if (nav && nav.offsetParent) { const top = nav.getBoundingClientRect().top; this.el.style.bottom = `${Math.max(12, Math.round(window.innerHeight - top + 12))}px`; }
-    else this.el.style.removeProperty('bottom');
-    this.el.addClass('is-on');
+    const nav = /** @type {HTMLElement | null} */ (document.querySelector('.mobile-navbar'));
+    const tel = /** @type {HTMLElement} */ (this.el);
+    if (nav && nav.offsetParent) { const top = nav.getBoundingClientRect().top; tel.style.bottom = `${Math.max(12, Math.round(window.innerHeight - top + 12))}px`; }
+    else tel.style.removeProperty('bottom');
+    tel.addClass('is-on');
     if (this.timer) window.clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.hide(), undo ? UNDO_MS : 1800);
   }
@@ -3110,11 +3547,15 @@ class Toast {
  * the popover: dev notes 2026-10-03)
  * ========================================================================== */
 
+/** @type {Set<Pop>} */
 const openPops = new Set();
 function closeAllPops() { for (const p of [...openPops]) p.close(); }
+/** @type {<K extends keyof HTMLElementTagNameMap>(parent: HTMLElement | null, tag: K, cls?: string | null, text?: string | null) => HTMLElementTagNameMap[K]} */
 const el = (parent, tag, cls, text) => { const e = parent ? parent.createEl(tag) : document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
+/** @typedef {{ narrow?: boolean, cls?: string, focus?: string, host?: HTMLElement | null, lift?: number, fit?: boolean, onClose?: () => void }} PopOpts */
 class Pop {
+  /** @param {HTMLElement} anchor @param {string | null} title @param {(box: HTMLElement, pop: Pop) => void} build @param {PopOpts} [opts] */
   constructor(anchor, title, build, opts) {
     const same = [...openPops].some((p) => p.anchor === anchor);
     closeAllPops();
@@ -3125,12 +3566,13 @@ class Pop {
     if (title) el(this.el, 'div', 'a4pj-pop-title', title);
     anchor.addClass('is-open');
     openPops.add(this);
-    this.away = (e) => { if (!this.el.contains(e.target) && !anchor.contains(e.target)) this.close(); };
+    /** @param {PointerEvent} e */
+    this.away = (e) => { if (!this.el.contains(/** @type {Node} */ (e.target)) && !anchor.contains(/** @type {Node} */ (e.target))) this.close(); };
     document.addEventListener('pointerdown', this.away, true);
     this.el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.close(); anchor.focus && anchor.focus(); } });
     build(this.el, this);
     this.place();
-    const first = this.el.querySelector(this.opts.focus || 'button, input');
+    const first = /** @type {HTMLElement | null} */ (this.el.querySelector(this.opts.focus || 'button, input'));
     if (first) first.focus({ preventScroll: true });
   }
   place() {
@@ -3163,13 +3605,16 @@ class Pop {
 }
 
 // Month date picker: quick picks, a month grid (keyboard too), a typed date.
+/** @param {HTMLElement} anchor @param {{ today: string, value?: string | null, title: string, onPick: (d: string | null) => void, allowClear?: boolean, note?: string, narrow?: boolean, host?: HTMLElement | null, lift?: number }} o */
 function openDatePicker(anchor, o) {
   const today = o.today;
   let month = (o.value || today).slice(0, 7);
   return new Pop(anchor, o.title, (box, pop) => {
     box.addClass('a4pj-dp');
+    /** @param {string | null} d */
     const pick = (d) => { pop.close(); o.onPick(d); };
     const q = el(box, 'div', 'a4pj-dp-quick');
+    /** @type {[string, string | null][]} */
     const quick = [['Today', today], ['Tomorrow', addDays(today, 1)], ['Next week', nextMonday(today)]];
     if (o.allowClear !== false) quick.push(['No date', null]);
     for (const [label, d] of quick) {
@@ -3177,6 +3622,7 @@ function openDatePicker(anchor, o) {
       b.addEventListener('click', () => pick(d));
     }
     const cal = el(box, 'div');
+    /** @param {string} [focusDay] */
     const draw = (focusDay) => {
       cal.empty();
       const head = el(cal, 'div', 'a4pj-mc-head');
@@ -3194,12 +3640,12 @@ function openDatePicker(anchor, o) {
         b.setAttr('aria-label', `${shortDay(d, today)}${d === today ? ' (today)' : ''}${d === o.value ? ' (current)' : ''}`);
         b.addEventListener('click', () => pick(d));
         b.addEventListener('keydown', (e) => {
-          const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+          const mv = /** @type {Record<string, number>} */ ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 })[e.key];
           if (!mv) return;
           e.preventDefault();
           const n = addDays(d, mv);
           if (n.slice(0, 7) !== month) { month = n.slice(0, 7); draw(n); }
-          const t = cal.querySelector(`[data-day="${n}"]`); if (t) t.focus();
+          const t = /** @type {HTMLElement | null} */ (cal.querySelector(`[data-day="${n}"]`)); if (t) t.focus();
         });
       }
     };
@@ -3230,6 +3676,7 @@ function openDatePicker(anchor, o) {
  * pinned at the bottom. */
 
 // The options for a task's Starts or Due picker.
+/** @param {ProjTask} t @param {string} key @param {string} today */
 function whenPickerOpts(t, key, today) {
   const due = key === 'due';
   return {
@@ -3244,6 +3691,8 @@ function whenPickerOpts(t, key, today) {
 // undefined (leave as it is). A time sets the half itself.
 // r.reminder: minutes before / null (none), from the picker's Reminder row;
 // left out (the typing box) = the default rule (GL-002 "Task reminders").
+/** @typedef {{ day: string, time?: string | null, half?: string | null, reminder?: number | null }} WhenPick */
+/** @param {TaskEngine} engine @param {{ path: string }} t @param {string} key @param {WhenPick | null} r */
 function saveWhen(engine, t, key, r) {
   const v = r ? whenValue(r.day, r.time) : null;
   const rem = r ? r.reminder : undefined;
@@ -3252,19 +3701,23 @@ function saveWhen(engine, t, key, r) {
 }
 // The reminder a save will leave: the task's own when it already rings (or
 // had one set), "At the time" when it gets its first time, else none.
+/** @param {ProjTask} t @param {string} key @param {WhenPick | null} r */
 function reminderAfter(t, key, r) {
   const rings = key === 'due' ? !t.recurrenceRaw : !!t.recurrenceRaw;
   if (!rings || !r || !r.time) return null;
   if (t.reminderSet != null) return t.reminderSet;
   return (key === 'due' ? t.dueTime : t.startTime) ? null : 0;
 }
+/** @type {Record<number, string>} */
 const REMINDER_LABEL = { 0: 'At the time', 5: '5 min', 15: '15 min', 30: '30 min', 60: '1 hour', 1440: '1 day' };
 // "Other" in the Reminder row: "45 min", "2 hours", "1h30m", "3 days", "90"
 // (minutes). -> minutes before, or null when it can't be read. Up to 30 days.
+/** @param {unknown} s */
 function parseReminderText(s) {
   const t = String(s || '').toLowerCase().replace(/\bbefore\b/g, ' ').replace(/\band\b/g, ' ').replace(/,/g, '.').trim();
   if (!t) return null;
   const re = /\s*(\d+(?:\.\d+)?)\s*(weeks?|wks?|w|days?|d|hours?|hrs?|h|minutes?|mins?|m)?\s*/y;
+  /** @type {Record<string, number>} */
   const unit = { w: 10080, d: 1440, h: 60, m: 1 };
   let i = 0; let total = 0;
   while (i < t.length) {
@@ -3277,24 +3730,31 @@ function parseReminderText(s) {
   total = Math.round(total);
   return total >= 0 && total <= 43200 ? total : null;
 }
+/** @param {ProjTask} t @param {string} key @param {WhenPick | null} r @param {string} today */
 function whenToast(t, key, r, today) {
   const lab = key === 'due' ? 'Due' : 'Starts';
   if (!r) return `${key === 'due' ? 'Due' : 'Start'} date${(key === 'due' ? t.dueTime : t.startTime) ? ' and time' : ''} removed`;
   return `${lab} ${shortDay(r.day, today)}${r.time ? `, ${timeText(r.time)}` : (key === 'due' && r.half ? `, ${halfWord(r.half)}` : '')}`;
 }
 
+/** @param {HTMLElement} anchor @param {ReturnType<typeof whenPickerOpts> & { onSave: (r: WhenPick | null) => void, narrow?: boolean, host?: HTMLElement | null, lift?: number }} o */
 function openWhenPicker(anchor, o) {
   const today = o.today;
   const due = o.kind === 'due';
+  /** @type {string | null} */
   let day = o.day || null;
+  /** @type {string | null} */
   let time = o.time || null;
   // Due: 'any' | 'am' | 'pm' | 'time'. Starts: 'any' (No time) | 'time'.
+  /** @type {string} */
   let choice = time ? 'time' : (due && (o.half === 'am' || o.half === 'pm') ? o.half : 'any');
   let month = (day || today).slice(0, 7);
   let folded = !!(o.narrow && day); // phone: the month folds to one line once a day is picked
+  /** @type {WhenRead | null} */
   let typedError = null;
   // Reminder row (reminder setup mockup): the stored choice; a task getting
   // its first time starts on "At the time". other: the Other box is open.
+  /** @type {number | null} */
   let rem = time ? (o.reminder === undefined ? null : o.reminder) : (o.reminder == null ? 0 : o.reminder);
   let other = rem != null && !Object.prototype.hasOwnProperty.call(REMINDER_LABEL, rem);
   let otherText = other ? reminderWords(rem).replace(/ before$/, '') : '';
@@ -3318,11 +3778,14 @@ function openWhenPicker(anchor, o) {
     // Cancel: close without saving, the same as Escape (2026-10-05).
     cn.addEventListener('click', () => { pop.close(); if (anchor.focus) anchor.focus(); });
 
+    /** @returns {string | null} */
     const half = () => (choice === 'time' ? halfOfTime(time) : (choice === 'am' || choice === 'pm' ? choice : null));
     // The reminder Save writes: minutes / null; undefined when the row is off (no time).
     const remNow = () => (!rsec || choice !== 'time' ? undefined : (other ? parseReminderText(otherText) : rem));
     const remBad = () => !!rsec && choice === 'time' && other && parseReminderText(otherText) == null;
+    /** @returns {WhenPick | null} */
     const state = () => (day ? { day, time: choice === 'time' ? time : null, half: choice === 'time' ? halfOfTime(time) : (due ? half() : null), reminder: remNow() } : null);
+    /** @type {HTMLElement | null} */
     let otherOut = null;
     const updPv = () => {
       pv.toggleClass('is-err', !!typedError);
@@ -3335,7 +3798,7 @@ function openWhenPicker(anchor, o) {
         otherOut.toggleClass('is-err', n == null && !!otherText.trim());
         otherOut.setText(n == null ? (otherText.trim() ? "Didn't catch that" : '') : (r && r.time ? `before = ${ringText(r.day, r.time, n)}` : ''));
       }
-      const tb = tsec.querySelector('[data-choice="time"]'); if (tb) tb.setText(choice === 'time' ? timeText(time) : 'Set a time');
+      const tb = /** @type {HTMLElement | null} */ (tsec.querySelector('[data-choice="time"]')); if (tb) tb.setText(choice === 'time' ? timeText(time) : 'Set a time');
     };
     const save = () => { const r = state(); if (!r || remBad()) return; pop.close(); o.onSave(r); };
 
@@ -3349,7 +3812,8 @@ function openWhenPicker(anchor, o) {
       const lab = el(rsec, 'div', 'a4pj-wp-lab a4pj-wp-remlab');
       setIcon(el(lab, 'span', 'a4pj-ic'), on ? 'bell' : 'bell-off'); lab.appendText('Reminder');
       const chips = el(rsec, 'div', 'a4pj-wp-chips'); chips.setAttr('role', 'radiogroup'); chips.setAttr('aria-label', 'Reminder');
-      const opts = [[null, 'None'], ...REMINDER_CHOICES.map((n) => [n, REMINDER_LABEL[n]])];
+      /** @type {[number | null, string][]} */
+      const opts = [[null, 'None'], ...REMINDER_CHOICES.map((n) => /** @type {[number, string]} */ ([n, REMINDER_LABEL[n]]))];
       for (const [n, label] of opts) {
         const sel = on && !other && rem === n;
         const b = el(chips, 'button', 'a4pj-wp-chip' + (sel ? ' is-on' : ''), label);
@@ -3359,7 +3823,7 @@ function openWhenPicker(anchor, o) {
       if (on) {
         const ob = el(chips, 'button', 'a4pj-wp-chip is-other' + (other ? ' is-on' : ''), 'Other…');
         ob.setAttr('role', 'radio'); ob.setAttr('aria-checked', String(other));
-        ob.addEventListener('click', () => { other = true; drawRem(); updPv(); const i = rsec.querySelector('.a4pj-wp-otherin'); if (i) i.focus(); });
+        ob.addEventListener('click', () => { other = true; drawRem(); updPv(); const i = /** @type {HTMLElement | null} */ (rsec.querySelector('.a4pj-wp-otherin')); if (i) i.focus(); });
       }
       if (on && other) {
         const ow = el(rsec, 'div', 'a4pj-wp-other');
@@ -3375,6 +3839,7 @@ function openWhenPicker(anchor, o) {
     };
     sv.addEventListener('click', save);
 
+    /** @param {string | null} [focusDay] */
     const drawTop = (focusDay) => {
       top.empty();
       if (folded && day) {
@@ -3385,6 +3850,7 @@ function openWhenPicker(anchor, o) {
         return;
       }
       const q = el(top, 'div', 'a4pj-dp-quick');
+      /** @type {[string, string | null][]} */
       const quick = [['Today', today], ['Tomorrow', addDays(today, 1)], ['Next week', nextMonday(today)]];
       if (o.allowClear !== false) quick.push(['No date', null]);
       for (const [label, d] of quick) {
@@ -3406,19 +3872,20 @@ function openWhenPicker(anchor, o) {
         b.setAttr('aria-label', `${shortDay(d, today)}${d === today ? ' (today)' : ''}${d === day ? ' (picked)' : ''}`);
         b.addEventListener('click', () => setDay(d, true));
         b.addEventListener('keydown', (e) => {
-          const mv = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+          const mv = /** @type {Record<string, number>} */ ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 })[e.key];
           if (!mv) return;
           e.preventDefault();
           const n = addDays(d, mv);
           if (n.slice(0, 7) !== month) { month = n.slice(0, 7); drawTop(n); }
-          const t = top.querySelector(`[data-day="${n}"]`); if (t) t.focus();
+          const t = /** @type {HTMLElement | null} */ (top.querySelector(`[data-day="${n}"]`)); if (t) t.focus();
         });
       }
-      if (focusDay) { const t = top.querySelector(`[data-day="${focusDay}"]`); if (t) t.focus({ preventScroll: true }); }
+      if (focusDay) { const t = /** @type {HTMLElement | null} */ (top.querySelector(`[data-day="${focusDay}"]`)); if (t) t.focus({ preventScroll: true }); }
       replace();
     };
     // The panel changes height (month folded or open, clock shown or not): keep it on screen.
     const replace = () => { if (pop.el && pop.el.isConnected && !pop.dead) pop.place(); };
+    /** @param {string} d @param {boolean} [keepFocus] */
     const setDay = (d, keepFocus) => {
       day = d; month = d.slice(0, 7); typedError = null;
       if (o.narrow) { folded = true; keepFocus = false; }
@@ -3427,6 +3894,7 @@ function openWhenPicker(anchor, o) {
     };
 
     // The clock: hour and minutes wheels, AM/PM buttons.
+    /** @type {{ focusCol: (i: number) => void } | null} */
     let wheel = null;
     const drawTime = () => {
       tsec.empty(); wheel = null;
@@ -3447,7 +3915,7 @@ function openWhenPicker(anchor, o) {
           if (k === 'time' && wheel) wheel.focusCol(0);
         });
       }
-      if (choice === 'time') wheel = clockWheel(tsec, time, (t) => { time = t; updPv(); }, save);
+      if (choice === 'time') wheel = clockWheel(tsec, /** @type {string} */ (time), (t) => { time = t; updPv(); }, save);
       drawRem();
       replace();
     };
@@ -3456,7 +3924,7 @@ function openWhenPicker(anchor, o) {
       if (!r) { typedError = null; updPv(); return; }
       if (r.error) { typedError = r; updPv(); return; }
       typedError = null;
-      day = r.day; month = day.slice(0, 7);
+      day = /** @type {string} */ (r.day); month = day.slice(0, 7);
       if (r.time) { time = r.time; choice = 'time'; } else if (r.half && due) choice = r.half; else if (!r.kept) choice = due && choice !== 'time' ? choice : 'any';
       drawTop(); drawTime(); updPv();
       if (r.ask) pv.setText(whenPreview({ ...state(), ask: true }, o.kind, today, o.repeating));
@@ -3468,19 +3936,24 @@ function openWhenPicker(anchor, o) {
 
 // Hour wheel 1-12, minutes wheel (steps of 5, plus `t`'s own minute so an
 // existing time is never rounded), AM / PM as two buttons. onChange('HH:MM').
+/** @param {HTMLElement} parent @param {string} t @param {(t: string) => void} onChange @param {() => void} onEnter */
 function clockWheel(parent, t, onChange, onEnter) {
   const [H, M] = t.split(':').map(Number);
   const st = { h: H % 12 === 0 ? 12 : H % 12, m: M, pm: H >= 12 };
   const emit = () => onChange(`${pad2((st.h % 12) + (st.pm ? 12 : 0))}:${pad2(st.m)}`);
   const box = el(parent, 'div', 'a4pj-wp-wheel');
   el(box, 'div', 'a4pj-wp-band');
+  /** @type {{ el: HTMLElement, step: (n: number) => void, focus: () => void, init?: () => void }[]} */
   const parts = [];
+  /** @param {HTMLElement} c @param {HTMLElement} it @param {boolean} smooth */
   const center = (c, it, smooth) => c.scrollTo({ top: it.offsetTop - c.clientHeight / 2 + it.offsetHeight / 2, behavior: smooth ? 'smooth' : 'auto' });
+  /** @param {number[]} values @param {number} cur @param {string} label @param {'h' | 'm'} key @param {(v: number) => string} fmt */
   const column = (values, cur, label, key, fmt) => {
     const c = el(box, 'div', 'a4pj-wp-col'); c.setAttr('role', 'listbox'); c.setAttr('aria-label', label); c.tabIndex = 0;
     el(c, 'div', 'a4pj-wp-pad');
     const items = values.map((v) => { const it = el(c, 'div', 'a4pj-wp-it' + (v === cur ? ' is-sel' : ''), fmt(v)); it.dataset.v = String(v); it.setAttr('role', 'option'); it.setAttr('aria-selected', String(v === cur)); return it; });
     el(c, 'div', 'a4pj-wp-pad');
+    /** @param {HTMLElement} it @param {boolean} [smooth] */
     const pick = (it, smooth) => {
       items.forEach((x) => { x.toggleClass('is-sel', x === it); x.setAttr('aria-selected', String(x === it)); });
       st[key] = Number(it.dataset.v); emit();
@@ -3492,11 +3965,15 @@ function clockWheel(parent, t, onChange, onEnter) {
       if (quiet) return;
       window.clearTimeout(tmr);
       tmr = window.setTimeout(() => {
-        const mid = c.scrollTop + c.clientHeight / 2; let best = null; let bd = 1e9;
+        const mid = c.scrollTop + c.clientHeight / 2;
+        /** @type {HTMLElement | null} */
+        let best = null;
+        let bd = 1e9;
         for (const it of items) { const d = Math.abs(it.offsetTop + it.offsetHeight / 2 - mid); if (d < bd) { bd = d; best = it; } }
         if (best && !best.hasClass('is-sel')) pick(best);
       }, 120);
     });
+    /** @param {number} n */
     const step = (n) => {
       const i = items.findIndex((x) => x.hasClass('is-sel'));
       const j = (i + n + items.length) % items.length;
@@ -3513,12 +3990,13 @@ function clockWheel(parent, t, onChange, onEnter) {
   el(box, 'div', 'a4pj-wp-colon', ':');
   column(mins, st.m, 'Minutes', 'm', pad2);
   const ap = el(box, 'div', 'a4pj-wp-ampm'); ap.setAttr('role', 'radiogroup'); ap.setAttr('aria-label', 'AM or PM');
-  const abtn = [['AM', false], ['PM', true]].map(([lab, pm]) => {
+  const abtn = /** @type {[string, boolean][]} */ ([['AM', false], ['PM', true]]).map(([lab, pm]) => {
     const b = el(ap, 'button', st.pm === pm ? 'is-on' : '', lab);
     b.setAttr('role', 'radio'); b.setAttr('aria-checked', String(st.pm === pm)); b.tabIndex = st.pm === pm ? 0 : -1;
     b.addEventListener('click', () => setPm(pm, true));
     return b;
   });
+  /** @param {boolean} pm @param {boolean} [focus] */
   const setPm = (pm, focus) => {
     st.pm = pm;
     abtn.forEach((b, i) => { const on = (i === 1) === pm; b.toggleClass('is-on', on); b.setAttr('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
@@ -3526,14 +4004,14 @@ function clockWheel(parent, t, onChange, onEnter) {
   };
   parts.push({ el: ap, step: () => setPm(!st.pm, true), focus: () => abtn[st.pm ? 1 : 0].focus() });
   box.addEventListener('keydown', (e) => {
-    const i = parts.findIndex((p) => p.el === e.target || p.el.contains(e.target));
+    const i = parts.findIndex((p) => p.el === e.target || p.el.contains(/** @type {Node} */ (e.target)));
     if (i < 0) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); parts[i].step(e.key === 'ArrowUp' ? -1 : 1); }
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); const j = i + (e.key === 'ArrowLeft' ? -1 : 1); if (parts[j]) parts[j].focus(); }
     else if (e.key === 'Enter') { e.preventDefault(); onEnter(); }
   });
   window.requestAnimationFrame(() => parts.forEach((p) => p.init && p.init()));
-  return { focusCol: (i) => { if (parts[i]) parts[i].focus(); } };
+  return { focusCol: (/** @type {number} */ i) => { if (parts[i]) parts[i].focus(); } };
 }
 
 /* ========================================================================== *
@@ -3546,6 +4024,7 @@ function clockWheel(parent, t, onChange, onEnter) {
  * theme it follows the accent chosen in Today (same shades as Today), and
  * Ink blue when Today is not installed; "Follow Obsidian accent" leaves both
  * unset so the CSS falls back to Obsidian's accent. */
+/** @type {Record<string, [string, string]>} */
 const CARD_ACCENTS = {
   orange: ['#d43f16', '#ff5a2d'],
   blue: ['#1d4ed8', '#86aefc'],
@@ -3553,17 +4032,20 @@ const CARD_ACCENTS = {
   plum: ['#7a2e8a', '#d6a1e3'],
   amber: ['#8a5a00', '#efb54a'],
 };
+/** @param {import('obsidian').App} app */
 function cardAccentId(app) {
   const td = partOf(app, 'a4-today');
   const id = td && td.look && td.look.accent;
   return typeof id === 'string' && (id === 'accent' || CARD_ACCENTS[id]) ? id : 'blue';
 }
+/** @param {HTMLElement} card @param {import('obsidian').App} app */
 function setCardAccent(card, app) {
   const pair = CARD_ACCENTS[cardAccentId(app)];
   if (pair) { card.style.setProperty('--pj-acc-l', pair[0]); card.style.setProperty('--pj-acc-d', pair[1]); }
   else { card.style.removeProperty('--pj-acc-l'); card.style.removeProperty('--pj-acc-d'); }
 }
 
+/** @param {HTMLElement} parent @param {unknown} value @param {EngineCfg} cfg */
 function priorityChip(parent, value, cfg) {
   const table = [...cfg.priorities].sort((a, b) => a.weight - b.weight);
   const i = table.findIndex((p) => p.value === String(value));
@@ -3577,6 +4059,7 @@ function priorityChip(parent, value, cfg) {
   c.appendText(p.label);
   return c;
 }
+/** @param {HTMLElement} parent @param {string | null} cls @param {string} text @param {string | null} icon @param {((c: HTMLElement) => void) | null} [onClick] @param {string} [label] */
 function iconChip(parent, cls, text, icon, onClick, label) {
   const c = el(parent, 'span', `a4pj-chip ${cls || ''}`.trim());
   if (icon) setIcon(el(c, 'span', 'a4pj-ic'), icon);
@@ -3590,7 +4073,9 @@ function iconChip(parent, cls, text, icon, onClick, label) {
   return c;
 }
 // The "Blocked" marker: a lock chip; hover names the blockers, a click or tap lists them.
+/** @param {{ title: string }[] | null | undefined} freed */
 function unblocksText(freed) { return freed && freed.length ? ` · unblocks ${freed.length === 1 ? freed[0].title : `${freed.length} tasks`}` : ''; }
+/** @param {HTMLElement} parent @param {{ path: string, title: string }[]} blockers @param {(path: string) => void} open @param {PopOpts} [popOpts] */
 function lockChip(parent, blockers, open, popOpts) {
   const names = blockers.map((b) => b.title).join(', ');
   return iconChip(parent, 'a4pj-lock', blockers.length > 1 ? `Blocked · ${blockers.length}` : 'Blocked', 'lock', (c) => {
@@ -3600,12 +4085,13 @@ function lockChip(parent, blockers, open, popOpts) {
     }, popOpts || {});
   }, `Blocked by: ${names}`);
 }
+/** @param {HTMLElement} parent @param {number} done @param {number} total @param {boolean} [big] */
 function ring(parent, done, total, big) {
   const w = el(parent, 'div', 'a4pj-ring' + (big ? ' is-big' : ''));
   const r = 18; const c = 2 * Math.PI * r; const f = total ? done / total : 0;
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 46 46'); svg.setAttribute('aria-hidden', 'true');
-  for (const [cls, dash] of [['a4pj-ring-bg', null], ['a4pj-ring-fg', `${(c * f).toFixed(1)} ${c.toFixed(1)}`]]) {
+  for (const [cls, dash] of /** @type {[string, string | null][]} */ ([['a4pj-ring-bg', null], ['a4pj-ring-fg', `${(c * f).toFixed(1)} ${c.toFixed(1)}`]])) {
     const ci = document.createElementNS(NS, 'circle');
     for (const [k, v] of [['class', cls], ['cx', '23'], ['cy', '23'], ['r', String(r)], ['fill', 'none'], ['stroke-width', '5']]) ci.setAttribute(k, v);
     if (dash) { ci.setAttribute('stroke-linecap', 'round'); ci.setAttribute('stroke-dasharray', dash); }
@@ -3622,50 +4108,76 @@ function ring(parent, done, total, big) {
  * The Projects view: overview, project page, Inbox
  * ========================================================================== */
 
+/** @typedef {{ showProject?: boolean, inProject?: boolean, inDone?: boolean, inbox?: boolean }} RowOpts */
+/** @typedef {{ mtime: number | null | undefined, line: string, reading?: number | null, targets?: Set<HTMLElement> | null, refills?: Set<() => void> | null }} CardDesc */
 class ProjectsView extends ItemView {
+  // Set on every render (no value before the first one).
+  /** @type {EngineCfg} */ cfg;
+  /** @type {string} */ today;
+  /** @type {string} */ renderedToday;
+  /** @type {ProjTask[]} */ tasks;
+  /** @type {ProjNote[]} */ projects;
+  /** @type {AreaNote[]} */ areas;
+  /** @type {(ProjNote | AreaNote)[]} */ notes;
+  /** @type {number | null | undefined} */ timer;
+  /** @type {ResizeObserver | undefined} */ ro;
+  /** @type {boolean | undefined} */ focusAdd;
+
+  /** @param {import('obsidian').WorkspaceLeaf} leaf @param {ProjectsPlugin} plugin */
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
+    /** @type {{ page: string, project: string | null, focus: string | null }} */
     this.state = { page: 'overview', project: null, focus: null };
     this.filter = 'all';
     this.query = '';
+    /** @type {Set<string>} */
     this.expanded = new Set();
+    /** @type {Map<string, number>} */
     this.justDone = new Map(); // path -> timer: a ticked row stays in place, struck through, for the Undo time
     this.pending = false;
     this.narrow = false;
+    /** @type {Component | null} */
     this.bodyComp = null;
     this.tab = 'projects'; // board tab: projects / ideas / cold / activity
+    /** @type {string | null} */
     this.area = null;      // board Work / Personal button (null = both)
+    /** @type {Map<string, CardDesc>} */
     this.descs = new Map(); // path -> { mtime, line }: card descriptions, read once per change
+    /** @type {string | null} */
     this.dragPath = null;
   }
 
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? s.project.split('/').pop().replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : s.focus ? `${SPHERE_LABEL[s.focus]} projects` : 'Projects'; }
+  getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? /** @type {string} */ (s.project.split('/').pop()).replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : s.focus ? `${SPHERE_LABEL[s.focus]} projects` : 'Projects'; }
   getIcon() { return 'folder-kanban'; }
   getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus }; }
+  /** @param {unknown} state @param {import('obsidian').ViewStateResult} result */
   async setState(state, result) {
-    const s = state && typeof state === 'object' ? state : {};
-    const page = ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
+    const s = /** @type {Fm} */ (state && typeof state === 'object' ? state : {});
+    const page = typeof s.page === 'string' && ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
     const focus = s.focus === 'work' || s.focus === 'personal' ? s.focus : null;
     const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
     this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
     this.focusAdd = !!s.focusAdd;
-    if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; this.noteFor = null; this.showAllNotes = null; }
+    if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
     this.render(true, changed);
     await super.setState(state, result);
     // The tab title and the header strip follow the list. shortcut: leaf.updateHeader and the view's
     // titleEl are Obsidian internals (not in obsidian.d.ts 1.14.4, read in its app code); no public call
     // redraws a tab title. A throwing one is logged, the tab still opens. Upgrade if Obsidian adds one.
     // Each guarded alone, so one failing still lets the other run (review p2-s8 #5).
-    try { if (this.leaf && typeof this.leaf.updateHeader === 'function') this.leaf.updateHeader(); } catch (e) { console.error('LifeWorld: the Projects tab title did not update', e); }
-    try { if (this.titleEl && this.titleEl.setText) this.titleEl.setText(this.getDisplayText()); } catch (e) { console.error('LifeWorld: the Projects header title did not update', e); }
+    const leaf = /** @type {{ updateHeader?: () => void }} */ (this.leaf);
+    try { if (leaf && typeof leaf.updateHeader === 'function') leaf.updateHeader(); } catch (e) { console.error('LifeWorld: the Projects tab title did not update', e); }
+    const titleEl = /** @type {{ titleEl?: HTMLElement }} */ (/** @type {unknown} */ (this)).titleEl;
+    try { if (titleEl && titleEl.setText) titleEl.setText(this.getDisplayText()); } catch (e) { console.error('LifeWorld: the Projects header title did not update', e); }
   }
 
   async onOpen() {
     this.contentEl.empty();
     this.contentEl.addClass('a4pj-root');
     // Tasks and projects (Projects reads no calendar or weather note).
+    /** @param {unknown} p */
     const relevant = (p) => typeof p === 'string' && (inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/'));
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
@@ -3689,11 +4201,12 @@ class ProjectsView extends ItemView {
 
   scheduleRender() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.render(); }, 250); }
 
+  /** @param {Record<string, unknown>} state */
   go(state) { this.plugin.openProjects(state); }
 
   // Phone toolbar overlap (same check as the Planner).
   navbarOverlap() {
-    const nav = document.querySelector('.mobile-navbar');
+    const nav = /** @type {HTMLElement | null} */ (document.querySelector('.mobile-navbar'));
     if (!nav || !nav.offsetParent) return 0;
     const nb = nav.getBoundingClientRect(); const rb = this.contentEl.getBoundingClientRect();
     const over = Math.round(rb.bottom - nb.top);
@@ -3701,8 +4214,9 @@ class ProjectsView extends ItemView {
   }
   popOpts() { return { narrow: this.narrow, host: this.contentEl, lift: this.navbarOverlap() }; }
 
+  /** @param {boolean} [force] @param {boolean} [resetScroll] */
   render(force, resetScroll) {
-    const active = document.activeElement;
+    const active = /** @type {HTMLInputElement | null} */ (document.activeElement);
     const typing = active && this.contentEl.contains(active) && active.tagName === 'INPUT' && active.value;
     if (!force && (openPops.size || typing)) { this.pending = true; return; }
     this.pending = false;
@@ -3735,10 +4249,12 @@ class ProjectsView extends ItemView {
       el(page, 'div', 'a4pj-empty', 'this page could not be drawn');
     }
     sc.scrollTop = scroll;
-    if (focusKey) { const f = root.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`); if (f) { f.focus({ preventScroll: true }); if (f.tagName === 'INPUT') { const v = f.value; f.value = ''; f.value = v; } } }
-    if (this.focusAdd) { this.focusAdd = false; const i = root.querySelector('.a4pj-qa input'); if (i) i.focus(); }
+    if (focusKey) { const f = /** @type {HTMLInputElement | null} */ (root.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`)); if (f) { f.focus({ preventScroll: true }); if (f.tagName === 'INPUT') { const v = f.value; f.value = ''; f.value = v; } } }
+    if (this.focusAdd) { this.focusAdd = false; const i = /** @type {HTMLElement | null} */ (root.querySelector('.a4pj-qa input')); if (i) i.focus(); }
   }
 
+  /** @typedef {{ label: string, cls?: string, icon?: string, aria?: string, run: (b: HTMLElement) => unknown }} HeadAction */
+  /** @param {HTMLElement} page @param {[string, (() => void) | null][]} crumbs @param {string} title @param {(HeadAction | null | false)[]} [actions] */
   head(page, crumbs, title, actions) {
     const head = el(page, 'div', 'a4pj-head');
     const l = el(head, 'div', 'a4pj-head-l');
@@ -3755,6 +4271,7 @@ class ProjectsView extends ItemView {
 
   /* ---- overview ---------------------------------------------------------- */
 
+  /** @param {HTMLElement} page */
   renderOverview(page) {
     const cfg = this.cfg; const today = this.today;
     const inbox = this.tasks.filter((t) => isInboxTask(t, cfg));
@@ -3767,7 +4284,8 @@ class ProjectsView extends ItemView {
     if (tasksKind && this.tab !== 'activity') this.tab = 'projects'; // Ideas and Cold Storage are for projects only
     const board = !areasKind && (tasksKind || ui.view === 'board');
     // Read settings at click time: a Sync reload swaps the settings object under this page.
-    const pick = async (key, k) => { const u = this.plugin.settings.ui; if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
+    /** @param {'kind' | 'view'} key @param {string} k */
+    const pick = async (key, k) => { const u = /** @type {Record<string, unknown>} */ (this.plugin.settings.ui); if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
     this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [
@@ -3781,7 +4299,8 @@ class ProjectsView extends ItemView {
           : { label: '+ Add area', cls: 'is-primary', run: () => this.plugin.addArea(sp) },
     ]);
     // Areas / Projects / Tasks (Areas first, owner request 2026-10-19), then List / Board (Projects only: Tasks is a board).
-    const act = page.querySelector('.a4pj-actions');
+    const act = /** @type {HTMLElement} */ (page.querySelector('.a4pj-actions'));
+    /** @type {['kind' | 'view', string, [string, string][]][]} */
     const switches = [['kind', 'Show', [['areas', 'Areas'], ['projects', 'Projects'], ['tasks', 'Tasks']]]];
     if (ui.kind === 'projects' && !side) switches.push(['view', 'View', [['list', 'List'], ['board', 'Board']]]);
     for (const [key, name, opts] of switches.reverse()) {
@@ -3816,6 +4335,7 @@ class ProjectsView extends ItemView {
     this.renderLists(lists);
   }
 
+  /** @param {HTMLElement} host */
   renderLists(host) {
     host.empty();
     const cfg = this.cfg; const today = this.today;
@@ -3850,6 +4370,7 @@ class ProjectsView extends ItemView {
   }
 
   // The Areas heading and cards: top of Projects > List, and the whole Areas page.
+  /** @param {HTMLElement} host @param {AreaNote[]} areas */
   areaSection(host, areas) {
     if (!areas.length) return false;
     const sec = el(host, 'div', 'a4pj-sphere'); sec.dataset.sphere = 'areas';
@@ -3859,6 +4380,7 @@ class ProjectsView extends ItemView {
     return true;
   }
 
+  /** @param {HTMLElement} grid @param {ProjNote} p @param {ReturnType<typeof projectStats>} st @param {{ inArea?: boolean }} [o] */
   projectCard(grid, p, st, o = {}) {
     const c = el(grid, 'div', 'a4pj-pcard' + (p.status === 'active' ? '' : ' is-dim'));
     c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `card:${p.path}`;
@@ -3882,6 +4404,7 @@ class ProjectsView extends ItemView {
   }
 
   // Same shape as a project card, a stack icon where the ring would be (mockup choice 1 A).
+  /** @param {HTMLElement} grid @param {AreaNote} a @param {ReturnType<typeof areaStats>} st */
   areaCard(grid, a, st) {
     const c = el(grid, 'div', 'a4pj-pcard is-area');
     c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open the area ${a.name}`); c.dataset.focus = `card:${a.path}`;
@@ -3907,6 +4430,7 @@ class ProjectsView extends ItemView {
   /* ---- projects board (spec 5, 6, 13; mockup approved 2026-10-13) ---------- */
 
   // Tab counts are full totals, whatever area is chosen.
+  /** @param {HTMLElement} page @param {[string, string, number?][]} list */
   boardTabs(page, list) {
     const tabs = el(page, 'div', 'a4pj-tabs'); tabs.setAttr('role', 'tablist');
     for (const [k, l, n] of list) {
@@ -3917,6 +4441,7 @@ class ProjectsView extends ItemView {
     }
   }
 
+  /** @param {HTMLElement} page */
   renderBoard(page) {
     this.boardTabs(page, [['projects', 'Projects', this.projects.filter((p) => onBoard(p)).length], ['ideas', 'Ideas', this.projects.filter((p) => p.status === 'idea').length],
       ['cold', 'Cold Storage', this.projects.filter((p) => p.status === 'cold-storage').length], ['activity', 'Activity']]);
@@ -3929,6 +4454,7 @@ class ProjectsView extends ItemView {
 
   // Tasks board (spec 14, 15): Tasks and Activity tabs, the same area buttons,
   // tiles, search, columns, Move and drag as the projects board.
+  /** @param {HTMLElement} page */
   renderTaskBoard(page) {
     this.boardTabs(page, [['projects', 'Tasks', taskBoardRows(this.tasks, this.notes, this.cfg).length], ['activity', 'Activity']]);
     if (this.tab === 'activity') { this.renderActivity(page); return; }
@@ -3936,6 +4462,7 @@ class ProjectsView extends ItemView {
     this.boardFrame(page, 'Find a task', 'Search task or project name', (tiles, board) => this.fillTaskBoard(tiles, board));
   }
 
+  /** @param {HTMLElement} page @param {string} label @param {string} placeholder @param {(tiles: HTMLElement, board: HTMLElement, refill: () => void) => void} fillWith */
   boardFrame(page, label, placeholder, fillWith) {
     const tiles = el(page, 'div', 'a4pj-tiles');
     const find = el(page, 'label', 'a4pj-bfind');
@@ -3951,13 +4478,14 @@ class ProjectsView extends ItemView {
     fill();
   }
 
+  /** @param {HTMLElement} tiles @param {HTMLElement} board @param {() => void} refill */
   fillBoard(tiles, board, refill) {
     tiles.empty(); board.empty();
     const cfg = this.cfg; const today = this.today;
     const shown = this.projects.filter((p) => onBoard(p))
       .map((p) => ({ p, st: projectStats(p, this.tasks, today, cfg) }))
       .filter(({ p, st }) => onBoard(p, this.area, this.query, [this.descOf(p, null, refill), st.next && st.next.title]))
-      .sort((a, b) => b.p.mtime - a.p.mtime || a.p.name.localeCompare(b.p.name));
+      .sort((a, b) => /** @type {number} */ (b.p.mtime) - /** @type {number} */ (a.p.mtime) || a.p.name.localeCompare(b.p.name));
     for (const k of BOARD_COLUMNS) {
       const items = shown.filter((x) => x.p.status === k);
       const list = this.boardColumn(tiles, board, k, COLUMN_LABEL[k], COLUMN_SUB[k], items.length, 'Drop a project here', (path) => this.dropOn(path, k));
@@ -3966,6 +4494,7 @@ class ProjectsView extends ItemView {
   }
 
   // One column with its tile; returns the card list. `n` is the full count.
+  /** @param {HTMLElement} tiles @param {HTMLElement} board @param {string} k @param {string} label @param {string} sub @param {number} n @param {string} dropText @param {(path: string) => void} onDrop */
   boardColumn(tiles, board, k, label, sub, n, dropText, onDrop) {
     const t = el(tiles, 'button', 'a4pj-tile'); t.dataset.col = k;
     el(t, 'b', null, String(n)); el(t, 'span', null, label);
@@ -3976,11 +4505,12 @@ class ProjectsView extends ItemView {
     const list = el(col, 'div', 'a4pj-cards');
     if (!n) el(list, 'div', this.query ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : dropText);
     col.addEventListener('dragover', (e) => { if (!this.dragPath) return; e.preventDefault(); col.addClass('is-drop'); });
-    col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.removeClass('is-drop'); });
+    col.addEventListener('dragleave', (e) => { if (!col.contains(/** @type {Node | null} */ (e.relatedTarget))) col.removeClass('is-drop'); });
     col.addEventListener('drop', (e) => { col.removeClass('is-drop'); if (!this.dragPath) return; e.preventDefault(); onDrop(this.dragPath); });
     return list;
   }
 
+  /** @param {HTMLElement} tiles @param {HTMLElement} board */
   fillTaskBoard(tiles, board) {
     tiles.empty(); board.empty();
     const cfg = this.cfg; const today = this.today;
@@ -3995,6 +4525,7 @@ class ProjectsView extends ItemView {
   }
 
   // Same rules as dropOn: same column makes no call; the board redraws from the notes.
+  /** @param {string} path @param {string} column */
   dropTask(path, column) {
     this.dragPath = null;
     const t = this.tasks.find((x) => x.path === path);
@@ -4003,12 +4534,13 @@ class ProjectsView extends ItemView {
   }
 
   // Desktop drag; phones use the Move menu (spec 18).
+  /** @param {HTMLElement} c @param {string} path @param {string} name */
   draggable(c, path, name) {
     if (Platform.isMobile) return;
     c.draggable = true;
     c.addEventListener('dragstart', (e) => {
       this.dragPath = path;
-      const a = document.activeElement; if (a && a.tagName === 'INPUT' && this.contentEl.contains(a)) a.blur(); // or the drop's redraw waits on the search box
+      const a = /** @type {HTMLElement | null} */ (document.activeElement); if (a && a.tagName === 'INPUT' && this.contentEl.contains(a)) a.blur(); // or the drop's redraw waits on the search box
       if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', name); }
       c.addClass('is-dragging');
     });
@@ -4018,6 +4550,7 @@ class ProjectsView extends ItemView {
   // Task card (spec 15): name, project with its area tag, due date (red when
   // overdue; a repeating task shows how it repeats), High or Low priority. An archived task (finished and filed away)
   // has no Move: no existing action takes it out of the archive.
+  /** @param {HTMLElement} host @param {BoardRow} row */
   taskCard(host, { t, p, col }) {
     const today = this.today;
     const c = el(host, 'div', 'a4pj-bcard');
@@ -4030,20 +4563,21 @@ class ProjectsView extends ItemView {
     if (p && p.areaName) el(pills, 'span', 'a4pj-pill is-proj', p.areaName);
     if (t.archived) el(pills, 'span', 'a4pj-pill is-proj', 'Archived');
     // The List's rule: a repeating task is never overdue and shows how it repeats, not its old due date.
-    const late = !t.recurrenceRaw && !!t.due && t.due < today && ['open', 'in-progress', 'blocked'].includes(col);
+    const late = !t.recurrenceRaw && !!t.due && t.due < today && ['open', 'in-progress', 'blocked'].includes(/** @type {string} */ (col));
     // Own line under the chips: beside them it wrapped and clipped in narrow columns.
     el(c, 'div', 'a4pj-bwhen' + (late ? ' is-late' : ''), t.recurrenceRaw ? repeatWords(t.recurrenceRaw) : t.due ? `${late ? 'Overdue' : 'Due'} ${shortDay(t.due, today)}` : 'No due date');
     el(c, 'div', 'a4pj-btitle', plainLine(t.title));
     // Normal is the default, so only High and Low get a tag (mockup).
     if (t.priority === 'high' || t.priority === 'low') el(el(c, 'div', 'a4pj-by'), 'span', `a4pj-pill is-${t.priority}`, t.priority === 'high' ? 'High priority' : 'Low priority');
     const acts = el(c, 'div', 'a4pj-bacts');
-    if (!t.archived) { const mv = el(acts, 'button', null, 'Move'); mv.addEventListener('click', () => this.taskMoveMenu(mv, t, col)); }
+    if (!t.archived) { const mv = el(acts, 'button', null, 'Move'); mv.addEventListener('click', () => this.taskMoveMenu(mv, t, /** @type {string} */ (col))); }
     const open = () => this.plugin.openFile(t.path); // as the List opens a task
     el(acts, 'button', null, 'Edit').addEventListener('click', open);
-    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('click', (e) => { if (!/** @type {HTMLElement} */ (e.target).closest('button')) open(); });
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
   }
 
+  /** @param {HTMLElement} anchor @param {ProjTask} t @param {string} col */
   taskMoveMenu(anchor, t, col) {
     const m = new Menu();
     for (const k of taskColumns(this.cfg)) m.addItem((i) => i.setTitle(TASK_COLUMN_LABEL[k] + (k === col ? ' (here now)' : '')).setDisabled(k === col).onClick(() => this.plugin.moveTask(t, k)));
@@ -4051,6 +4585,7 @@ class ProjectsView extends ItemView {
     m.showAtPosition({ x: r.left, y: r.bottom });
   }
 
+  /** @param {HTMLElement} page */
   areaButtons(page) {
     const areas = el(page, 'div', 'a4pj-areas'); areas.setAttr('role', 'group'); areas.setAttr('aria-label', 'Work or personal');
     for (const k of ['work', 'personal']) {
@@ -4062,12 +4597,14 @@ class ProjectsView extends ItemView {
 
   // Ideas and Cold Storage (spec 8, 11, 12): a heading, one line, cards two across.
   // No search on either; Cold Storage has no area buttons (mockup).
+  /** @param {HTMLElement} page @param {string} title @param {string} note @param {number} [count] */
   shelf(page, title, note, count) {
     const hd = el(page, 'div', 'a4pj-sechead'); el(hd, 'h2', null, title);
     if (count != null) el(hd, 'span', 'a4pj-badge', String(count));
     el(page, 'p', 'a4pj-secnote', note);
     return el(page, 'div', 'a4pj-shelf');
   }
+  /** @param {HTMLElement} grid @param {ProjNote} p @param {string[]} [pills] */
   shelfCard(grid, p, pills) {
     const c = el(grid, 'div', 'a4pj-bcard');
     c.tabIndex = 0; c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `scard:${p.path}`;
@@ -4078,14 +4615,15 @@ class ProjectsView extends ItemView {
     el(c, 'div', 'a4pj-btitle', p.name);
     this.descOf(p, el(c, 'div', 'a4pj-bdesc'));
     const open = () => this.go({ page: 'project', project: p.path }); // as on the board
-    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('click', (e) => { if (!/** @type {HTMLElement} */ (e.target).closest('button')) open(); });
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
-    return { c, top, sec: (label, text, go) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); el(s, 'span', 'a4pj-btext', plainLine(text)); } };
+    return { c, top, sec: (/** @type {string} */ label, /** @type {unknown} */ text, /** @type {boolean} */ go = false) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); el(s, 'span', 'a4pj-btext', plainLine(text)); } };
   }
+  /** @param {HTMLElement} page */
   renderIdeas(page) {
     const grid = this.shelf(page, 'Idea inbox', 'Keep rough thoughts here. Promote one only when it deserves a place on the project board.');
     const list = this.projects.filter((p) => p.status === 'idea' && (!this.area || p.sphere === this.area))
-      .sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+      .sort((a, b) => /** @type {number} */ (b.mtime) - /** @type {number} */ (a.mtime) || a.name.localeCompare(b.name));
     if (!list.length) el(grid, 'div', 'a4pj-empty', 'no ideas here yet');
     for (const p of list) {
       const { c, sec } = this.shelfCard(grid, p);
@@ -4096,8 +4634,9 @@ class ProjectsView extends ItemView {
       el(btns, 'button', 'a4pj-btn is-outline', 'Promote to project').addEventListener('click', () => this.plugin.promoteIdea(p.path));
     }
   }
+  /** @param {HTMLElement} page */
   renderCold(page) {
-    const list = this.projects.filter((p) => p.status === 'cold-storage').sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+    const list = this.projects.filter((p) => p.status === 'cold-storage').sort((a, b) => /** @type {number} */ (b.mtime) - /** @type {number} */ (a.mtime) || a.name.localeCompare(b.name));
     const grid = this.shelf(page, 'Cold Storage', 'Projects you are not continuing right now, kept here until you want them back.', list.length);
     if (!list.length) el(grid, 'div', 'a4pj-empty', 'nothing in Cold Storage');
     for (const p of list) {
@@ -4116,6 +4655,7 @@ class ProjectsView extends ItemView {
 
   // Same column: no call at all. Otherwise moveProject; a refusal or failed write
   // shows its notice and the card stays put (the board only redraws from the notes).
+  /** @param {string} path @param {string} column */
   dropOn(path, column) {
     this.dragPath = null;
     const p = this.projects.find((x) => x.path === path);
@@ -4127,6 +4667,7 @@ class ProjectsView extends ItemView {
   // Read for hidden cards too (search reads it); until then the old line stands in,
   // and a search re-runs when the new one lands. Draws that ask while a read is
   // pending join it (one read; every waiting card filled, every waiting search re-run).
+  /** @param {ProjNote} p @param {HTMLElement | null} target @param {() => void} [refill] */
   descOf(p, target, refill) {
     let d = this.descs.get(p.path);
     if (d && d.mtime === p.mtime) { if (target) target.setText(d.line); return d.line; }
@@ -4139,17 +4680,18 @@ class ProjectsView extends ItemView {
       d.reading = mt; d.targets = new Set(); d.refills = new Set();
       this.app.vault.cachedRead(f).then((text) => {
         if (d.reading !== mt) return; // a newer change is being read
-        const line = firstBodyLine(text), targets = d.targets, again = d.refills;
+        const line = firstBodyLine(text), targets = /** @type {Set<HTMLElement>} */ (d.targets), again = /** @type {Set<() => void>} */ (d.refills);
         Object.assign(d, { mtime: mt, line, reading: null, targets: null, refills: null });
         for (const t of targets) t.setText(line);
         if (this.query && line !== old) for (const f of again) f();
       }).catch(() => { if (d.reading === mt) Object.assign(d, { reading: null, targets: null, refills: null }); });
     }
-    if (target) d.targets.add(target);
-    if (refill) d.refills.add(refill);
+    if (target && d.targets) d.targets.add(target);
+    if (refill && d.refills) d.refills.add(refill);
     return d.line;
   }
 
+  /** @param {HTMLElement} host @param {ProjNote} p @param {ReturnType<typeof projectStats>} st */
   boardCard(host, p, st) {
     const c = el(host, 'div', 'a4pj-bcard');
     c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `bcard:${p.path}`;
@@ -4161,6 +4703,7 @@ class ProjectsView extends ItemView {
     el(top, 'span', 'a4pj-bwhen', p.mtime ? stampText(p.mtime) : '');
     el(c, 'div', 'a4pj-btitle', p.name);
     this.descOf(p, el(c, 'div', 'a4pj-bdesc'));
+    /** @param {string} label @param {unknown} text @param {boolean} [go] */
     const sec = (label, text, go) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); el(s, 'span', 'a4pj-btext', plainLine(text)); };
     if (p.why) sec('Why here', p.why);
     if (st.total) el(c, 'div', 'a4pj-by', `${st.done} of ${st.total} ${st.total === 1 ? 'task' : 'tasks'} done`);
@@ -4171,10 +4714,11 @@ class ProjectsView extends ItemView {
     const cs = el(el(c, 'div', 'a4pj-bacts2'), 'button', null, 'Move to Cold Storage');
     cs.addEventListener('click', () => this.plugin.coldStoreProject(p.path));
     const open = () => this.go({ page: 'project', project: p.path }); // the project page, as in the List; it has Open note
-    c.addEventListener('click', (e) => { if (!e.target.closest('button')) open(); });
+    c.addEventListener('click', (e) => { if (!/** @type {HTMLElement} */ (e.target).closest('button')) open(); });
     c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) open(); });
   }
 
+  /** @param {HTMLElement} anchor @param {ProjNote} p */
   moveMenu(anchor, p) {
     const m = new Menu();
     for (const k of BOARD_COLUMNS) m.addItem((i) => i.setTitle(COLUMN_LABEL[k] + (k === p.status ? ' (here now)' : '')).setDisabled(k === p.status).onClick(() => this.plugin.moveProject(p.path, k)));
@@ -4182,12 +4726,14 @@ class ProjectsView extends ItemView {
     m.showAtPosition({ x: r.left, y: r.bottom });
   }
 
+  /** @param {ProjNote} p */
   async editWhy(p) {
     const v = await this.plugin.ask(`Why is "${p.name}" in ${COLUMN_LABEL[p.status] || p.status}?`, p.why || '');
     if (v != null) await this.plugin.setProjectWhy(p.path, v);
   }
 
   // Plain text only (el sets textContent): entries carry note names.
+  /** @param {HTMLElement} page */
   renderActivity(page) {
     const rows = el(page, 'div', 'a4pj-activity');
     const list = this.plugin.settings.activity;
@@ -4197,6 +4743,7 @@ class ProjectsView extends ItemView {
 
   /* ---- project page ------------------------------------------------------- */
 
+  /** @param {HTMLElement} page */
   renderProject(page) {
     const cfg = this.cfg; const today = this.today;
     const area = this.areas.find((x) => x.path === this.state.project);
@@ -4205,8 +4752,9 @@ class ProjectsView extends ItemView {
     if (!p) { this.head(page, [['/ Projects', () => this.go({ page: 'overview' })]], 'Project not found'); el(page, 'div', 'a4pj-empty', 'that project note is gone'); return; }
     const st = projectStats(p, this.tasks, today, cfg);
     // Mockup choice 2 A: the area in the path ("Projects / Work / Acme Co"), one click back to it.
+    /** @type {[string, (() => void) | null][]} */
     const crumbs = [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[p.sphere] || 'Unsorted', p.sphere === 'work' || p.sphere === 'personal' ? () => this.go({ page: 'overview', focus: p.sphere }) : null]];
-    if (p.area) crumbs.push([p.areaName, () => this.go({ page: 'project', project: p.areaPath })]);
+    if (p.area) crumbs.push([/** @type {string} */ (p.areaName), () => this.go({ page: 'project', project: p.areaPath })]);
     this.head(page, crumbs, p.name, [
       this.plugin.todayOn() && { label: 'Open Today', run: () => this.plugin.openToday() },
       this.plugin.plannerOn() && { label: 'Open in Planner', run: () => this.plugin.openPlanner(p.key) },
@@ -4215,6 +4763,7 @@ class ProjectsView extends ItemView {
     const ph = el(page, 'div', 'a4pj-phead');
     ring(ph, st.done, st.total);
     const facts = el(ph, 'div', 'a4pj-facts');
+    /** @param {string} label */
     const fact = (label) => { const f = el(facts, 'span', 'a4pj-fact'); el(f, 'b', null, label); return f; };
     fact('Sphere').appendText(p.sphere === 'work' ? 'Work' : p.sphere === 'personal' ? 'Personal' : 'not set');
     const sel = el(fact('Status'), 'select', 'a4pj-select dropdown');
@@ -4237,8 +4786,9 @@ class ProjectsView extends ItemView {
       if (!done) sel.value = p.status; // cancelled, refused or failed: show what the note still says
     });
     this.areaFact(fact('Area'), p);
-    if (p.goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(p.goal)); a.addEventListener('click', () => this.openLink(p.goal, p.path)); }
-    if (p.client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(p.client)); a.addEventListener('click', () => this.openLink(p.client, p.path)); }
+    const goal = p.goal, client = p.client;
+    if (goal) { const a = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(goal)); a.addEventListener('click', () => this.openLink(goal, p.path)); }
+    if (client) { const a = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(client)); a.addEventListener('click', () => this.openLink(client, p.path)); }
     fact('Open').appendText(`${st.open}${st.overdue ? ` · ${st.overdue} overdue` : ''}`);
     const nb = el(ph, 'button', 'a4pj-btn', 'Open note'); nb.addEventListener('click', () => this.plugin.openFile(p.path));
 
@@ -4258,10 +4808,12 @@ class ProjectsView extends ItemView {
 
   // The project page's Area choice (mockup choice 2 A): every area A to Z and "No area", written at
   // once with Undo. A link to a missing note or a non-area is shown struck, marked "not an area".
+  /** @param {HTMLElement} f @param {ProjNote} p */
   areaFact(f, p) {
     if (p.areaBad) { el(f, 'span', 'a4pj-bad', p.areaBad); el(f, 'span', 'a4pj-chip is-warn', 'not an area'); }
     const sel = el(f, 'select', 'a4pj-select dropdown'); sel.setAttr('aria-label', 'Area');
-    const opts = [...(p.areaBad ? [['', 'Change…']] : []), ...areaList(this.areas).map((a) => [a.path, a.name]), ['-', 'No area']];
+    /** @type {[string, string][]} */
+    const opts = [...(p.areaBad ? /** @type {[string, string][]} */ ([['', 'Change…']]) : []), ...areaList(this.areas, '').map((a) => /** @type {[string, string]} */ ([a.path, a.name])), ['-', 'No area']];
     for (const [v, l] of opts) { const o = el(sel, 'option', null, l); o.value = v; }
     const now = p.areaPath || (p.areaBad ? '' : '-');
     sel.value = now;
@@ -4272,6 +4824,7 @@ class ProjectsView extends ItemView {
   }
 
   // The "More" (…) menu on a project or area page: [[title, disabled, run]].
+  /** @param {HTMLElement} anchor @param {[string, boolean, () => unknown][]} items */
   pageMenu(anchor, items) {
     const m = new Menu();
     for (const [t, off, run] of items) m.addItem((i) => i.setTitle(t).setDisabled(off).onClick(run));
@@ -4281,6 +4834,7 @@ class ProjectsView extends ItemView {
 
   /* ---- area page (mockup screen 2) ------------------------------------------ */
 
+  /** @param {HTMLElement} page @param {AreaNote} a */
   renderArea(page, a) {
     const cfg = this.cfg; const today = this.today;
     const st = areaStats(a, this.projects, this.tasks, today, cfg);
@@ -4295,11 +4849,13 @@ class ProjectsView extends ItemView {
     const ph = el(page, 'div', 'a4pj-phead is-area');
     setIcon(el(ph, 'div', 'a4pj-aicon is-big'), 'layers');
     const facts = el(ph, 'div', 'a4pj-facts');
+    /** @param {string} label */
     const fact = (label) => { const f = el(facts, 'span', 'a4pj-fact'); el(f, 'b', null, label); return f; };
     fact('Kind').appendText('Area, ongoing');
     fact('Sphere').appendText(sp ? SPHERE_LABEL[sp] : 'not set');
-    if (a.client) { const l = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(a.client)); l.addEventListener('click', () => this.openLink(a.client, a.path)); }
-    if (a.goal) { const l = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(a.goal)); l.addEventListener('click', () => this.openLink(a.goal, a.path)); }
+    const aClient = a.client, aGoal = a.goal;
+    if (aClient) { const l = el(fact('Client'), 'a', 'a4pj-link', wikilinkLabel(aClient)); l.addEventListener('click', () => this.openLink(aClient, a.path)); }
+    if (aGoal) { const l = el(fact('Goal'), 'a', 'a4pj-link', wikilinkLabel(aGoal)); l.addEventListener('click', () => this.openLink(aGoal, a.path)); }
     const np = st.openProjects.length;
     fact('Open').appendText(`${np} ${np === 1 ? 'project' : 'projects'} · ${st.open} loose ${st.open === 1 ? 'task' : 'tasks'}`);
     const nb = el(ph, 'button', 'a4pj-btn', 'Open note'); nb.addEventListener('click', () => this.plugin.openFile(a.path));
@@ -4328,7 +4884,8 @@ class ProjectsView extends ItemView {
     const side = el(cols, 'div', 'a4pj-side');
     const c1 = el(side, 'div', 'a4pj-side-card');
     el(c1, 'div', 'a4pj-kicker', 'In this area');
-    const stat = (...bits) => { const d = el(c1, 'div', 'a4pj-stat'); bits.forEach((b, i) => (i % 2 ? d.appendText(b) : el(d, 'b', null, String(b)))); };
+    /** @param {...(string | number)} bits */
+    const stat = (...bits) => { const d = el(c1, 'div', 'a4pj-stat'); bits.forEach((b, i) => (i % 2 ? d.appendText(String(b)) : el(d, 'b', null, String(b)))); };
     stat(np, ` open ${np === 1 ? 'project' : 'projects'}`);
     stat(closed.length, ` finished ${closed.length === 1 ? 'project' : 'projects'}`);
     stat(st.open, ` loose ${st.open === 1 ? 'task' : 'tasks'} open, `, st.done, ' done');
@@ -4337,6 +4894,7 @@ class ProjectsView extends ItemView {
   }
 
   // One row of a closed project (the Closed list's look).
+  /** @param {HTMLElement} sec @param {ProjNote} p */
   closedRow(sec, p) {
     const st = projectStats(p, this.tasks, this.today, this.cfg);
     const r = el(sec, 'div', 'a4pj-closed-row' + (p.status === 'done' ? '' : ' is-failed'));
@@ -4352,6 +4910,7 @@ class ProjectsView extends ItemView {
 
   // A project's (or an area's loose) tasks: the add box, the open list with its later and someday
   // tick boxes, then Done. o: { label, placeholder, barFirst (the bar above the add box), gap }.
+  /** @param {HTMLElement} main @param {ProjNote | AreaNote} p @param {ReturnType<typeof projectStats>} st @param {{ label: string, placeholder: string, barFirst?: boolean, gap?: boolean }} o */
   taskSection(main, p, st, o) {
     const cfg = this.cfg; const today = this.today;
     const mine = this.tasks.filter((t) => t.projectKey === p.key);
@@ -4394,16 +4953,18 @@ class ProjectsView extends ItemView {
     dh.addEventListener('click', async () => { if (dOpen) delete ui.doneOpen[p.path]; else ui.doneOpen[p.path] = true; this.render(true); await this.plugin.save(); });
     if (dOpen) {
       const all = this.showAllDone === p.path;
+      /** @type {string | null} */
       let last = null;
       for (const d of all ? done : done.slice(0, DONE_PREVIEW)) {
         if (d.day !== last) { last = d.day; el(ds, 'div', 'a4pj-done-day', d.day ? (d.day === today ? 'Today' : shortDay(d.day, today)) : 'Earlier'); }
         this.taskRow(ds, d.task, { inProject: true, inDone: true });
       }
-      if (!all && done.length > DONE_PREVIEW) { const m = el(ds, 'button', 'a4pj-more', `Show all ${done.length}`); m.addEventListener('click', () => { this.showAllDone = p.path; this.render(true); }); }
+      if (!all && done.length > DONE_PREVIEW) { const m = el(ds, 'button', 'a4pj-more', `Show all ${done.length}`); m.addEventListener('click', () => { /** @type {string | undefined} */ this.showAllDone = p.path; this.render(true); }); }
     }
   }
 
   // The note's own body, rendered.
+  /** @param {HTMLElement} main @param {{ path: string }} p @param {TFile | null} file @param {string} label */
   noteBody(main, p, file, label) {
     const body = el(main, 'div', 'a4pj-body-note');
     el(body, 'div', 'a4pj-kicker', label);
@@ -4420,6 +4981,7 @@ class ProjectsView extends ItemView {
   }
 
   // Notes (mockup Option B, 2026-10-17): the "## Notes" entries as a timeline, newest first.
+  /** @param {HTMLElement} side @param {{ path: string }} p @param {TFile | null} file */
   notesCard(side, p, file) {
     const today = this.today;
     const nc = el(side, 'div', 'a4pj-notes');
@@ -4440,6 +5002,7 @@ class ProjectsView extends ItemView {
   }
 
   // A note's text as plain words with its wikilinks clickable (the card's links open like Goal and Client).
+  /** @param {HTMLElement} parent @param {unknown} text @param {string} from */
   noteText(parent, text, from) {
     for (const part of String(text).replace(/!\[\[[^\]]*\]\]/g, '').split(/(\[\[[^\]]+\]\])/)) {
       if (part.startsWith('[[')) {
@@ -4455,6 +5018,7 @@ class ProjectsView extends ItemView {
 
   // Note mode of the add box: a dated entry under the project note's "## Notes", written with
   // vault.process so nothing else in the note changes.
+  /** @param {{ path: string }} p @param {string} text */
   async addProjectNote(p, text) {
     const f = this.plugin.engine.file(p.path);
     if (!f) throw new Error('The project note is missing.');
@@ -4462,6 +5026,7 @@ class ProjectsView extends ItemView {
     await this.app.vault.process(f, (old) => appendProjectNote(old, day, text));
   }
 
+  /** @param {unknown} link @param {string} [from] */
   openLink(link, from) {
     const t = wikilinkTarget(link);
     if (t) this.app.workspace.openLinkText(t, from || '', 'tab');
@@ -4469,6 +5034,7 @@ class ProjectsView extends ItemView {
 
   /* ---- quick add (plain words) -------------------------------------------- */
 
+  /** @param {HTMLElement} parent @param {{ project?: ProjNote | AreaNote, placeholder: string }} o */
   quickAdd(parent, o) {
     const qa = el(parent, 'div', 'a4pj-qa');
     // Project page: the "Add a task" label is a Task / Note menu (mockup Option B). Task each time the page opens.
@@ -4477,6 +5043,7 @@ class ProjectsView extends ItemView {
     const mode = o.project ? el(row, 'button', 'a4pj-qa-mode') : null;
     const inp = el(row, 'input'); inp.type = 'text'; inp.dataset.focus = `qa:${o.project ? o.project.path : 'inbox'}`;
     const parse = el(qa, 'div', 'a4pj-parse');
+    /** @param {boolean} n */
     const setMode = (n) => {
       note = n;
       if (o.project) this.noteFor = n ? o.project.path : null;
@@ -4514,25 +5081,26 @@ class ProjectsView extends ItemView {
       if (note) {
         const typed = inp.value;
         inp.value = '';
-        try { await this.addProjectNote(o.project, typed); this.plugin.toast.show(`Note added to ${o.project.name}`); }
-        catch (err) { console.error('[LifeWorld] note failed', err); new Notice(`Could not add that note. ${err && err.message ? err.message : ''}`); inp.value = typed; }
+        const proj = /** @type {ProjNote | AreaNote} */ (o.project);
+        try { await this.addProjectNote(proj, typed); this.plugin.toast.show(`Note added to ${proj.name}`); }
+        catch (err) { console.error('[LifeWorld] note failed', err); new Notice(`Could not add that note. ${errField(err, 'message') || ''}`); inp.value = typed; }
         this.scheduleRender();
-        window.setTimeout(() => { const i = this.contentEl.querySelector(`[data-focus="${CSS.escape(inp.dataset.focus)}"]`); if (i) i.focus(); }, 300);
+        window.setTimeout(() => { const i = /** @type {HTMLElement | null} */ (this.contentEl.querySelector(`[data-focus="${CSS.escape(/** @type {string} */ (inp.dataset.focus))}"]`)); if (i) i.focus(); }, 300);
         return;
       }
       const r = understand(inp.value, this.today);
       if (!r.title) return;
       const { input, lane } = quickAddPlan(r, this.today);
       if (o.project) input.projects = [projectLinkFor(o.project.path)];
-      if (lane) { const orders = this.plugin.laneOrders(this.tasks.filter((t) => !t.archived), lane.day, lane.half); input.customFrontmatter.planned_order = orderForInsert(orders, orders.length); }
-      if (!Object.keys(input.customFrontmatter).length) delete input.customFrontmatter;
+      if (lane) { const orders = this.plugin.laneOrders(this.tasks.filter((t) => !t.archived), lane.day, lane.half); /** @type {Fm} */ (input.customFrontmatter).planned_order = orderForInsert(orders, orders.length); }
+      if (!Object.keys(/** @type {Fm} */ (input.customFrontmatter)).length) delete input.customFrontmatter;
       inp.value = ''; show();
       try {
         const w = await this.plugin.createTask(input);
         this.plugin.toast.show(o.project ? `Added to ${o.project.name}` : (r.due || r.plannedDay || r.recurrence ? 'Added (it has a day, so it skips the Inbox)' : 'Captured'), w.undo);
-      } catch (err) { console.error('[LifeWorld] add failed', err); new Notice(`Could not add that task. ${err && err.message ? err.message : ''}`); inp.value = r.title; }
+      } catch (err) { console.error('[LifeWorld] add failed', err); new Notice(`Could not add that task. ${errField(err, 'message') || ''}`); inp.value = r.title; }
       this.scheduleRender();
-      window.setTimeout(() => { const i = this.contentEl.querySelector(`[data-focus="${CSS.escape(inp.dataset.focus)}"]`); if (i) i.focus(); }, 300);
+      window.setTimeout(() => { const i = /** @type {HTMLElement | null} */ (this.contentEl.querySelector(`[data-focus="${CSS.escape(/** @type {string} */ (inp.dataset.focus))}"]`)); if (i) i.focus(); }, 300);
     });
     setMode(note);
     show();
@@ -4541,6 +5109,7 @@ class ProjectsView extends ItemView {
 
   /* ---- a task row ----------------------------------------------------------- */
 
+  /** @param {HTMLElement} parent @param {ProjTask} t @param {RowOpts} o */
   taskRow(parent, t, o) {
     const cfg = this.cfg; const today = this.today;
     const pendingDone = this.justDone.has(t.path);
@@ -4567,7 +5136,7 @@ class ProjectsView extends ItemView {
     tt.addEventListener('click', openIt);
     tt.addEventListener('keydown', (e) => { if (e.key === 'Enter') openIt(); });
     const meta = el(m, 'div', 'a4pj-tmeta');
-    if (blocked) lockChip(meta, t.openBlockers, (p) => this.plugin.openFile(p), this.popOpts());
+    if (blocked) lockChip(meta, /** @type {{ path: string, title: string }[]} */ (t.openBlockers), (p) => this.plugin.openFile(p), this.popOpts());
     priorityChip(meta, t.priority, cfg);
     if (o.showProject && t.projectKey) {
       el(meta, 'span', 'a4pj-chip a4pj-proj', t.project || t.projectKey);
@@ -4593,6 +5162,7 @@ class ProjectsView extends ItemView {
     return r;
   }
 
+  /** @param {HTMLElement} meta @param {ProjTask} t */
   dateChips(meta, t) {
     const today = this.today; const cfg = this.cfg;
     const open = isOpenTask(t, cfg);
@@ -4612,6 +5182,7 @@ class ProjectsView extends ItemView {
     if (t.recurrenceRaw) el(meta, 'span', 'a4pj-chip', `${repeatWords(t.recurrenceRaw).replace(/^Every/, 'repeats every').replace(/^Repeats/, 'repeats')}${t.time ? `, ${timeText(t.time)}` : (t.plannedHalf ? `, ${halfWord(t.plannedHalf)}` : '')}`);
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} row @param {HTMLElement} btn */
   async tick(t, row, btn) {
     const cfg = this.cfg;
     if (row.hasClass('is-busy')) return;
@@ -4627,24 +5198,28 @@ class ProjectsView extends ItemView {
     try {
       const w = await this.plugin.completeTask(t, !wasDone);
       if (t.recurrenceRaw) {
-        const res = w && w.result;
+        const res = /** @type {{ day: string, done: boolean, next: string | null } | null | undefined} */ (w && w.result);
         const msg = res ? (res.done ? `Done for ${shortDay(res.day, today)}${res.next ? `; next one ${shortDay(res.next, today)}` : ''}` : `Back to open for ${shortDay(res.day, today)}`) : 'Done';
         this.plugin.toast.show(msg, w && w.undo);
       } else if (!wasDone) {
         this.justDone.set(t.path, window.setTimeout(() => { this.clearJustDone(t.path); this.render(); }, UNDO_MS));
+        /** @type {{ path: string, undo: (() => Promise<void>) | null } | null} */
         this.lastUndo = { path: t.path, undo: w && w.undo };
-        this.plugin.toast.show(`Done: ${t.title}${unblocksText(freed)}`, w && w.undo ? async () => { this.clearJustDone(t.path); await w.undo(); this.render(true); } : null);
+        const wu = w && w.undo;
+        this.plugin.toast.show(`Done: ${t.title}${unblocksText(freed)}`, wu ? async () => { this.clearJustDone(t.path); await wu(); this.render(true); } : null);
       } else {
         this.plugin.toast.show('Back to open', w && w.undo);
       }
     } catch (err) {
       console.error('[LifeWorld] tick failed', err);
-      new Notice(`Could not update "${t.title}". ${err && err.message ? err.message : ''}`.trim());
+      new Notice(`Could not update "${t.title}". ${errField(err, 'message') || ''}`.trim());
       row.toggleClass('is-done', wasDone);
     } finally { row.removeClass('is-busy'); this.scheduleRender(); }
   }
+  /** @param {string} path */
   clearJustDone(path) { const t = this.justDone.get(path); if (t) window.clearTimeout(t); this.justDone.delete(path); if (this.lastUndo && this.lastUndo.path === path) this.lastUndo = null; }
 
+  /** @param {HTMLElement} parent @param {ProjTask} t */
   async renderSteps(parent, t) {
     const box = el(parent, 'div', 'a4pj-steps');
     const steps = await this.plugin.engine.steps(t.path);
@@ -4672,6 +5247,7 @@ class ProjectsView extends ItemView {
 
   /* ---- Inbox ---------------------------------------------------------------- */
 
+  /** @param {HTMLElement} page */
   renderInbox(page) {
     const cfg = this.cfg;
     this.head(page, [['/ Projects', () => this.go({ page: 'overview' })]], 'Inbox');
@@ -4687,33 +5263,37 @@ class ProjectsView extends ItemView {
 
   /* ---- popovers -------------------------------------------------------------- */
 
+  /** @param {HTMLElement | null | undefined} row */
   leave(row) { if (row) row.addClass('is-leaving'); }
 
+  /** @param {ProjTask} t @param {string} key @param {HTMLElement} anchor */
   pickDate(t, key, anchor) {
     openWhenPicker(anchor, { ...whenPickerOpts(t, key, this.today), ...this.popOpts(),
       onSave: async (r) => {
         try {
           const w = await saveWhen(this.plugin.engine, t, key, r);
           this.plugin.toast.show(whenToast(t, key, r, this.today), w && w.undo);
-        } catch (e) { new Notice(String(e.message || e)); }
+        } catch (e) { new Notice(String(errField(e, 'message') || e)); }
         this.scheduleRender();
       },
     });
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} anchor @param {HTMLElement} [row] */
   openSchedule(t, anchor, row) {
     const today = this.today;
     new Pop(anchor, `Schedule · ${t.title}`, (box, pop) => {
       const tom = addDays(today, 1);
+      /** @param {string} d @param {string | null} h */
       const place = async (d, h) => {
         pop.close();
         try {
           const w = await this.plugin.placeTask(t, d, h, this.tasks.filter((x) => !x.archived));
           if (w) { this.leave(row); this.plugin.toast.show(`On ${shortDay(d, today)}${h ? `, ${halfWord(h)}` : ''}${w.dropsTime ? `. ${timeText(w.dropsTime)} time taken off` : ''}`, w.undo); }
-        } catch (e) { console.error(e); new Notice(e && e.plain ? e.plain : 'That did not work. Nothing was changed.'); }
+        } catch (e) { console.error(e); const plain = e && typeof e === 'object' && 'plain' in e ? e.plain : null; new Notice(plain ? String(plain) : 'That did not work. Nothing was changed.'); }
         this.scheduleRender();
       };
-      for (const [label, d, h] of [['Today morning', today, 'am'], ['Today afternoon', today, 'pm'], ['Tomorrow morning', tom, 'am'], ['Tomorrow afternoon', tom, 'pm'], ['Any time today', today, null]]) {
+      for (const [label, d, h] of /** @type {[string, string, string | null][]} */ ([['Today morning', today, 'am'], ['Today afternoon', today, 'pm'], ['Tomorrow morning', tom, 'am'], ['Tomorrow afternoon', tom, 'pm'], ['Any time today', today, null]])) {
         const b = el(box, 'button', 'a4pj-pop-q'); el(b, 'span', null, label); el(b, 'span', 'a4pj-k', `${WEEKDAYS_SHORT[weekdayOf(d)]} ${partsOf(d).d}`);
         b.addEventListener('click', () => place(d, h));
       }
@@ -4757,10 +5337,12 @@ class ProjectsView extends ItemView {
     }, this.popOpts());
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} anchor @param {HTMLElement} [row] @param {() => void} [onDone] */
   openProjectPick(t, anchor, row, onDone) {
     new Pop(anchor, `Move to project · ${t.title}`, (box, pop) => {
       const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a project';
       const host = el(box, 'div', 'a4pj-pop-list');
+      /** @param {ProjNote | AreaNote | null} p */
       const choose = async (p) => {
         pop.close();
         try {
@@ -4781,7 +5363,7 @@ class ProjectsView extends ItemView {
         if (t.projectLink) { el(host, 'div', 'a4pj-pop-sep'); const nb = el(host, 'button', 'a4pj-pop-q'); el(nb, 'span', null, 'No project (back to Inbox)'); nb.addEventListener('click', () => choose(null)); }
       };
       find.addEventListener('input', draw);
-      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = host.querySelector('.a4pj-pop-q'); if (b) b.click(); } });
+      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = /** @type {HTMLElement | null} */ (host.querySelector('.a4pj-pop-q')); if (b) b.click(); } });
       draw();
     }, { ...this.popOpts(), cls: 'is-wide' });
   }
@@ -4794,12 +5376,19 @@ class ProjectsView extends ItemView {
  * The note itself is never changed by showing the card.
  * ========================================================================== */
 
+/** @typedef {{ undo?: (() => Promise<unknown>) | null, result?: unknown } | null | undefined} ActResult */
+/** @typedef {(fn: () => Promise<ActResult>, msg?: string | ((w: ActResult) => string)) => Promise<void>} CardAct */
+/** @typedef {{ narrow: boolean, host: HTMLElement }} CardPopOpts */
 class TaskCardManager {
+  /** @param {ProjectsPlugin} plugin */
   constructor(plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
+    /** @type {WeakMap<MarkdownView, boolean>} */
     this.showProps = new WeakMap(); // view -> true when "All properties" is open
+    /** @type {Map<MarkdownView, MutationObserver>} */
     this.observers = new Map();     // view -> MutationObserver (Reading view is drawn lazily)
+    /** @type {number | null} */
     this.timer = null;
   }
   start() {
@@ -4817,12 +5406,14 @@ class TaskCardManager {
   }
   stop() {
     if (this.timer) window.clearTimeout(this.timer);
-    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) this.clear(leaf.view);
+    for (const leaf of this.app.workspace.getLeavesOfType('markdown')) this.clear(/** @type {MarkdownView} */ (leaf.view));
     for (const o of this.observers.values()) o.disconnect();
     this.observers.clear();
   }
   // A view's card host that has no card yet (e.g. Reading view drawn just now).
+  /** @param {MarkdownView} view */
   missing(view) { return this.hosts(view).some((h) => !h.parent.querySelector(':scope > .a4pj-card')); }
+  /** @param {MarkdownView} view */
   watch(view) {
     if (this.observers.has(view) || typeof MutationObserver === 'undefined') return;
     const o = new MutationObserver(() => { if (view.file && view.containerEl.hasClass('a4pj-task-note') && this.missing(view)) this.refresh(view); });
@@ -4831,9 +5422,10 @@ class TaskCardManager {
   }
   schedule() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.refreshAll(); }, 120); }
   anyTaskShown() { return this.app.workspace.getLeavesOfType('markdown').some((l) => l.view && l.view.containerEl && l.view.containerEl.hasClass('a4pj-task-note')); }
-  shownPaths() { const s = new Set(); for (const l of this.app.workspace.getLeavesOfType('markdown')) if (l.view && l.view.file) s.add(l.view.file.path); return s; }
+  shownPaths() { /** @type {Set<string>} */ const s = new Set(); for (const l of this.app.workspace.getLeavesOfType('markdown')) { const v = /** @type {MarkdownView} */ (l.view); if (v && v.file) s.add(v.file.path); } return s; }
 
   refreshAll() {
+    /** @type {Set<unknown>} */
     const live = new Set(this.app.workspace.getLeavesOfType('markdown').map((l) => l.view));
     for (const [v, o] of this.observers) if (!live.has(v)) { o.disconnect(); this.observers.delete(v); }
     for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
@@ -4843,6 +5435,7 @@ class TaskCardManager {
     }
   }
 
+  /** @param {MarkdownView | null | undefined} view */
   clear(view) {
     if (!view || !view.containerEl) return;
     const o = this.observers.get(view); if (o) { o.disconnect(); this.observers.delete(view); }
@@ -4850,7 +5443,9 @@ class TaskCardManager {
     view.containerEl.querySelectorAll('.a4pj-card').forEach((c) => c.remove());
   }
 
+  /** @param {MarkdownView} view */
   hosts(view) {
+    /** @type {{ mode: string, parent: Element, before: Node | null }[]} */
     const out = [];
     const sizer = view.contentEl.querySelector('.markdown-source-view .cm-sizer');
     if (sizer) {
@@ -4866,6 +5461,7 @@ class TaskCardManager {
     return out;
   }
 
+  /** @param {MarkdownView} view */
   refresh(view) {
     const file = view.file;
     const engine = this.plugin.engine;
@@ -4876,27 +5472,29 @@ class TaskCardManager {
     c.toggleClass('a4pj-hide-props', this.plugin.settings.hideProps && !this.showProps.get(view));
     c.toggleClass('a4pj-builtin', this.plugin.usesBuiltIn());
     for (const h of this.hosts(view)) {
-      let card = h.parent.querySelector(':scope > .a4pj-card');
+      let card = /** @type {HTMLElement | null} */ (h.parent.querySelector(':scope > .a4pj-card'));
       if (!card) { card = createDiv({ cls: 'a4pj-card a4pj-root-card' }); h.parent.insertBefore(card, h.before); }
       else if (h.before && card.nextSibling !== h.before) h.parent.insertBefore(card, h.before);
-      const ae = document.activeElement;
-      if (card.contains(ae) && (ae.isContentEditable || (ae.tagName === 'INPUT' && ae.value))) continue; // never redraw under the cursor
+      const ae = /** @type {HTMLInputElement | null} */ (document.activeElement);
+      if (ae && card.contains(ae) && (ae.isContentEditable || (ae.tagName === 'INPUT' && ae.value))) continue; // never redraw under the cursor
       this.render(card, view, file);
     }
     // A card left in a host that is gone from this file's view.
-    c.querySelectorAll('.a4pj-card').forEach((x) => { if (x.dataset.path && x.dataset.path !== file.path) x.remove(); });
+    /** @type {NodeListOf<HTMLElement>} */ (c.querySelectorAll('.a4pj-card')).forEach((x) => { if (x.dataset.path && x.dataset.path !== file.path) x.remove(); });
   }
 
   // Redrawing empties the card first. On a short note the page then has
   // nothing to scroll for a moment, the browser sets the scroll back to the
   // top, and it stays there once the card is back. Holding the card's height
   // while it is redrawn keeps the page exactly where it was.
+  /** @param {HTMLElement} card @param {MarkdownView} view @param {TFile} file */
   render(card, view, file) {
     const hold = card.isConnected ? card.offsetHeight : 0;
     if (hold) card.style.minHeight = `${hold}px`;
     try { this.draw(card, view, file); } finally { card.style.removeProperty('min-height'); }
   }
 
+  /** @param {HTMLElement} card @param {MarkdownView} view @param {TFile} file */
   draw(card, view, file) {
     const plugin = this.plugin; const engine = plugin.engine;
     const cfg = engine.cfg(); const today = engine.today();
@@ -4917,7 +5515,8 @@ class TaskCardManager {
     const open = isOpenTask(t, cfg);
     const done = !t.recurrenceRaw && !open;
     const refresh = () => this.schedule();
-    const act = async (fn, msg) => { try { const w = await fn(); if (msg) plugin.toast.show(typeof msg === 'function' ? msg(w) : msg, w && w.undo); } catch (e) { console.error('[LifeWorld] card', e); new Notice(String((e && (e.plain || e.message)) || e)); } refresh(); };
+    /** @type {CardAct} */
+    const act = async (fn, msg) => { try { const w = await fn(); if (msg) plugin.toast.show(typeof msg === 'function' ? msg(w) : msg, w && w.undo); } catch (e) { console.error('[LifeWorld] card', e); const er = /** @type {{ plain?: string, message?: string } | null} */ (e && typeof e === 'object' ? e : null); new Notice(String((er && (er.plain || er.message)) || e)); } refresh(); };
 
     // crumb + buttons
     const bar = el(card, 'div', 'a4pj-card-bar');
@@ -4941,7 +5540,7 @@ class TaskCardManager {
     if (done) setIcon(big, 'check');
     big.setAttr('aria-label', done ? 'Mark not done' : (t.recurrenceRaw ? 'Mark this occurrence done' : 'Mark done'));
     big.addEventListener('click', () => { const freed = !done && !t.recurrenceRaw ? engine.freedBy(t.path) : []; act(() => plugin.completeTask(t, !done), (w) => {
-      if (t.recurrenceRaw) { const r = w && w.result; return r ? (r.done ? `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}` : `Back to open for ${shortDay(r.day, today)}`) : 'Done'; }
+      if (t.recurrenceRaw) { const r = /** @type {{ day: string, done: boolean, next: string | null } | null | undefined} */ (w && w.result); return r ? (r.done ? `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}` : `Back to open for ${shortDay(r.day, today)}`) : 'Done'; }
       return done ? 'Back to open' : `Done: ${t.title}${unblocksText(freed)}`;
     }); });
     const name = el(top, 'div', 'a4pj-tname' + (done ? ' is-done' : ''), t.title);
@@ -4950,6 +5549,7 @@ class TaskCardManager {
     name.addEventListener('blur', () => { const v = (name.textContent || '').replace(/\s+/g, ' ').trim(); if (v && v !== t.title) act(() => engine.rename(t.path, v), 'Renamed'); else name.textContent = t.title; });
 
     const f = el(card, 'div', 'a4pj-fields');
+    /** @param {string} lab */
     const row = (lab) => { el(f, 'div', 'a4pj-lab', lab); return el(f, 'div', 'a4pj-val'); };
     // Project
     const pb = el(row('Project'), 'button', 'a4pj-pick'); setIcon(el(pb, 'span', 'a4pj-ic'), 'folder');
@@ -4957,7 +5557,7 @@ class TaskCardManager {
     pb.addEventListener('click', (e) => { e.stopPropagation(); this.projectPick(t, pb, popOpts, refresh); });
     // Status
     const ss = el(row('Status'), 'div', 'a4pj-seg a4pj-stseg');
-    const stOf = statusString(fm[cfg.F.status]);
+    const stOf = statusString(/** @type {Fm} */ (fm)[cfg.F.status]);
     for (const [k, lab] of [['open', 'Open'], ['in-progress', 'In progress'], ['blocked', 'Waiting']]) {
       if (!cfg.statuses.some((s) => s.value === k)) continue;
       const b = el(ss, 'button', stOf === k ? 'is-on' : '', lab);
@@ -4994,7 +5594,7 @@ class TaskCardManager {
       ln.appendText(`${halfOfTime(t.time) === 'am' ? 'Morning' : 'Afternoon'}, from the ${timeText(t.time)} ${t.recurrenceRaw ? 'start' : 'due'} time`);
     } else {
       const hs = el(vw, 'div', 'a4pj-seg a4pj-halfseg');
-      for (const [k, lab] of [['am', 'Morning'], ['pm', 'Afternoon'], ['', 'Any time']]) {
+      for (const [k, lab] of /** @type {[string, string][]} */ ([['am', 'Morning'], ['pm', 'Afternoon'], ['', 'Any time']])) {
         const b = el(hs, 'button', (t.plannedHalf || '') === k ? 'is-on' : '', lab);
         b.dataset.half = k || 'any';
         b.addEventListener('click', () => {
@@ -5009,7 +5609,7 @@ class TaskCardManager {
     // Starts / Due: a date and an optional clock time (task times v3). The
     // button opens the picker; the box understands plain words and shows what
     // it understood under it before Enter saves.
-    for (const [k, lab, help] of [['start', 'Starts', 'first day it shows up'], ['due', 'Due', 'must be done by']]) {
+    for (const [k, lab, help] of /** @type {[string, string, string][]} */ ([['start', 'Starts', 'first day it shows up'], ['due', 'Due', 'must be done by']])) {
       if (k === 'due' && t.recurrenceRaw && !t.due) continue;
       const v = row(lab);
       const val = k === 'due' ? t.due : t.start;
@@ -5019,6 +5619,7 @@ class TaskCardManager {
       const b = el(v, 'button', 'a4pj-pick' + (val ? '' : ' is-dash') + (late ? ' is-late' : '') + (dueToday ? ' is-today' : '') + (k === 'start' && val ? ' is-dash' : ''));  // a due time is shown plainly; the bell next to it carries the colour (reminder mockup)
       setIcon(el(b, 'span', 'a4pj-ic'), 'calendar'); b.appendText(val ? `${lab} ${shortDay(val, today)}${tm ? `, ${timeText(tm)}` : ''}` : 'Pick a date');
       b.setAttr('aria-label', `${lab} date and time, open the calendar (${help})`);
+      /** @param {WhenPick | null} r */
       const save = (r) => act(() => saveWhen(engine, t, k, r), whenToast(t, k, r, today));
       b.addEventListener('click', (e) => { e.stopPropagation(); openWhenPicker(b, { ...whenPickerOpts(t, k, today), ...popOpts, onSave: save }); });
       const tyw = el(v, 'span', 'a4pj-tyw');
@@ -5042,7 +5643,7 @@ class TaskCardManager {
         const r = parse();
         if (!r || r.error) { upd(); return; }
         ty.value = ''; upd(); ty.blur(); // saved: the box empties so the card can redraw with the new value
-        save({ day: r.day, time: r.time, half: r.time ? undefined : (r.half || undefined) });
+        save({ day: /** @type {string} */ (r.day), time: r.time, half: r.time ? undefined : (r.half || undefined) });
       });
       if (val && !(k === 'start' && t.recurrenceRaw)) {
         const x = el(v, 'button', 'a4pj-x'); setIcon(x, 'x');
@@ -5070,7 +5671,8 @@ class TaskCardManager {
     const sm = el(card, 'div', 'a4pj-small-meta');
     el(sm, 'span', null, t.dateCreated ? `Created ${longDay(t.dateCreated)}` : 'Created: not recorded');
     el(sm, 'span', null, t.recurrenceRaw ? `${t.completeInstances.length} done so far` : (t.completedDate ? `Completed ${longDay(t.completedDate)}` : 'Not completed'));
-    if (t.steps.total) el(sm, 'span', null, `Steps ${t.steps.done}/${t.steps.total} (the tick boxes in the note)`);
+    const steps = /** @type {{ total: number, done: number }} */ (t.steps);
+    if (steps.total) el(sm, 'span', null, `Steps ${steps.done}/${steps.total} (the tick boxes in the note)`);
     if (plugin.settings.hideProps) {
       const n = Object.keys(fm || {}).length;
       const showing = !!this.showProps.get(view);
@@ -5080,7 +5682,7 @@ class TaskCardManager {
     // add a step
     const add = el(card, 'div', 'a4pj-step-add');
     el(add, 'span', 'a4pj-plus', '+');
-    const ai = el(add, 'input'); ai.type = 'text'; ai.placeholder = t.steps.total ? 'Add a step, press Enter (steps are the tick boxes below)' : 'Add a step, press Enter';
+    const ai = el(add, 'input'); ai.type = 'text'; ai.placeholder = steps.total ? 'Add a step, press Enter (steps are the tick boxes below)' : 'Add a step, press Enter';
     ai.addEventListener('keydown', async (e) => {
       if (e.key !== 'Enter' || e.isComposing || !ai.value.trim()) return;
       e.preventDefault();
@@ -5092,6 +5694,7 @@ class TaskCardManager {
   // The bell next to Due (reminder setup mockup): "4:15 PM · 15 min before",
   // or a dashed "No reminder". A click lists the choices with the time each
   // would ring; Other… takes typed words ("2 hours").
+  /** @param {HTMLElement} parent @param {ProjTask} t @param {string} k @param {string} day @param {string} tm @param {CardPopOpts} popOpts @param {CardAct} act */
   bellButton(parent, t, k, day, tm, popOpts, act) {
     const engine = this.plugin.engine;
     const cur = t.reminderSet;
@@ -5102,11 +5705,13 @@ class TaskCardManager {
     setIcon(el(b, 'span', 'a4pj-ic a4pj-caret'), 'chevron-down');
     b.setAttr('aria-label', cur == null ? 'No reminder. Change the reminder' : `Reminder at ${ringText(day, tm, cur)}${each}. Change the reminder`);
     b.setAttr('aria-haspopup', 'true');
+    /** @param {number | null} n */
     const set = (n) => act(() => engine.setReminder(t.path, n), n == null ? 'No reminder' : `Reminder: ${reminderWords(n).toLowerCase()}${each}`);
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       new Pop(b, null, (box, pop) => {
         box.addClass('a4pj-bellmenu');
+        /** @param {string} label @param {number | null} n @param {string | null} k2 */
         const item = (label, n, k2) => {
           const q = el(box, 'button', 'a4pj-pop-q' + (cur === n ? ' is-cur' : ''));
           el(q, 'span', null, label); if (k2) el(q, 'span', 'a4pj-k', k2);
@@ -5135,30 +5740,36 @@ class TaskCardManager {
 
   // mode 'by': this task's own blockedBy. mode 'blocks': worked out from the
   // other tasks; adding or removing there writes the OTHER task's blockedBy.
+  /** @param {HTMLElement} host @param {ProjTask} t @param {string} mode @param {CardPopOpts} popOpts @param {CardAct} act */
   depRow(host, t, mode, popOpts, act) {
     const engine = this.plugin.engine;
     const box = el(host, 'div', 'a4pj-deps');
+    /** @type {{ path: string | null, title: string, holds: boolean, missing?: boolean, link?: string }[]} */
     const list = mode === 'by' ? engine.blockerEntries(t.path) : engine.waitingOn(t.path);
     if (!list.length) el(box, 'span', 'a4pj-muted', mode === 'by' ? 'Nothing' : 'No task waits on this');
     for (const x of list) {
       const d = el(box, 'span', 'a4pj-dep' + (x.missing ? ' is-missing' : (x.holds ? '' : ' is-done')));
       if (mode === 'by') el(d, 'span', 'a4pj-dep-st', x.missing ? 'gone' : (x.holds ? 'open' : '✓ done'));
       const a = el(d, x.path ? 'a' : 'span', 'a4pj-dep-t', x.title);
-      if (x.path) { a.setAttr('role', 'link'); a.tabIndex = 0; a.addEventListener('click', () => this.plugin.openFile(x.path)); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.plugin.openFile(x.path); }); }
+      const xp = x.path;
+      if (xp) { a.setAttr('role', 'link'); a.tabIndex = 0; a.addEventListener('click', () => this.plugin.openFile(xp)); a.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.plugin.openFile(xp); }); }
       if (x.missing) d.setAttr('aria-label', 'That task note no longer exists; it blocks nothing');
       const rm = el(d, 'button', 'a4pj-x'); setIcon(rm, 'x'); rm.setAttr('aria-label', `Remove ${x.title}`);
-      rm.addEventListener('click', () => act(() => (mode === 'by' ? engine.removeBlocker(t.path, x.path, x.link) : engine.removeBlocker(x.path, t.path)), 'Removed'));
+      rm.addEventListener('click', () => act(() => (mode === 'by' ? engine.removeBlocker(t.path, x.path, x.link) : engine.removeBlocker(/** @type {string} */ (x.path), t.path)), 'Removed'));
     }
     const add = el(box, 'button', 'a4pj-dep-add', mode === 'by' ? '+ Waiting on…' : '+ Add a task that waits on this');
     add.addEventListener('click', (e) => { e.stopPropagation(); this.depPick(t, mode, add, popOpts, act); });
   }
 
+  /** @param {ProjTask} t @param {string} mode @param {HTMLElement} anchor @param {CardPopOpts} popOpts @param {CardAct} act */
   depPick(t, mode, anchor, popOpts, act) {
     const engine = this.plugin.engine; const cfg = engine.cfg();
     new Pop(anchor, mode === 'by' ? `${t.title} is waiting on…` : `Which task waits on ${t.title}?`, (box, pop) => {
       const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a task'; find.setAttr('aria-label', 'Find a task');
       const host = el(box, 'div', 'a4pj-pop-list');
-      const taken = new Set((mode === 'by' ? engine.blockerEntries(t.path) : engine.waitingOn(t.path)).map((x) => x.path).filter(Boolean));
+      /** @type {{ path: string | null }[]} */
+      const already = mode === 'by' ? engine.blockerEntries(t.path) : engine.waitingOn(t.path);
+      const taken = new Set(already.map((x) => x.path).filter(Boolean));
       const all = engine.collectTasks(false).filter((c) => c.path !== t.path && !c.archived && isOpenTask(c, cfg) && !taken.has(c.path));
       const proj = engine.noteForKey(t.projectKey);
       const projName = proj ? proj.name : (t.project || t.projectKey);
@@ -5179,6 +5790,7 @@ class TaskCardManager {
         if (!t.projectKey && make) createRow(make);
         else if (!t.projectKey && !others.length) el(host, 'div', 'a4pj-pop-note', 'No open task matches.');
       };
+      /** @param {string} title */
       const createRow = (title) => {
         const where = proj ? proj.name : 'the Inbox';
         const first = !host.querySelector('.a4pj-pop-q:not(.is-no)'); // Enter in the search box picks this row
@@ -5191,6 +5803,7 @@ class TaskCardManager {
           act(() => engine.createAndLink(t, mode, title, proj ? proj.path : null), mode === 'by' ? `Created, and now waiting on ${title}` : `Created; ${title} now waits on this`);
         });
       };
+      /** @param {ProjTask} c @param {boolean} [own] */
       const row = (c, own) => {
         const loop = mode === 'by' ? engine.wouldLoop(t.path, c.path) : engine.wouldLoop(c.path, t.path);
         const b = el(host, 'button', 'a4pj-pop-q' + (loop ? ' is-no' : ''));
@@ -5208,17 +5821,19 @@ class TaskCardManager {
         });
       };
       find.addEventListener('input', draw);
-      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = host.querySelector('.a4pj-pop-q:not(.is-no)'); if (b) b.click(); } });
+      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { const b = /** @type {HTMLElement | null} */ (host.querySelector('.a4pj-pop-q:not(.is-no)')); if (b) b.click(); } });
       draw();
       el(box, 'div', 'a4pj-pop-note', mode === 'by' ? 'Open tasks only, this project first. A task that already waits on this one is greyed out.' : 'Saved on the other task (as its "Blocked by"); nothing is stored twice.');
     }, { ...popOpts, cls: 'is-wide is-deps', fit: true });
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} anchor @param {CardPopOpts} popOpts @param {() => void} refresh */
   projectPick(t, anchor, popOpts, refresh) {
     const engine = this.plugin.engine;
     new Pop(anchor, 'Project', (box, pop) => {
       const find = el(box, 'input', 'a4pj-input a4pj-find'); find.type = 'text'; find.placeholder = 'Find a project';
       const host = el(box, 'div', 'a4pj-pop-list');
+      /** @param {ProjNote | AreaNote | null} p */
       const choose = async (p) => {
         pop.close();
         try { const w = await engine.setProject(t.path, p ? p.path : null); this.plugin.toast.show(p ? `Moved to ${p.name}` : 'Back to the Inbox', w.undo); } catch { new Notice('Could not move it.'); }
@@ -5240,6 +5855,7 @@ class TaskCardManager {
     }, { ...popOpts, cls: 'is-wide' });
   }
 
+  /** @param {ProjTask} t @param {HTMLElement} anchor @param {CardPopOpts} popOpts @param {CardAct} act */
   repeatPick(t, anchor, popOpts, act) {
     const engine = this.plugin.engine;
     const current = ruleBody(t.recurrenceRaw);
@@ -5268,6 +5884,7 @@ class TaskCardManager {
  * ========================================================================== */
 
 class ProjectsSettingTab extends PluginSettingTab {
+  /** @param {import('obsidian').App} app @param {ProjectsPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
   display() {
     const { containerEl } = this;
@@ -5313,10 +5930,11 @@ class ProjectsSettingTab extends PluginSettingTab {
         t.setPlaceholder('Paste your key').setValue(keyOf(this.app, src.id));
         t.inputEl.addEventListener('change', () => { setKey(this.app, src.id, t.getValue()); if (this.plugin.ext) this.plugin.ext.refresh().then(() => { if (src.id === 'clickup' && containerEl.isConnected) this.display(); }); });
       });
-      if (src.id === 'clickup' && this.plugin.ext && this.plugin.ext.lists && this.plugin.ext.lists.size) {
+      const lists = src.id === 'clickup' && this.plugin.ext ? /** @type {{ lists?: Map<string, string> }} */ (this.plugin.ext).lists : null;
+      if (lists && lists.size) {
         new Setting(sub).setName('New ClickUp tasks go to').addDropdown((d) => {
-          for (const [id, name] of this.plugin.ext.lists) d.addOption(id, name);
-          d.setValue(s.cuList && this.plugin.ext.lists.has(s.cuList) ? s.cuList : [...this.plugin.ext.lists.keys()][0]);
+          for (const [id, name] of lists) d.addOption(id, name);
+          d.setValue(s.cuList && lists.has(s.cuList) ? s.cuList : [...lists.keys()][0]);
           d.onChange(async (v) => { s.cuList = v; await this.plugin.save(); });
         });
       }
