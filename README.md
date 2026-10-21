@@ -1,11 +1,5 @@
 # LifeWorld
 
-**Built on TaskNotes.** LifeWorld's task engine contains code ported from
-[TaskNotes](https://github.com/callumalpass/tasknotes) and
-[@tasknotes/model](https://github.com/callumalpass/tasknotes-model) by Callum Alpass (MIT License), and
-it reads and writes task notes in the same format, so both plugins can work on the same notes. Thank
-you, Callum. Full notice: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
 LifeWorld turns your vault into a planner: a Today page for the day ahead, a Planner for the day, week
 and month, a page for every project and area, and a sidebar that keeps it all one click away. Every
 part can be switched on or off, so you can run only the Today page, only the Planner, or all of it.
@@ -128,3 +122,9 @@ LifeWorld is free. If it helps you and you would like to say thanks, you can
 MIT, see [LICENSE](LICENSE). LifeWorld also bundles ical.js (Mozilla Public License 2.0, unmodified)
 and four handwriting fonts under the SIL Open Font License; their notices are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and at the end of `main.js`.
+
+**Built on TaskNotes.** LifeWorld's task engine contains code ported from
+[TaskNotes](https://github.com/callumalpass/tasknotes) and
+[@tasknotes/model](https://github.com/callumalpass/tasknotes-model) by Callum Alpass (MIT License), and
+it reads and writes task notes in the same format, so both plugins can work on the same notes. Thank
+you, Callum. Full notice: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

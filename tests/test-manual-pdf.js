@@ -1,6 +1,5 @@
 // The PDF manual (docs/LifeWorld-manual.pdf, opened by the "Open manual" button) says what README.md
-// says: same words, same counts. Order is not compared, because scripts/build-manual.sh moves the
-// TaskNotes credit to the end. A README edit without `sh scripts/build-manual.sh` fails here.
+// says: same words, same counts. Order is not compared. A README edit without `sh scripts/build-manual.sh` fails here.
 // Pictures are not compared. Skipped when pdftotext (poppler) is not installed.
 const fs = require('fs');
 const path = require('path');
