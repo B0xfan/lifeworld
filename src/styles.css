@@ -1,0 +1,10 @@
+/* LifeWorld's own settings page: a widget whose part is off is dimmed, as drawn (mockup v6). */
+.lw-settings .lw-dim { opacity: .45; }
+.lw-settings .lw-hint { margin: var(--size-4-1) 0 var(--size-4-3); }
+/* Settings › Your vault › Property names (the approved mockup's dialog). */
+.lw-names .lw-names-intro { color: var(--text-muted); font-size: var(--font-ui-small); }
+.lw-names input.lw-bad { border-color: var(--text-error); }
+.lw-names .lw-names-more > summary { cursor: pointer; color: var(--text-muted); padding: var(--size-4-2) 0; }
+.lw-names .lw-names-err { color: var(--text-error); min-height: 1.5em; margin-top: var(--size-4-2); }
+.lw-names .lw-names-foot { border-top: none; }
+.lw-names .lw-names-foot .setting-item-control { justify-content: space-between; width: 100%; }

@@ -1,0 +1,316 @@
+/* Planner. Every selector carries the html:not(#a4pl-guard) prefix so the
+ * theme cannot outrank it (checked 2026-09-28). Colors come from
+ * the theme's tokens with Obsidian fallbacks; no per-project colors. */
+html:not(#a4pl-guard) .a4pl-root, html:not(#a4pl-guard) .a4pl-pop, html:not(#a4pl-guard) .a4pl-ghost {
+  --pl-bg: var(--ink, var(--background-primary));
+  --pl-bg2: var(--ink-2, var(--background-secondary));
+  --pl-bg3: var(--ink-3, var(--background-modifier-hover));
+  --pl-deep: var(--ink-deep, var(--background-secondary-alt));
+  --pl-overlay: var(--ink-overlay, var(--background-primary));
+  --pl-paper: var(--ink-paper, var(--text-normal));
+  --pl-dim: var(--ink-paper-dim, var(--text-muted));
+  --pl-faint: var(--ink-paper-faint, var(--text-faint));
+  --pl-marker: var(--ink-marker, var(--interactive-accent));
+  --pl-wash: var(--ink-marker-soft, var(--background-modifier-hover));
+  --pl-on-marker: var(--ink-on-marker, var(--text-on-accent));
+  --pl-hair: var(--ink-hairline, var(--background-modifier-border));
+  --pl-hair2: var(--ink-hairline-emphasis, var(--background-modifier-border-hover));
+  --pl-hover: var(--ink-hover-wash, var(--background-modifier-hover));
+  --pl-warning: var(--ink-warning, var(--text-warning));
+  --pl-success: var(--ink-success-dot, var(--text-success));
+  --pl-proj: var(--ink-paper-faint, var(--text-faint));
+  --pl-shadow: var(--ink-float-shadow, var(--shadow-l));
+  --pl-f-display: var(--ink-font-display, var(--font-interface));
+  --pl-f-body: var(--ink-font-body, var(--font-interface));
+  --pl-f-hand: var(--ink-font-hand, cursive);
+  --pl-f-mono: var(--ink-font-mono, var(--font-monospace));
+  --pl-r-micro: var(--ink-radius-micro, 2px);
+  --pl-r-control: var(--ink-radius-control, 4px);
+  --pl-r-subtle: var(--ink-radius-subtle, 10px);
+  color: var(--pl-paper);
+  font-family: var(--pl-f-body);
+}
+html:not(#a4pl-guard) .a4pl-root * , html:not(#a4pl-guard) .a4pl-pop * { box-sizing: border-box; }
+html:not(#a4pl-guard) .a4pl-root { position: relative; padding: 0; height: 100%; overflow: hidden; background: var(--pl-bg); font-size: 14px; line-height: 1.5; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-scroll { height: 100%; overflow-y: auto; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-page { padding: 26px 24px 28px 32px; }
+/* mid-size windows (set by the plugin when the view is under 1,180 px) */
+html:not(#a4pl-guard) .a4pl-root.is-mid .a4pl-body { grid-template-columns: 230px minmax(0, 1fr); gap: 12px; }
+html:not(#a4pl-guard) .a4pl-root.is-mid .a4pl-side { padding-right: 10px; }
+html:not(#a4pl-guard) .a4pl-root.is-mid .a4pl-page { padding-left: 22px; padding-right: 16px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-page { padding: 16px 14px 90px; }
+
+/* buttons: Obsidian and the theme style every <button>; reset inside the planner */
+html:not(#a4pl-guard) .a4pl-root button, html:not(#a4pl-guard) .a4pl-pop button { font-family: inherit; color: inherit; background: none; border: 0; box-shadow: none; padding: 0; margin: 0; height: auto; min-height: 0; cursor: pointer; font-size: inherit; font-weight: inherit; line-height: inherit; text-align: left; }
+html:not(#a4pl-guard) .a4pl-root button:hover, html:not(#a4pl-guard) .a4pl-pop button:hover { background: none; box-shadow: none; }
+html:not(#a4pl-guard) .a4pl-root button:focus-visible, html:not(#a4pl-guard) .a4pl-pop button:focus-visible,
+html:not(#a4pl-guard) .a4pl-root .a4pl-task:focus-visible, html:not(#a4pl-guard) .a4pl-root [role=button]:focus-visible,
+html:not(#a4pl-guard) .a4pl-root input:focus-visible { outline: 2px solid var(--pl-marker); outline-offset: 1px; box-shadow: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ic, html:not(#a4pl-guard) .a4pl-pop .a4pl-ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ic svg, html:not(#a4pl-guard) .a4pl-pop svg { width: 14px; height: 14px; stroke-width: 1.8; }
+
+/* type */
+html:not(#a4pl-guard) .a4pl-root .a4pl-kicker { font: 500 10.5px/1.4 var(--pl-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-kicker.is-warn { color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-count { font: 500 11px var(--pl-f-mono); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-empty { font: 600 18px var(--pl-f-hand); color: var(--pl-faint); padding: 4px 2px 6px; }
+
+/* header */
+html:not(#a4pl-guard) .a4pl-root .a4pl-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-title { font: 640 clamp(26px, 3vw, 40px)/1.08 var(--pl-f-display); letter-spacing: -.02em; margin: 4px 0 0; padding-bottom: 8px; position: relative; display: inline-block; color: var(--pl-paper); border: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-title::after { content: ''; position: absolute; left: 0; bottom: 0; width: 170px; max-width: 100%; height: 3px; border-radius: 3px; background: var(--pl-marker); transform: rotate(-.6deg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-select { height: auto; padding: 4px 26px 4px 8px; font-size: 13px; border: 1px solid var(--pl-hair2); border-radius: var(--pl-r-control); background-color: transparent; color: var(--pl-paper); box-shadow: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-seg, html:not(#a4pl-guard) .a4pl-pop .a4pl-seg { display: inline-flex; border: 1px solid var(--pl-hair2); border-radius: var(--pl-r-control); padding: 2px; gap: 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-seg button, html:not(#a4pl-guard) .a4pl-pop .a4pl-seg button { padding: 3px 10px; font-size: 12px; border-radius: 3px; color: var(--pl-faint); text-align: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-seg button.is-on, html:not(#a4pl-guard) .a4pl-pop .a4pl-seg button.is-on { background: var(--pl-paper); color: var(--pl-bg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-nav { display: inline-flex; align-items: center; gap: 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-icon-btn { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pl-r-control); color: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-icon-btn:hover { background: var(--pl-hover); color: var(--pl-paper); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-icon-btn svg { width: 16px; height: 16px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-btn { padding: 3px 10px; border: 1px solid var(--pl-hair2); border-radius: var(--pl-r-control); font-size: 12px; font-weight: 500; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-btn:hover { background: var(--pl-hover); }
+
+/* layout */
+html:not(#a4pl-guard) .a4pl-root .a4pl-body { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-body { grid-template-columns: 1fr; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-side { border-right: 1px solid var(--pl-hair); padding-right: 14px; min-width: 0; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-side { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tabs button { padding: 3px 10px; font-size: 12px; border: 1px solid var(--pl-hair); border-radius: var(--pl-r-control); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tabs button.is-on { color: var(--pl-marker); border-color: var(--pl-marker); background: var(--pl-wash); }
+
+/* folding sections and groups */
+html:not(#a4pl-guard) .a4pl-root .a4pl-sec { margin-bottom: 12px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sec-head, html:not(#a4pl-guard) .a4pl-root .a4pl-grp-head { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 2px; border-radius: var(--pl-r-control); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sec-head:hover, html:not(#a4pl-guard) .a4pl-root .a4pl-grp-head:hover { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sec-head .a4pl-count { margin-left: auto; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chev { color: var(--pl-faint); transition: transform .15s; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chev svg { width: 12px; height: 12px; }
+html:not(#a4pl-guard) .a4pl-root .is-folded > .a4pl-sec-head .a4pl-chev, html:not(#a4pl-guard) .a4pl-root .is-folded > .a4pl-grp-head .a4pl-chev { transform: rotate(-90deg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-uns-title { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin: 14px 0 6px; padding: 0 2px; white-space: nowrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-uns-title .a4pl-fold-all { width: 24px; height: 24px; flex: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-uns-title .a4pl-count { margin-right: auto; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pool { min-height: 60px; border-radius: var(--pl-r-control); padding: 2px 0 6px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pool.is-over { background: var(--pl-wash); outline: 1px dashed var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp { border-top: 1px solid var(--pl-hair); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp:first-child { border-top: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp-name { font-weight: 600; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp.is-none .a4pl-grp-name { font-weight: 500; font-style: italic; color: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pill { margin-left: auto; font: 500 11px var(--pl-f-mono); color: var(--pl-faint); border: 1px solid var(--pl-hair); border-radius: 10px; padding: 0 7px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp-list { padding: 0 0 6px 14px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-quick { border-top: 1px solid var(--pl-hair); padding-top: 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-parse { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; align-items: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-parse .a4pl-hint { font: 400 11.5px/1.5 var(--pl-f-body); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.is-got { color: var(--pl-paper); border-color: var(--pl-marker); background: var(--pl-wash); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-input, html:not(#a4pl-guard) .a4pl-root .a4pl-slot-input { width: 100%; background: transparent; border: 1px solid var(--pl-hair2); border-radius: var(--pl-r-control); padding: 6px 9px; font-size: 13px; color: var(--pl-paper); height: auto; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot-input { border-color: var(--pl-marker); font-size: 12.5px; padding: 4px 7px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ag-day { font: 500 10.5px var(--pl-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pl-faint); margin: 10px 0 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-goal { border: 1px solid var(--pl-hair); border-radius: var(--pl-r-control); padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-goal:hover { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-goal-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-goal-name { font-weight: 600; font-size: 13px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-goal-counts { font: 500 10.5px var(--pl-f-mono); color: var(--pl-faint); }
+
+/* tasks */
+html:not(#a4pl-guard) .a4pl-root .a4pl-task { display: flex; align-items: flex-start; gap: 9px; padding: 6px 4px; border-radius: var(--pl-r-control); position: relative; user-select: none; -webkit-user-select: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task + .a4pl-task { border-top: 1px dashed var(--pl-hair); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task:hover { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-drag { cursor: grab; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-lifted { opacity: .3; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days .a4pl-task.has-project { border-left: 3px solid var(--pl-proj); padding-left: 6px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grip { color: var(--pl-faint); padding-top: 2px; touch-action: none; cursor: grab; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tick { width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid var(--pl-faint); display: inline-flex; align-items: center; justify-content: center; flex: none; margin-top: 2px; color: var(--pl-on-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tick:hover { border-color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tick.is-on { background: var(--pl-marker); border-color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tick svg { width: 11px; height: 11px; stroke-width: 3; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-main { flex: 1; min-width: 0; cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-title { font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-done .a4pl-task-title { color: var(--pl-faint); text-decoration: line-through; text-decoration-color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip { display: inline-flex; align-items: center; gap: 4px; font: 500 10.5px/1.6 var(--pl-f-mono); padding: 0 5px; border: 1px solid var(--pl-hair); border-radius: var(--pl-r-micro); color: var(--pl-dim); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.a4pl-proj { border-color: var(--pl-hair2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.is-warn { color: var(--pl-marker); border-color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.is-today { color: var(--pl-warning); border-color: var(--pl-warning); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pri { gap: 5px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pri.is-top { color: var(--pl-marker); border-color: var(--pl-marker); font-weight: 700; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pri.is-low { color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 9px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars i { width: 3px; background: var(--pl-hair2); border-radius: 1px; display: block; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars i:nth-child(1) { height: 4px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars i:nth-child(2) { height: 6.5px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars i:nth-child(3) { height: 9px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-bars i.is-on { background: currentColor; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sched, html:not(#a4pl-guard) .a4pl-root .a4pl-pin { width: 24px; height: 22px; border-radius: var(--pl-r-control); color: var(--pl-faint); opacity: 0; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task:hover .a4pl-sched, html:not(#a4pl-guard) .a4pl-root .a4pl-task:focus-within .a4pl-sched, html:not(#a4pl-guard) .a4pl-root .a4pl-sched.is-open,
+html:not(#a4pl-guard) .a4pl-root .a4pl-task:hover .a4pl-pin, html:not(#a4pl-guard) .a4pl-root .a4pl-pin.is-on { opacity: 1; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sched:hover, html:not(#a4pl-guard) .a4pl-root .a4pl-sched.is-open { color: var(--pl-marker); background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pin.is-on { color: var(--pl-warning); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pin.is-on svg { fill: currentColor; }
+/* week columns are narrow: the Schedule and star buttons sit over the row's top-right instead of taking width */
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-sched { position: absolute; right: 22px; top: 3px; background: var(--pl-bg2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-pin { position: absolute; right: 0; top: 3px; background: var(--pl-bg2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-task:hover .a4pl-pin, html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-task:hover .a4pl-sched { background: var(--pl-bg3); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-pin.is-on { position: static; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-task { padding-right: 2px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-sched, html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-pin { opacity: 1; }
+@media (hover: none) { html:not(#a4pl-guard) .a4pl-root .a4pl-sched, html:not(#a4pl-guard) .a4pl-root .a4pl-pin { opacity: 1; } }
+
+/* days */
+html:not(#a4pl-guard) .a4pl-root .a4pl-days { display: grid; gap: 8px; align-content: start; align-items: start; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week { grid-template-columns: repeat(7, minmax(112px, 1fr)); overflow-x: auto; padding-bottom: 6px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-day { grid-template-columns: minmax(0, 760px); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-day { border: 1px solid var(--pl-hair); border-radius: var(--pl-r-subtle); background: var(--pl-bg2); display: flex; flex-direction: column; min-width: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-day.is-today { border-color: var(--pl-marker); box-shadow: 0 0 0 1px var(--pl-marker) inset; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-day.is-past { opacity: .75; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-day-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 10px 12px 6px; border-bottom: 1px solid var(--pl-hair); } /* wrap: a narrow week column has no room for the "today" tag beside the date (it spilled into the next day) */
+html:not(#a4pl-guard) .a4pl-root .a4pl-dow { font: 500 11px var(--pl-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-dom { font: 640 22px var(--pl-f-display); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-today-tag { margin-left: auto; color: var(--pl-marker); font: 600 19px var(--pl-f-hand); transform: rotate(-3deg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-progress { padding: 6px 12px 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-track { height: 3px; background: var(--pl-hair); border-radius: 2px; overflow: hidden; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-fill { height: 100%; background: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-plabel { font: 500 10px var(--pl-f-mono); color: var(--pl-faint); margin-top: 3px; letter-spacing: .06em; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-cal { padding: 6px 12px 4px; border-bottom: 1px dashed var(--pl-hair); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-cal-head { display: flex; justify-content: space-between; align-items: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-hint { font: 500 9.5px var(--pl-f-mono); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ev { display: flex; gap: 8px; font-size: 12px; color: var(--pl-dim); line-height: 1.5; cursor: grab; border-radius: 3px; padding: 1px 3px; margin: 0 -3px; touch-action: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ev:hover { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ev-t { font: 500 10.5px var(--pl-f-mono); color: var(--pl-faint); flex: none; padding-top: 1px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ev-s { min-width: 0; overflow-wrap: anywhere; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-ev-made { margin-left: auto; flex: none; font: 500 9.5px var(--pl-f-mono); color: var(--pl-success); text-transform: uppercase; letter-spacing: .08em; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot { padding: 6px 8px 8px; position: relative; min-height: 130px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot.is-am { padding-bottom: 18px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot.is-any { min-height: 0; border-bottom: 1px dashed var(--pl-hair); }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-slot { min-height: 90px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-slot.is-any { min-height: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot.is-over { background: var(--pl-wash); outline: 1px dashed var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot-label { font: 500 9.5px var(--pl-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--pl-faint); margin: 2px 2px 4px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-noon { position: absolute; left: 8px; right: 8px; bottom: -1px; border-top: 1px dashed var(--pl-hair2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-noon span { position: absolute; right: 0; top: -9px; background: var(--pl-bg2); padding-left: 6px; font: 10px var(--pl-f-mono); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-drop-line { height: 2px; background: var(--pl-marker); border-radius: 2px; margin: 2px 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot-add { font-size: 11.5px; color: var(--pl-faint); padding: 3px 4px; opacity: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot:hover .a4pl-slot-add, html:not(#a4pl-guard) .a4pl-root .a4pl-slot-add:focus-visible { opacity: 1; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-slot-add:hover { color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-task-title { font-size: 12.5px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-week .a4pl-task { gap: 7px; }
+
+/* phone drawer */
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; flex-direction: column; background: var(--pl-deep); border-top: 1px solid var(--pl-hair2); border-radius: 16px 16px 0 0; box-shadow: var(--pl-shadow); max-height: 62%; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet.is-closed { max-height: 58px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; position: relative; cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-handle { position: absolute; top: 5px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--pl-hair2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet-chev { margin-left: auto; color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet-body { overflow: auto; padding: 0 14px 18px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet.is-closed .a4pl-sheet-body { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-sheet .a4pl-task { touch-action: pan-y; }
+
+/* drag ghost (on document.body) */
+html:not(#a4pl-guard) .a4pl-ghost { position: fixed; z-index: var(--layer-popover, 60); pointer-events: none; background: var(--pl-overlay); box-shadow: var(--pl-shadow); border-radius: var(--pl-r-control); padding: 6px 10px; font-size: 13px; max-width: 260px; transform: rotate(-2deg); border-left: 3px solid var(--pl-marker); }
+
+/* Schedule popover (on document.body) */
+html:not(#a4pl-guard) .a4pl-pop { position: fixed; z-index: var(--layer-popover, 60); width: 272px; background: var(--pl-overlay); box-shadow: var(--pl-shadow); border-radius: var(--pl-r-subtle); padding: 10px; font-size: 13px; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-title { font: 500 10px var(--pl-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pl-faint); margin: 0 2px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-q { display: flex; width: 100%; justify-content: space-between; padding: 6px 8px; border-radius: var(--pl-r-control); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-q:hover, html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-q:focus-visible { background: var(--pl-wash); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-k { font: 500 10.5px var(--pl-f-mono); color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-sep { border-top: 1px solid var(--pl-hair); margin: 8px 0; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 4px; font-weight: 600; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc-nav { width: 24px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pl-r-control); color: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc-dw { font: 500 9.5px var(--pl-f-mono); color: var(--pl-faint); text-align: center; padding: 2px 0; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc button { height: 26px; border-radius: var(--pl-r-control); font: 500 12px var(--pl-f-mono); text-align: center; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc button:hover { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc button.is-out { color: var(--pl-faint); opacity: .55; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc button.is-today { box-shadow: inset 0 0 0 1px var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-mc button.is-sel { background: var(--pl-paper); color: var(--pl-bg); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-seg { display: flex; margin-top: 8px; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-seg button { flex: 1; padding: 4px 0; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-place { margin-top: 8px; width: 100%; text-align: center; background: var(--pl-marker); color: var(--pl-on-marker); border-radius: var(--pl-r-control); padding: 6px; font-size: 13px; font-weight: 600; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-place:hover { background: var(--pl-marker); filter: brightness(1.06); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-note { font-size: 11.5px; color: var(--pl-faint); padding: 4px 8px; }
+
+/* phone: finger-sized buttons */
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-sched, html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-pin { width: 40px; height: 40px; margin: -9px 0 -9px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-sched svg, html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-pin svg { width: 18px; height: 18px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-tick { width: 22px; height: 22px; margin-top: 0; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-grip { padding: 6px 4px; margin: -6px -2px -6px -4px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-grip svg { width: 18px; height: 18px; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-grp-head, html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-sec-head { min-height: 40px; }
+html:not(#a4pl-guard) .a4pl-pop.is-narrow .a4pl-pop-q { padding: 10px 8px; }
+html:not(#a4pl-guard) .a4pl-pop.is-narrow .a4pl-mc button { height: 36px; }
+
+/* blocked tasks (dependencies, Projects mockup round 4) */
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-blocked { opacity: .78; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-blocked .a4pl-task-title { color: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task.is-blocked .a4pl-tick { border-style: dashed; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.a4pl-lock { color: var(--pl-warning); border-color: color-mix(in srgb, var(--pl-warning) 60%, transparent); cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.a4pl-lock:hover { color: var(--pl-paper); border-color: var(--pl-warning); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-chip.a4pl-lock .a4pl-ic svg { width: 10px; height: 10px; }
+
+/* Task times (1.0.4): the clock time in front of a task name, and the Undo notice. */
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-time { font: 600 11px var(--pl-f-mono); color: var(--pl-marker); margin-right: 6px; white-space: nowrap; }
+.a4-undo-notice { display: flex; align-items: center; gap: 12px; }
+.a4-undo-notice .a4-undo-btn { flex: none; }
+
+/* Reminders (1.1.0, reminder setup mockup approved 2026-10-05): a small
+ * bell after the time says the task will ring; "15m" when it rings earlier. */
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell { display: inline-flex; align-items: flex-start; gap: 1px; margin: 0 5px 0 -2px; color: var(--pl-marker); vertical-align: baseline; white-space: nowrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell .a4pl-ic svg { width: 12px; height: 12px; stroke-width: 2; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-task-title .a4pl-bell-k { font: 600 9.5px var(--pl-f-mono); line-height: 1; position: relative; top: -2px; }
+
+/* Find button (mockup approved 2026-10-06): opens Projects' Find window. */
+html:not(#a4pl-guard) .a4pl-root .a4pl-find-btn { display: inline-flex; align-items: center; gap: 6px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-find-ic { display: inline-flex; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-find-ic svg { width: 14px; height: 14px; }
+/* "+project" typing in the New task box (1.4.0): the list opens under the box */
+html:not(#a4pl-guard) .a4pl-root .a4pl-qa-anchor { position: relative; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pop.a4pl-sugg { position: absolute; left: 0; right: 0; top: calc(100% + 6px); width: auto; z-index: 5; }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-pop-q.is-active { background: var(--pl-wash); }
+html:not(#a4pl-guard) .a4pl-pop .a4pl-hit { font-weight: 700; color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-parse .a4pl-hint-key { color: var(--pl-paper); font-weight: 600; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-nomatch { font: 400 11.5px/1.5 var(--pl-f-body); color: var(--pl-faint); font-style: italic; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-nomatch[hidden] { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-select.is-picked { border-color: var(--pl-marker); background-color: var(--pl-wash); }
+
+/* Group by: Project / Area over the Unscheduled list (0.1.5, areas mockup screen 5). */
+html:not(#a4pl-guard) .a4pl-root .a4pl-groupby { flex: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-groupby button { padding: 1px 8px; font-size: 11px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-pool > .a4pl-groupby { margin: 0 0 8px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-area-ic svg { width: 13px; height: 13px; color: var(--pl-faint); }
+
+/* Month (0.1.15, calendar mockup option 1): a Monday-first grid; each day lists
+ * events then tasks, four lines and "+N more". Phone: dots, the picked day listed below. */
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-month { grid-template-columns: minmax(0, 1fr); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-left: 1px solid var(--pl-hair); border-top: 1px solid var(--pl-hair); border-radius: var(--pl-r-subtle); overflow: hidden; background: var(--pl-bg2); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdow { font: 500 10.5px var(--pl-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pl-faint); padding: 6px 8px; border-right: 1px solid var(--pl-hair); border-bottom: 1px solid var(--pl-hair); background: var(--pl-bg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday { min-height: 118px; min-width: 0; border-right: 1px solid var(--pl-hair); border-bottom: 1px solid var(--pl-hair); padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday.is-out { background: var(--pl-bg); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday.is-out .a4pl-mdn, html:not(#a4pl-guard) .a4pl-root .a4pl-mday.is-past .a4pl-mdn { color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday.is-today { box-shadow: inset 0 0 0 2px var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday.is-over { background: var(--pl-wash); outline: 2px dashed var(--pl-marker); outline-offset: -2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mhead { display: flex; justify-content: space-between; align-items: baseline; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdn { font: 640 14px var(--pl-f-display); padding: 0 2px; border-radius: 3px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdn:hover { color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-today-tag { font-size: 17px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-ev-s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-task { position: relative; gap: 6px; padding: 1px 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-task-title { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-meta, html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-pin { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mday .a4pl-sched { position: absolute; right: 0; top: 1px; background: var(--pl-bg3); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-more { font: 500 10.5px var(--pl-f-mono); color: var(--pl-faint); text-align: left; padding: 0 2px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-more:hover { color: var(--pl-marker); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdots { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdots i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mdots i.is-ev { background: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-mday { min-height: 52px; padding: 4px 2px; align-items: center; cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-mday.is-sel { background: var(--pl-hover); }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-mday.is-today { box-shadow: none; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-mday.is-today .a4pl-mdn { background: var(--pl-marker); color: var(--pl-on-marker); border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
+html:not(#a4pl-guard) .a4pl-root.is-narrow .a4pl-mdow { padding: 6px 0; text-align: center; letter-spacing: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mlist { border: 1px solid var(--pl-hair); border-radius: var(--pl-r-subtle); background: var(--pl-bg2); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-mlist .a4pl-task { touch-action: pan-y; }
+
+/* A task source that could not be read (launch section 5b): one short line above the lists. */
+.a4pl-root .a4pl-src-err { color: var(--text-warning, var(--text-muted)); font-size: var(--font-ui-smaller); margin: 6px 0 8px; }
+.a4pl-root .a4pl-pin.a4pl-off { display: none; }

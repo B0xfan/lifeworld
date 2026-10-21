@@ -1,0 +1,149 @@
+{
+  "lifeworld": {
+    "vault": {
+      "folders": {
+        "tasks": "02 Planner/TaskNotes/Tasks",
+        "archive": "02 Planner/TaskNotes/Archive",
+        "projects": "04 Library/My Life/Projects",
+        "goals": "04 Library/My Life/Goals",
+        "habits": "04 Library/My Life/Habits",
+        "journal": "04 Library/Journal"
+      },
+      "feeds": {
+        "calendar": "02 Planner/Calendar Events.md",
+        "weather": "02 Planner/Weather Today.md"
+      },
+      "sidebar": {
+        "brand": "Home",
+        "life": "04 Library/My Life",
+        "groups": [
+          {
+            "id": "direction",
+            "label": "Direction",
+            "folders": [
+              "Key Elements",
+              "Goals",
+              "Personal projects",
+              "Unsorted projects",
+              "Habits",
+              "Topics"
+            ]
+          },
+          {
+            "id": "wellbeing",
+            "label": "Wellbeing",
+            "folders": [
+              "Health",
+              "Mood"
+            ]
+          },
+          {
+            "id": "money",
+            "label": "Money & work",
+            "folders": [
+              "Work projects",
+              "Finance",
+              "Charts"
+            ]
+          },
+          {
+            "id": "free",
+            "label": "Free time",
+            "folders": [
+              "Movies",
+              "Media",
+              "Reading",
+              "Sports",
+              "Recipes",
+              "Trips",
+              "Guide"
+            ]
+          },
+          {
+            "id": "notes",
+            "label": "Notes",
+            "folders": [
+              "Notes",
+              "Weather"
+            ]
+          }
+        ],
+        "icons": {
+          "Charts": "chart",
+          "Finance": "wallet",
+          "Goals": "target",
+          "Guide": "map",
+          "Habits": "flame",
+          "Health": "pulse",
+          "Key Elements": "diamond",
+          "Media": "music",
+          "Mood": "smile",
+          "Movies": "film",
+          "Notes": "note",
+          "Projects": "kanban",
+          "Reading": "book",
+          "Recipes": "chef",
+          "Sports": "trophy",
+          "Topics": "hash",
+          "Trips": "plane",
+          "Weather": "cloudSun",
+          "Work projects": "kanban",
+          "Personal projects": "kanban",
+          "Unsorted projects": "kanban"
+        },
+        "labels": {
+          "Media": "Music",
+          "Guide": "Places"
+        },
+        "noCount": [
+          "Finance",
+          "Health",
+          "Charts",
+          "Weather",
+          "Mood",
+          "Sports"
+        ],
+        "rooms": [
+          {
+            "prefix": "00 ",
+            "name": "Daily Notes",
+            "icon": "pen"
+          },
+          {
+            "prefix": "01 ",
+            "name": "Inbox",
+            "icon": "inbox"
+          },
+          {
+            "prefix": "02 ",
+            "name": "Planner",
+            "icon": "calendar"
+          },
+          {
+            "prefix": "03 ",
+            "name": "Desk",
+            "icon": "bench"
+          },
+          {
+            "prefix": "04 ",
+            "name": "Library",
+            "icon": "sparkle"
+          },
+          {
+            "prefix": "05 ",
+            "name": "Assets",
+            "icon": "box"
+          },
+          {
+            "prefix": "06 ",
+            "name": "Admin",
+            "icon": "bot"
+          }
+        ],
+        "basesSkip": [
+          "02 Planner/TaskNotes/"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "a4-planner",
+  "name": "Planner",
+  "version": "1.5.0",
+  "minAppVersion": "1.5.7",
+  "description": "Plan the week and the day: drag tasks onto mornings and afternoons, or use the Schedule button. Unscheduled tasks are grouped by project and remember which groups you folded. Calendar events can become tasks.",
+  "isDesktopOnly": false
+}

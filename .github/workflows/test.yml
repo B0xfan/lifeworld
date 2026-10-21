@@ -1,0 +1,21 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  self-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils # pdftotext, for the PDF manual checks
+      - run: npm ci
+      - name: Build (esbuild, src/ to main.js)
+        run: npm run build
+      - name: Official Obsidian ESLint (errors fail; warnings are listed for phase 2)
+        run: npx eslint .
+      - name: Self-checks (no vault needed)
+        run: node tests/run-all.js

@@ -1,0 +1,166 @@
+// "Your vault" (Settings, phase 2 section 4): the folders and task property names every part of
+// LifeWorld reads. One live object per build; LifeWorld fills it from its settings at start and on
+// every change (src/main.js), the parts read it each time they need a folder or a name.
+'use strict';
+
+// A new install's folders, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
+// mood: where mood check-ins are read and saved (launch section 9, default `Mood`).
+const FOLDER_DEFAULTS = { tasks: 'Tasks', archive: 'Tasks/Archive', projects: 'Projects', goals: 'Goals', habits: 'Habits', journal: 'Journal', mood: 'Mood' };
+// Task note properties, LifeWorld's own name for each; a new install uses the same names in the notes.
+const PROPS = ['title', 'status', 'priority', 'due', 'scheduled', 'projects', 'reminders', 'recurrence', 'completedDate', 'planned_day', 'planned_half', 'planned_order',
+  'dateCreated', 'dateModified', 'complete_instances', 'skipped_instances', 'blockedBy'];
+// Obsidian's own Daily notes defaults, used when its Daily notes plugin is off.
+const DAILY_DEFAULTS = { folder: '', format: 'YYYY-MM-DD', template: '' };
+// Start settings under the saved ones: none in the plugin (the defaults above). The test suites
+// start on the frozen test vault's settings through startWith (phase 2 section 8; was a build flag).
+let START = {};
+
+const folders = {};
+const names = {};
+// Notes another program keeps up to date, read "from a note" (phase 2 section 5): the calendar
+// (its `events` and `calendars` lists) and the weather. '' = none, the new-install default; an
+// owner's preset holds the paths. Stored only in the settings file (no row, build plan section 2).
+const feeds = { calendar: '', weather: '' };
+const daily = { ...DAILY_DEFAULTS, ...(START.daily || {}) }; // fallback when Obsidian's setting cannot be read
+// The Sidebar's own content (phase 2 section 6): its name, the folder whose subfolders it groups
+// ("life"), the groups, item icons and labels, items shown without a count, the rooms (top folders
+// found by their name's start) and bases left out of the Bases list. A new install has none of it
+// and lists its own top folders; an owner's preset holds it. Stored only in the settings file (the
+// groups editor is phase 4).
+const SIDEBAR_DEFAULTS = { brand: 'LifeWorld', life: '', groups: [], icons: {}, labels: {}, noCount: [], rooms: [], basesSkip: [] };
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const strs = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const strMap = (v) => isObj(v) && Object.values(v).every((x) => typeof x === 'string');
+const SIDEBAR_OK = {
+  brand: (v) => typeof v === 'string' && v.trim() !== '',
+  life: (v) => typeof v === 'string',
+  groups: (v) => Array.isArray(v) && v.every((g) => isObj(g) && typeof g.id === 'string' && typeof g.label === 'string' && strs(g.folders)),
+  icons: strMap,
+  labels: strMap,
+  noCount: strs,
+  rooms: (v) => Array.isArray(v) && v.every((r) => isObj(r) && typeof r.prefix === 'string' && r.prefix !== '' && typeof r.name === 'string' && typeof r.icon === 'string'),
+  basesSkip: strs,
+};
+const sidebar = {};
+let renamed = false; // any property name differs from LifeWorld's own
+// Settings › Planning › "When you place a task on a day" (0.1.16): true = set its due date (the
+// default), false = just plan it for that day (planned_day, the rule before 0.1.14).
+const planning = { setsDue: true };
+
+// A character a property name cannot hold (the approved mockup's rule).
+const BAD_NAME = /[:#[\]{}|,]/;
+// Names a task property cannot be renamed to, because something already reads them by that name:
+// Obsidian's own (tags, aliases, cssclasses and their old one-word forms; Obsidian 1.14.4 matches
+// them in any case) and the task note properties LifeWorld reads under a fixed name (the engine's
+// fields outside PROPS, Projects' DEFAULT_FIELDS; the Planner's weekly_goal). Compared in any case.
+const RESERVED = ['tags', 'aliases', 'cssclasses', 'tag', 'alias', 'cssclass',
+  'archived', 'contexts', 'timeEstimate', 'recurrence_anchor', 'googleCalendarExceptionOriginalScheduled', 'googleCalendarMovedOriginalDates', 'weekly_goal'];
+const isReserved = (v) => RESERVED.some((r) => r.toLowerCase() === String(v).trim().toLowerCase());
+
+// A folder as typed -> 'a/b': no leading, trailing or doubled slash, no '.' or '..' step.
+const cleanFolder = (v) => (typeof v === 'string' ? v.trim().split('/').filter((x) => x && x !== '.' && x !== '..').join('/') : '');
+
+// -> '' when the names can be used, else what is wrong (the Property names dialog shows it).
+// Each entry: [row label, name]. Same checks as the approved mockup: empty, two rows the same, a
+// character a property name cannot hold.
+function namesProblem(list) {
+  const seen = new Set();
+  for (const [, raw] of list) {
+    const v = String(raw == null ? '' : raw).trim();
+    if (!v) return 'A property name cannot be empty.';
+    if (seen.has(v)) return `Two rows use "${v}". Each needs its own name.`;
+    if (BAD_NAME.test(v)) return `"${v}" has a character property names cannot use.`;
+    if (isReserved(v)) return `"${v}" is already used by Obsidian or LifeWorld. Pick another name.`;
+    seen.add(v);
+  }
+  return '';
+}
+
+// Takes LifeWorld's saved "vault" settings ({ folders, names }); anything missing, empty or
+// unusable falls back to the default, so a damaged or hand-edited file never points nowhere.
+function setVault(saved) {
+  const s = saved && typeof saved === 'object' ? saved : {};
+  const f = s.folders && typeof s.folders === 'object' ? s.folders : {};
+  const start = START.folders || {};
+  for (const k of Object.keys(FOLDER_DEFAULTS)) folders[k] = cleanFolder(f[k]) || cleanFolder(start[k]) || FOLDER_DEFAULTS[k];
+  const n = s.names && typeof s.names === 'object' ? s.names : {};
+  const want = PROPS.map((k) => [k, typeof n[k] === 'string' && n[k].trim() ? n[k].trim() : k]);
+  const ok = !namesProblem(want);
+  for (const [k, v] of want) names[k] = ok ? v : k;
+  renamed = PROPS.some((k) => names[k] !== k);
+  const fd = s.feeds && typeof s.feeds === 'object' ? s.feeds : {};
+  // A saved path, even empty ("none"), beats the preset; only a missing or damaged one falls back
+  // (review p2-s5). Not a note ('.md'): none, so a folder-style value never reads as a feed.
+  const note = (v) => { const p = cleanFolder(v); return p.endsWith('.md') ? p : ''; };
+  for (const k of Object.keys(feeds)) feeds[k] = note(typeof fd[k] === 'string' ? fd[k] : (START.feeds || {})[k]);
+  planning.setsDue = s.placeOnDay !== 'plan';
+  // Each Sidebar value: saved, else the start settings, else the new-install default; a damaged value
+  // (wrong type) counts as missing.
+  const sb = isObj(s.sidebar) ? s.sidebar : {};
+  const sbStart = isObj(START.sidebar) ? START.sidebar : {};
+  for (const [k, ok] of Object.entries(SIDEBAR_OK)) {
+    const v = ok(sb[k]) ? sb[k] : ok(sbStart[k]) ? sbStart[k] : SIDEBAR_DEFAULTS[k];
+    sidebar[k] = k === 'life' ? cleanFolder(v) : JSON.parse(JSON.stringify(v));
+  }
+}
+setVault(null);
+// Tests only: start on `preset` (the frozen test vault's settings), as if nothing were saved yet.
+function startWith(preset) {
+  START = preset && typeof preset === 'object' ? preset : {};
+  Object.assign(daily, DAILY_DEFAULTS, START.daily || {});
+  setVault(null);
+}
+
+// Obsidian's own Daily notes settings: { folder, format, template } (template without '.md', as
+// Obsidian stores it). shortcut: reads the core plugin's live options, an undocumented internal
+// (app.internalPlugins, checked in Obsidian 1.14.4's app code); upgrade if Obsidian documents one.
+function dailyNotes(app) {
+  const ip = app && app.internalPlugins;
+  const dn = ip && typeof ip.getEnabledPluginById === 'function' ? ip.getEnabledPluginById('daily-notes') : null;
+  const o = dn && dn.options;
+  if (!o) return { ...daily };
+  return { folder: cleanFolder(o.folder), format: (typeof o.format === 'string' && o.format.trim()) || DAILY_DEFAULTS.format, template: cleanFolder(o.template) };
+}
+
+// A path inside the tasks or the finished tasks folder (where task notes live).
+function inTaskFolders(path) {
+  const p = String(path || '');
+  return p.startsWith(`${folders.tasks}/`) || p.startsWith(`${folders.archive}/`);
+}
+
+// A task note's frontmatter under LifeWorld's own property names. With no name changed (every
+// setup so far) this is the very same object, so nothing reads differently.
+function readable(fm) {
+  if (!renamed || !fm || typeof fm !== 'object') return fm;
+  const inNote = new Set(Object.values(names));
+  const out = {};
+  for (const k of Object.keys(fm)) if (!inNote.has(k) && !PROPS.includes(k)) out[k] = fm[k];
+  for (const k of PROPS) if (Object.prototype.hasOwnProperty.call(fm, names[k])) out[k] = fm[names[k]];
+  return out;
+}
+
+// Runs fn on a task note's frontmatter under LifeWorld's names (inside processFrontMatter) and puts
+// the result back under the note's names. Untouched keys keep their place; a property the note
+// has under LifeWorld's own name while renamed is left alone.
+function writable(fm, fn) {
+  if (!renamed) return fn(fm);
+  const view = readable(fm);
+  const r = fn(view);
+  for (const k of PROPS) { if (Object.prototype.hasOwnProperty.call(view, k)) fm[names[k]] = view[k]; else delete fm[names[k]]; }
+  const inNote = new Set(Object.values(names));
+  for (const k of Object.keys(view)) if (!PROPS.includes(k)) fm[k] = view[k];
+  for (const k of Object.keys(fm)) if (!inNote.has(k) && !PROPS.includes(k) && !Object.prototype.hasOwnProperty.call(view, k)) delete fm[k];
+  return r;
+}
+
+// A new note's frontmatter, written with LifeWorld's names, under the note's names (same order).
+function toNote(fm) {
+  if (!renamed) return fm;
+  const out = {};
+  for (const k of Object.keys(fm)) out[PROPS.includes(k) ? names[k] : k] = fm[k];
+  return out;
+}
+
+const isRenamed = () => renamed;
+
+export { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

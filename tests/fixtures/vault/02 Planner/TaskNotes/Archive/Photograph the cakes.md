@@ -1,0 +1,13 @@
+---
+status: done
+priority: normal
+dateCreated: 2026-09-10T09:00:00.000-06:00
+dateModified: 2026-10-01T09:00:00.000-06:00
+tags:
+  - task
+completedDate: 2026-09-04
+archived: true
+projects:
+  - "[[04 Library/My Life/Projects/Bakery Website]]"
+title: Photograph the cakes for the shop
+---

@@ -1,0 +1,674 @@
+/* Projects. Same look as Today and Planner: the theme's --ink-*
+ * tokens with Obsidian fallbacks, one neutral project colour, no Kanban.
+ * Every selector carries html:not(#a4pj-guard) so the theme cannot outrank it. */
+html:not(#a4pj-guard) .a4pj-root, html:not(#a4pj-guard) .a4pj-card, html:not(#a4pj-guard) .a4pj-pop, html:not(#a4pj-guard) .a4pj-toast {
+  --pj-bg: var(--ink, var(--background-primary));
+  --pj-bg2: var(--ink-2, var(--background-secondary));
+  --pj-bg3: var(--ink-3, var(--background-modifier-hover));
+  --pj-overlay: var(--ink-overlay, var(--background-primary));
+  --pj-paper: var(--ink-paper, var(--text-normal));
+  --pj-dim: var(--ink-paper-dim, var(--text-muted));
+  --pj-faint: var(--ink-paper-faint, var(--text-faint));
+  --pj-marker: var(--ink-marker, var(--interactive-accent));
+  --pj-wash: var(--ink-marker-soft, var(--background-modifier-hover));
+  --pj-on-marker: var(--ink-on-marker, var(--text-on-accent));
+  --pj-hair: var(--ink-hairline, var(--background-modifier-border));
+  --pj-hair2: var(--ink-hairline-emphasis, var(--background-modifier-border-hover));
+  --pj-hover: var(--ink-hover-wash, var(--background-modifier-hover));
+  --pj-warning: var(--ink-warning, var(--text-warning));
+  --pj-success: var(--ink-success-dot, var(--text-success));
+  --pj-proj: var(--ink-paper-faint, var(--text-faint));
+  --pj-shadow: var(--ink-float-shadow, var(--shadow-l));
+  --pj-f-display: var(--ink-font-display, var(--font-interface));
+  --pj-f-body: var(--ink-font-body, var(--font-interface));
+  --pj-f-hand: var(--ink-font-hand, cursive);
+  --pj-f-mono: var(--ink-font-mono, var(--font-monospace));
+  --pj-r-micro: var(--ink-radius-micro, 2px);
+  --pj-r-control: var(--ink-radius-control, 4px);
+  --pj-r-subtle: var(--ink-radius-subtle, 10px);
+  color: var(--pj-paper);
+  font-family: var(--pj-f-body);
+}
+html:not(#a4pj-guard) .a4pj-root *, html:not(#a4pj-guard) .a4pj-card *, html:not(#a4pj-guard) .a4pj-pop * { box-sizing: border-box; }
+html:not(#a4pj-guard) .a4pj-root { position: relative; padding: 0; height: 100%; overflow: hidden; background: var(--pj-bg); font-size: 14px; line-height: 1.5; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-scroll { height: 100%; overflow-y: auto; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-page { padding: 26px 32px 40px; max-width: 1500px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-page { padding: 16px 14px 40px; }
+
+/* buttons: Obsidian and the theme style every <button>; reset inside */
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop, .a4pj-toast) button { font-family: inherit; color: inherit; background: none; border: 0; box-shadow: none; padding: 0; margin: 0; height: auto; min-height: 0; cursor: pointer; font-size: inherit; font-weight: inherit; line-height: inherit; text-align: left; width: auto; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop, .a4pj-toast) button:hover { background: none; box-shadow: none; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) :is(button, input, [role=button], [role=link], [tabindex]):focus-visible { outline: 2px solid var(--pj-marker); outline-offset: 1px; box-shadow: none; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-ic { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-ic svg { width: 13px; height: 13px; stroke-width: 1.8; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) input[type=text] { background: transparent; color: var(--pj-paper); box-shadow: none; height: auto; }
+
+/* type */
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-kicker { font: 500 10.5px/1.4 var(--pj-f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-count { font: 500 11px var(--pj-f-mono); color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-empty { font: 600 19px var(--pj-f-hand); color: var(--pj-faint); padding: 6px 2px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-muted { color: var(--pj-faint); font-size: 12.5px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-crumb { font: 500 10.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-crumb button { color: var(--pj-faint); text-transform: inherit; letter-spacing: inherit; font: inherit; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-crumb button:hover { color: var(--pj-marker); }
+
+/* header */
+html:not(#a4pj-guard) .a4pj-root .a4pj-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-title { font: 640 clamp(26px, 3vw, 40px)/1.08 var(--pj-f-display); letter-spacing: -.02em; margin: 4px 0 0; position: relative; display: inline-block; padding-bottom: 8px; color: var(--pj-paper); border: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-title::after { content: ''; position: absolute; left: 0; bottom: 0; width: 170px; max-width: 100%; height: 3px; border-radius: 3px; background: var(--pj-marker); transform: rotate(-.6deg); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); font-weight: 500; font-size: 12.5px; color: var(--pj-paper); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-btn:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-btn.is-warn { color: var(--pj-marker); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-btn.a4pj-small { padding: 2px 8px; font-size: 12px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-seg { display: inline-flex; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 2px; gap: 2px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-seg button { padding: 3px 10px; font-size: 12px; border-radius: 3px; color: var(--pj-faint); text-align: center; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-seg button.is-on { background: var(--pj-paper); color: var(--pj-bg); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-search { display: flex; align-items: center; gap: 6px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 4px 8px; min-width: 230px; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-search { min-width: 0; flex: 1; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-search input { border: 0; outline: none; font-size: 13px; width: 100%; padding: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-select { height: auto; padding: 2px 24px 2px 6px; font-size: 12.5px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); background-color: transparent; color: var(--pj-paper); box-shadow: none; }
+
+/* chips */
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-chip { display: inline-flex; align-items: center; gap: 4px; font: 500 10.5px/1.6 var(--pj-f-mono); padding: 0 5px; border: 1px solid var(--pj-hair); border-radius: var(--pj-r-micro); color: var(--pj-dim); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card, .a4pj-pop) .a4pj-chip .a4pj-ic svg { width: 10px; height: 10px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-warn { color: var(--pj-marker); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-today { color: var(--pj-warning); border-color: var(--pj-warning); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-start { border-style: dashed; color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-due { border-color: var(--pj-hair2); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-click { cursor: pointer; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-click:hover { border-color: var(--pj-marker); color: var(--pj-paper); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.is-got { color: var(--pj-paper); border-color: var(--pj-marker); background: var(--pj-wash); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-proj { border-color: var(--pj-hair2); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-st-active, html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-done { color: var(--pj-success); border-color: color-mix(in srgb, var(--pj-success) 60%, transparent); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-paused { color: var(--pj-warning); border-color: color-mix(in srgb, var(--pj-warning) 60%, transparent); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-backlog, html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-failed, html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-dropped { color: var(--pj-faint); border-style: dashed; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-pri { gap: 5px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-pri.is-top { color: var(--pj-marker); border-color: var(--pj-marker); font-weight: 700; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-pri.is-low { color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 9px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars i { width: 3px; background: var(--pj-hair2); border-radius: 1px; display: block; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars i:nth-child(1) { height: 4px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars i:nth-child(2) { height: 6.5px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars i:nth-child(3) { height: 9px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-bars i.is-on { background: currentColor; }
+
+/* overview */
+html:not(#a4pj-guard) .a4pj-root .a4pj-sphere { margin-bottom: 22px; border-radius: var(--pj-r-subtle); transition: background .6s; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sphere-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sphere-head h3 { margin: 0; font: 640 20px var(--pj-f-display); color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-plist { grid-template-columns: 1fr; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pcard { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--pj-hair); border-left: 3px solid var(--pj-proj); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 12px 14px; cursor: pointer; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pcard:hover { border-color: var(--pj-hair2); border-left-color: var(--pj-proj); background: color-mix(in srgb, var(--pj-bg2) 80%, var(--pj-hover)); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pcard.is-dim { opacity: .78; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring { flex: none; position: relative; width: 46px; height: 46px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring svg { width: 46px; height: 46px; transform: rotate(-90deg); display: block; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring .a4pj-ring-bg { stroke: var(--pj-hair); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring .a4pj-ring-fg { stroke: var(--pj-proj); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring-pct { position: absolute; inset: 0; display: grid; place-items: center; font: 600 10.5px var(--pj-f-mono); color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ring.is-big, html:not(#a4pj-guard) .a4pj-root .a4pj-ring.is-big svg { width: 64px; height: 64px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ring.is-big .a4pj-ring-pct { font-size: 13px; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-ring.is-long .a4pj-ring-pct { font-size: 8.5px; letter-spacing: -.04em; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ring.is-big.is-long .a4pj-ring-pct { font-size: 11px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pmain { flex: 1; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ptop { display: flex; align-items: center; gap: 8px; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pname { font: 620 15.5px/1.3 var(--pj-f-display); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ptop .a4pj-chip { margin-left: auto; flex: none; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pmeta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; font: 500 11px var(--pj-f-mono); color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pmeta .is-warn { color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pnext { margin-top: 6px; font-size: 13px; color: var(--pj-dim); display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pnext b { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); flex: none; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pnext span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pnext.is-none span { font-family: var(--pj-f-hand); font-size: 17px; color: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-found { margin: 4px 0 18px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed { margin-top: 8px; border-top: 1px solid var(--pj-hair); padding-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-bottom: 1px dashed var(--pj-hair); cursor: pointer; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row .a4pj-nm { font-weight: 600; font-size: 13.5px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-closed-row.is-failed .a4pj-nm { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-when { margin-left: auto; font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); }
+
+/* sections */
+html:not(#a4pj-guard) .a4pj-root .a4pj-sec-head { display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 2px; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sec-head:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chev { color: var(--pj-faint); transition: transform .15s; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sec-head.is-folded .a4pj-chev { transform: rotate(-90deg); }
+
+/* project page */
+html:not(#a4pj-guard) .a4pj-root .a4pj-phead { border: 1px solid var(--pj-hair); border-left: 3px solid var(--pj-proj); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 14px 16px; margin-bottom: 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-phead { grid-template-columns: auto 1fr; gap: 10px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--pj-dim); align-items: center; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-fact b { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin-right: 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-link { color: var(--pj-paper); text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; cursor: pointer; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-cols { grid-template-columns: 1fr; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-qa { border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-subtle); padding: 8px 10px; margin-bottom: 12px; background: var(--pj-bg2); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa:focus-within { border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa input { width: 100%; border: 0; outline: none; font-size: 14px; padding: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-parse { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; min-height: 20px; align-items: center; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-hint { font-size: 11.5px; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-lbar { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pj-dim); cursor: pointer; margin-left: auto; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-toggle input { accent-color: var(--pj-marker); margin: 0; }
+
+/* task rows */
+html:not(#a4pj-guard) .a4pj-root .a4pj-task { display: flex; align-items: flex-start; gap: 9px; padding: 7px 4px; border-radius: var(--pj-r-control); position: relative; transition: opacity .25s; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task + .a4pj-task, html:not(#a4pj-guard) .a4pj-root .a4pj-steps + .a4pj-task { border-top: 1px dashed var(--pj-hair); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-later { opacity: .62; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-leaving { opacity: .25; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-expand { width: 16px; flex: none; color: var(--pj-faint); padding-top: 3px; transition: transform .15s; display: inline-flex; justify-content: center; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-expand svg { width: 12px; height: 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-expand.is-open { transform: rotate(90deg); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-expand.is-blank { visibility: hidden; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-tick { width: 17px; height: 17px; border-radius: 50%; border: 1.6px solid var(--pj-faint); display: inline-flex; align-items: center; justify-content: center; flex: none; margin-top: 2px; color: var(--pj-on-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-tick:hover { border-color: var(--pj-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-tick.is-on { background: var(--pj-marker); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-tick svg { width: 11px; height: 11px; stroke-width: 3; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tick-sm { width: 15px; height: 15px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tmain { flex: 1; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle.is-link { cursor: pointer; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ttitle.is-link:hover { text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-done .a4pj-ttitle { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tmeta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sched { flex: none; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pj-r-control); color: var(--pj-faint); opacity: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sched svg { width: 14px; height: 14px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task:hover .a4pj-sched, html:not(#a4pj-guard) .a4pj-root .a4pj-task:focus-within .a4pj-sched, html:not(#a4pj-guard) .a4pj-root .a4pj-sched.is-open { opacity: 1; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sched:hover, html:not(#a4pj-guard) .a4pj-root .a4pj-sched.is-open { color: var(--pj-marker); background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-sched { opacity: 1; width: 40px; height: 40px; margin: -9px 0; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-sched svg { width: 18px; height: 18px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-tick { width: 22px; height: 22px; margin-top: 0; }
+@media (hover: none) { html:not(#a4pj-guard) .a4pj-root .a4pj-sched { opacity: 1; } }
+html:not(#a4pj-guard) .a4pj-root .a4pj-acts { display: flex; gap: 6px; flex: none; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-inbox .a4pj-task { padding: 9px 6px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-inbox .a4pj-task { flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-acts { width: 100%; padding-left: 31px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-acts .a4pj-btn { padding: 6px 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-steps { padding: 0 0 4px 50px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-steps { padding-left: 30px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-step { display: flex; align-items: flex-start; gap: 9px; padding: 4px; font-size: 13px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-step.is-done .a4pj-step-t { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-step-add { display: flex; gap: 9px; align-items: center; padding: 4px; color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-step-add input { flex: 1; border: 0; outline: none; font-size: 13px; padding: 0; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-plus { width: 17px; text-align: center; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-done { margin-top: 14px; border-top: 1px solid var(--pj-hair); padding-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-done-day { font: 500 10px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin: 8px 0 2px 4px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-more { font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); padding: 6px 4px; text-decoration: underline; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-body-note { margin-top: 18px; border-top: 1px solid var(--pj-hair); padding-top: 12px; color: var(--pj-dim); font-size: 14px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-md { margin-top: 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-side-card { border: 1px solid var(--pj-hair); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 12px 14px; margin-bottom: 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-side-card .a4pj-kicker { margin-bottom: 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bigring { display: flex; gap: 12px; align-items: center; }
+/* Project notes (mockup Option B, 2026-10-17): the add box's Task / Note label menu, and the Notes timeline under Progress. */
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa-row { display: flex; align-items: center; gap: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa-mode { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; color: var(--pj-dim); padding: 1px 6px 1px 4px; margin-left: -4px; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-qa-mode { min-height: 32px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa-mode:hover { background: var(--pj-hover); color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa-mode .a4pj-ic svg { width: 12px; height: 12px; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa.is-note { border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-qa.is-note .a4pj-qa-mode { color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-notes-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 10px 2px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-notes-head .a4pj-count { margin-left: auto; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ntl { position: relative; margin: 4px 0 0 4px; padding-left: 20px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ntl::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: -8px; width: 1px; background: linear-gradient(var(--pj-hair2) 70%, transparent); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ntl > .a4pj-muted { margin-left: -20px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-nitem { position: relative; padding: 0 0 18px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-nitem::before { content: ''; position: absolute; left: -20px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--pj-bg); border: 1.6px solid var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-nitem.is-latest::before { background: var(--pj-marker); border-color: var(--pj-marker); box-shadow: 0 0 0 3px var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ndate { font: 500 10px var(--pj-f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-nitem.is-latest .a4pj-ndate { color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ntext { font-size: 13.5px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ntl .a4pj-more { margin-left: 0; }
+
+/* task card above a task note */
+html:not(#a4pj-guard) .a4pj-hide-props .metadata-container, html:not(#a4pj-guard) .a4pj-task-note .inline-title { display: none !important; }
+/* TaskNotes UI on a task note: none (see hideTaskNotesOnTaskNotes in main.js) */
+html:not(#a4pj-guard) .a4pj-task-note :is(.task-card-note-widget, .tasknotes-relationships-widget, .instant-convert-button) { display: none !important; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card :is(.task-card__status-dot, .task-card__priority-dot, .task-card__metadata, .task-card__context-menu, .task-card__badges) { display: none !important; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget :is(.task-card, .task-card__main-row, .task-card__content, .task-card__title) { display: inline !important; padding: 0 !important; margin: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; font: inherit !important; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card__title-text { color: var(--link-color); text-decoration: var(--link-decoration); text-decoration-thickness: var(--link-decoration-thickness); cursor: var(--cursor-link); font: inherit !important; opacity: 1 !important; }
+html:not(#a4pj-guard) .a4pj-task-note .tasknotes-inline-widget .task-card__title-text:hover { color: var(--link-color-hover); text-decoration: var(--link-decoration-hover); }
+html:not(#a4pj-guard) .a4pj-card { border: 1px solid var(--pj-hair); border-left: 3px solid var(--pj-proj); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 12px 18px 10px; margin: 8px 0 18px; font-size: 13.5px; line-height: 1.5; user-select: none; -webkit-user-select: none; }
+html:not(#a4pj-guard) .markdown-reading-view .a4pj-card { margin-top: 0; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-card-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-card-top { display: flex; gap: 14px; align-items: flex-start; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--pj-faint); flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--pj-on-marker); margin-top: 4px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick:hover { border-color: var(--pj-marker); background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick.is-on { background: var(--pj-marker); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick svg { width: 16px; height: 16px; stroke-width: 3; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname { flex: 1; min-width: 0; font: 640 clamp(22px, 2.4vw, 30px)/1.2 var(--pj-f-display); letter-spacing: -.01em; outline: none; border-radius: var(--pj-r-control); padding: 2px 4px; margin: 0 -4px; color: var(--pj-paper); user-select: text; -webkit-user-select: text; cursor: text; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname:focus { background: var(--pj-hover); box-shadow: inset 0 -2px 0 var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname.is-done { color: var(--pj-faint); text-decoration: line-through; text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-fields { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 14px 0 4px 44px; align-items: center; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-fields { grid-template-columns: 1fr; gap: 2px 0; margin-left: 0; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-lab { margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-lab { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-val { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+html:not(#a4pj-guard) :is(.a4pj-card, .a4pj-pop) .a4pj-pick { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); font-size: 13px; color: var(--pj-paper); }
+html:not(#a4pj-guard) :is(.a4pj-card, .a4pj-pop) .a4pj-pick:hover { background: var(--pj-hover); border-color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-card, .a4pj-pop) .a4pj-pick .a4pj-ic svg { width: 14px; height: 14px; color: var(--pj-faint); }
+html:not(#a4pj-guard) :is(.a4pj-card, .a4pj-pop) .a4pj-pick.is-dash { border-style: dashed; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-late { color: var(--pj-marker); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel .a4pj-chip { padding: 1px 7px; font-size: 11px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed { border: 1px solid var(--pj-hair) !important; border-radius: var(--pj-r-control); padding: 3px 8px !important; font-size: 12.5px; width: 170px; outline: none; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed:focus { border-color: var(--pj-marker) !important; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-x { color: var(--pj-faint); width: 24px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-x:hover { color: var(--pj-marker); background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-x svg { width: 12px; height: 12px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-caret svg { width: 12px; height: 12px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-small-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 10px 0 0 44px; font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); align-items: center; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-small-meta { margin-left: 0; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-linkbtn { margin-left: auto; font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); text-decoration: underline; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-linkbtn:hover { color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-step-add { margin: 8px 0 0 40px; border-top: 1px dashed var(--pj-hair); padding-top: 8px; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-step-add { margin-left: 0; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-bigtick { width: 34px; height: 34px; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-pick, html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-seg button { min-height: 34px; }
+
+/* popovers (on document.body) */
+html:not(#a4pj-guard) .a4pj-pop { position: fixed; z-index: var(--layer-popover, 60); width: 284px; max-height: 80vh; overflow: auto; background: var(--pj-overlay); box-shadow: var(--pj-shadow); border-radius: var(--pj-r-subtle); padding: 10px; font-size: 13px; color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-pop.is-wide { width: 300px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-title { font: 500 10px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin: 0 2px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-q { display: flex; width: 100%; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-q:hover, html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-q:focus-visible { background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-k { font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-k-cur { display: inline-flex; align-items: center; color: var(--pj-acc); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-k-cur svg { width: 14px; height: 14px; stroke-width: 2.2; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-sep { border-top: 1px solid var(--pj-hair); margin: 8px 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-row { display: grid; grid-template-columns: 58px 1fr; gap: 8px; align-items: center; padding: 4px 8px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-row label { font: 500 10px var(--pj-f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-note { font-size: 11.5px; color: var(--pj-faint); padding: 4px 8px 2px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-input { width: 100%; border: 1px solid var(--pj-hair2) !important; border-radius: var(--pj-r-control); padding: 5px 8px !important; outline: none; font-size: 12.5px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-input:focus { border-color: var(--pj-marker) !important; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-find { margin-bottom: 6px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-grp { font: 500 9.5px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin: 6px 8px 2px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-quick button { border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 5px 8px; font-size: 12.5px; display: flex; justify-content: space-between; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-quick button:hover { background: var(--pj-wash); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc-head { display: flex; align-items: center; justify-content: space-between; margin: 2px 2px 4px; font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc-nav { width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--pj-r-control); color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc-nav:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc-nav svg { width: 14px; height: 14px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc-dw { font: 500 9.5px var(--pj-f-mono); color: var(--pj-faint); text-align: center; padding: 2px 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc button { height: 28px; border-radius: var(--pj-r-control); font: 500 12px var(--pj-f-mono); text-align: center; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc button:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc button.is-out { color: var(--pj-faint); opacity: .55; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc button.is-today { box-shadow: inset 0 0 0 1px var(--pj-marker); color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-mc button.is-sel { background: var(--pj-paper); color: var(--pj-bg); box-shadow: none; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-foot { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-foot .a4pj-input { flex: 1; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-clear { color: var(--pj-marker); font-size: 12.5px; padding: 5px 8px; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-clear:hover { background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-pop-q { padding: 10px 8px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-mc button { height: 36px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-dp-quick button { padding: 9px 8px; }
+
+/* toast with Undo (on document.body) */
+html:not(#a4pj-guard) .a4pj-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--pj-overlay); box-shadow: var(--pj-shadow); padding: 7px 8px 7px 16px; border-radius: 8px; font-size: 13.5px; z-index: var(--layer-notice, 80); display: none; align-items: center; gap: 14px; max-width: calc(100vw - 24px); }
+html:not(#a4pj-guard) .a4pj-toast.is-on { display: flex; }
+html:not(#a4pj-guard) .a4pj-toast .a4pj-toast-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-toast .a4pj-toast-undo { font-weight: 700; color: var(--pj-marker); padding: 3px 8px; border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-toast .a4pj-toast-undo:hover { background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-toast .a4pj-toast-undo.is-hidden { display: none; }
+
+/* settings */
+html:not(#a4pj-guard) .a4pj-settings .a4pj-set-note { padding: 0 0 14px; }
+
+/* dependencies: Blocked by / Blocks (mockup round 4) */
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-blocked { opacity: .78; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-blocked .a4pj-ttitle { color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-blocked .a4pj-tick { border-style: dashed; }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock { color: var(--pj-warning); border-color: color-mix(in srgb, var(--pj-warning) 60%, transparent); }
+html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock:hover, html:not(#a4pj-guard) :is(.a4pj-root, .a4pj-card) .a4pj-chip.a4pj-lock.is-open { color: var(--pj-paper); border-color: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-deps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 1px 2px 1px 9px; font-size: 13px; max-width: 100%; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t { color: var(--pj-paper); text-decoration: underline; text-decoration-color: var(--pj-hair2); text-underline-offset: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; user-select: text; }
+html:not(#a4pj-guard) .a4pj-card span.a4pj-dep-t { cursor: default; text-decoration: none; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-t:hover { text-decoration-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-st { font: 500 10px var(--pj-f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--pj-warning); white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-done .a4pj-dep-st { color: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-done .a4pj-dep-t, html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-missing .a4pj-dep-t { color: var(--pj-faint); text-decoration-line: line-through; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep.is-missing .a4pj-dep-st { color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-add { font-size: 13px; color: var(--pj-faint); border: 1px dashed var(--pj-hair2); border-radius: var(--pj-r-control); padding: 3px 10px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-dep-add:hover { color: var(--pj-paper); border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-blocked-note { margin: 10px 0 0 44px; font-size: 13px; color: var(--pj-warning); display: flex; gap: 6px; align-items: center; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-blocked-note { margin-left: 0; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-blocked-note .a4pj-ic svg { width: 12px; height: 12px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-q.is-no { opacity: .5; cursor: not-allowed; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-q.is-no:hover { background: none; }
+/* Blocked by / Blocks picker: search and note stay put, the list scrolls (every open task is in it). */
+html:not(#a4pj-guard) .a4pj-pop.is-deps { display: flex; flex-direction: column; overflow: hidden; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps > :not(.a4pj-pop-list) { flex: none; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-pop-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-grp { position: sticky; top: 0; z-index: 1; background: var(--pj-overlay); margin: 0; padding: 8px 8px 5px; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-pop-q { white-space: normal; align-items: baseline; height: auto; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-pop-q > span:first-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-pop-q > .a4pj-k { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps .a4pj-pop-empty { font-size: 12px; color: var(--pj-faint); padding: 4px 8px 6px; }
+html:not(#a4pj-guard) .a4pj-pop.is-deps.is-narrow { width: min(420px, calc(100vw - 16px)); max-height: 70vh; }
+
+/* Task times (0.1.4, mockup v3 + review): times on Starts and Due, the When read-out,
+ * the typing box's preview, and the date-and-time picker. Only theme variables, so
+ * Obsidian's default theme gets the same shapes in light and dark. */
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-timed { color: var(--pj-marker); border-color: var(--pj-marker); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-timed .a4pj-ic svg { color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-auto { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--pj-dim); padding: 3px 4px; }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-auto, .a4pj-rem) .a4pj-ic svg { width: 13px; height: 13px; color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-rem { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--pj-dim); margin-left: 4px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tyw { position: relative; display: inline-flex; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed-pv { position: absolute; top: calc(100% + 4px); left: 0; z-index: 5; display: none; min-width: 100%; width: max-content; max-width: min(420px, 80vw); white-space: normal; font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--pj-marker); padding: 5px 8px; background: var(--pj-overlay); border: 1px solid var(--pj-marker); border-left-width: 3px; border-radius: 0 var(--pj-r-control) var(--pj-r-control) 0; box-shadow: var(--pj-shadow); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed-pv.is-on { display: block; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-typed-pv.is-err { color: var(--pj-dim); border-color: var(--pj-hair2); font-weight: 500; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-enter { display: block; font-weight: 400; font-size: 11.5px; color: var(--pj-faint); margin-top: 2px; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-tyw { flex: 1 1 160px; }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-tyw .a4pj-typed { width: 100%; }
+
+html:not(#a4pj-guard) .a4pj-pop.a4pj-wp { width: 300px; padding-bottom: 0; max-height: calc(100vh - 16px); }
+html:not(#a4pj-guard) .a4pj-pop.a4pj-wp.is-narrow { width: min(380px, calc(100vw - 16px)); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-dp-quick button.is-sel { border-color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-fold { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-change { color: var(--pj-marker); font-weight: 500; padding: 4px 8px; border-radius: var(--pj-r-control); text-decoration: underline; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-time { border-top: 1px solid var(--pj-hair); margin-top: 8px; padding-top: 8px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-lab { font: 500 10px var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-faint); margin: 0 2px 6px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-seg { display: flex; width: 100%; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-seg button { flex: 1 1 auto; padding: 4px 4px; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-seg button[data-choice="time"].is-on { font-weight: 700; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-wheel { position: relative; display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 6px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 0 8px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col { height: 78px; width: 52px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; position: relative; z-index: 1; outline: none; overscroll-behavior: contain; -webkit-mask-image: linear-gradient(rgba(0,0,0,.3), #000 33%, #000 67%, rgba(0,0,0,.3)); mask-image: linear-gradient(rgba(0,0,0,.3), #000 33%, #000 67%, rgba(0,0,0,.3)); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col::-webkit-scrollbar { display: none; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col:focus-visible { outline: none; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-col:focus-visible .a4pj-wp-it.is-sel { text-decoration: underline; text-decoration-color: var(--pj-marker); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-pad { height: 26px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-it { height: 26px; line-height: 26px; text-align: center; font-size: 14px; color: var(--pj-faint); scroll-snap-align: center; cursor: pointer; user-select: none; -webkit-user-select: none; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-it.is-sel { color: var(--pj-paper); font-weight: 600; font-size: 15.5px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-colon { font-size: 15.5px; font-weight: 600; color: var(--pj-paper); z-index: 1; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-ampm { display: flex; flex-direction: row; gap: 3px; margin-left: 4px; z-index: 1; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-ampm button { min-width: 36px; padding: 2px 6px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); background: var(--pj-overlay); font-size: 12px; font-weight: 600; text-align: center; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-ampm button.is-on { background: var(--pj-paper); color: var(--pj-bg); border-color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-band { position: absolute; left: 6px; right: 6px; top: 50%; height: 26px; transform: translateY(-50%); background: var(--pj-wash); border-top: 1px solid var(--pj-marker); border-bottom: 1px solid var(--pj-marker); border-radius: 4px; pointer-events: none; z-index: 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-dock { position: sticky; bottom: 0; z-index: 2; background: var(--pj-overlay); margin: 8px -10px 0; padding: 6px 10px 8px; border-top: 1px solid var(--pj-hair); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-pv { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--pj-marker); padding: 5px 8px; border-left: 2px solid var(--pj-marker); background: var(--pj-wash); border-radius: 0 var(--pj-r-control) var(--pj-r-control) 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-pv.is-err { color: var(--pj-dim); border-left-color: var(--pj-faint); font-weight: 500; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-btns { display: flex; gap: 6px; margin-top: 6px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-btns button { flex: 1 1 0; padding: 6px 0; border-radius: var(--pj-r-control); font-weight: 600; text-align: center; }
+/* Save: the accent (the theme's --ink-marker when it has one, else the accent); Cancel: secondary (2026-10-05). */
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-save { background: var(--pj-marker); color: var(--pj-on-marker); border: 1px solid var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-save:hover { background: var(--pj-marker); filter: brightness(1.1); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-save:disabled { opacity: .45; cursor: default; filter: none; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-cancel { border: 1px solid var(--pj-hair2); color: var(--pj-paper); background: transparent; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-cancel:hover { background: var(--pj-hover); }
+
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-ampm button { min-width: 48px; padding: 8px 8px; font-size: 13px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-col { height: 102px; width: 58px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow :is(.a4pj-wp-pad, .a4pj-wp-it) { height: 34px; line-height: 34px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-it { font-size: 16px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-it.is-sel, html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-colon { font-size: 17.5px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-band { height: 34px; }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-btns button { padding: 10px 0; }
+
+/* Reminders (0.2.0, reminder setup mockup approved 2026-10-05): the
+ * Reminder row in the date-and-time picker, the bell button next to Due on the
+ * task card and its menu. Theme variables only (light and dark). */
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-rem { border-top: 1px solid var(--pj-hair); margin-top: 8px; padding-top: 8px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-remlab { display: flex; align-items: center; gap: 6px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-remlab .a4pj-ic svg { width: 13px; height: 13px; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chip { padding: 3px 9px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); font-size: 12.5px; color: var(--pj-paper); background: var(--pj-overlay); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chip:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chip.is-on { background: var(--pj-paper); color: var(--pj-bg); border-color: var(--pj-paper); font-weight: 700; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chip.is-other:not(.is-on) { border-style: dashed; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-chip:disabled { color: var(--pj-faint); border-color: var(--pj-hair); background: transparent; cursor: default; opacity: .7; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-remhelp { font-size: 12px; line-height: 1.4; color: var(--pj-dim); margin: 6px 2px 0; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-other { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-otherin { flex: 1 1 auto; min-width: 0; border-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-otherout { flex: none; font-size: 12.5px; color: var(--pj-marker); white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-pop .a4pj-wp-otherout.is-err { color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-pop.is-narrow .a4pj-wp-chip { padding: 9px 12px; font-size: 14px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bell { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--pj-marker); border-radius: var(--pj-r-control); font-size: 13px; color: var(--pj-marker); font-weight: 500; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bell:hover { background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bell .a4pj-ic svg { width: 14px; height: 14px; color: currentColor; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bell.is-none { border: 1px dashed var(--pj-hair2); color: var(--pj-dim); font-weight: 400; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bell.is-none:hover { background: var(--pj-hover); }
+html:not(#a4pj-guard) .a4pj-card.is-narrow .a4pj-bell { min-height: 34px; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-rem-hint { font-size: 12.5px; color: var(--pj-faint); margin-left: 2px; }
+html:not(#a4pj-guard) .a4pj-pop.is-bell { min-width: 250px; }
+html:not(#a4pj-guard) .a4pj-pop.is-bell .a4pj-pop-q.is-cur { background: var(--pj-wash); color: var(--pj-marker); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-pop.is-bell .a4pj-pop-q .a4pj-k { font-variant-numeric: tabular-nums; }
+
+/* Someday (0.3.0): the confirm button when a task with a due date goes to Someday. */
+html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-go { display: block; width: 100%; margin: 8px 0 4px; padding: 6px 8px; border-radius: var(--pj-r-control); font-weight: 600; text-align: center; }
+
+/* Find a task (mockup approved 2026-10-06): Obsidian's prompt, plus a count line and dimmed done tasks. */
+.a4pj-find .a4pj-find-head { padding: var(--size-4-2) var(--size-4-3) var(--size-4-1); color: var(--text-muted); font-size: var(--font-ui-smaller); letter-spacing: .08em; text-transform: uppercase; }
+.a4pj-find .suggestion-note { font-family: var(--font-monospace); }
+.a4pj-find .a4pj-find-done .suggestion-title { color: var(--text-muted); }
+
+/* ---- task card colour: sample A "Soft" (mockup-task-page-color, approved 2026-10-07) ----
+ * Colour only where it means something: the picked Status, the picked Priority,
+ * Due, the tick circle and the picked Morning/Afternoon. A pale tint of the
+ * colour behind words in a deeper shade of it. Everything else stays neutral;
+ * unpicked choices are plain grey at full strength (they used to be faded to
+ * 38%, which made High look switched off). A theme's --ink-* tokens win, so on
+ * a theme that sets them the accent is that theme's marker; elsewhere the Today accent
+ * (Ink blue by default), set inline on the card by setCardAccent(). */
+html:not(#a4pj-guard) .a4pj-card {
+  --pj-acc: var(--ink-marker, var(--pj-acc-l, var(--interactive-accent)));
+  --pj-high: #a8360f;
+  --pj-late: var(--ink-destructive-text, #b3261e);
+  --pj-gold: var(--ink-hue-yellow, #7f662f);
+  --pj-teal: var(--ink-hue-cyan, #4e6b73);
+  --pj-choice: var(--ink-paper-faint, var(--text-muted));
+  --pj-marker: var(--pj-acc);
+  --pj-cw-acc: 80%;
+  --pj-cw: 85%;
+}
+html:not(#a4pj-guard) body.theme-dark .a4pj-card {
+  --pj-acc: var(--ink-marker, var(--pj-acc-d, var(--interactive-accent)));
+  --pj-high: #f5875c;
+  --pj-late: var(--ink-destructive-text, #f0695c);
+  --pj-gold: var(--ink-hue-yellow, #c2a35c);
+  --pj-teal: var(--ink-hue-cyan, #7a99a1);
+  --pj-cw-acc: 75%;
+  --pj-cw: 75%;
+}
+/* one recipe: --c is the meaning colour; words are --c pulled a little toward the
+ * text colour (darker in light mode, lighter in dark) so they clear 4.5:1 on the tint */
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg button.is-on[data-st="in-progress"], .a4pj-pick.is-today) { --c: var(--pj-acc); --cw: var(--pj-cw-acc); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-stseg button.is-on[data-st="blocked"] { --c: var(--pj-gold); --cw: var(--pj-cw); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-halfseg button.is-on:is([data-half="am"], [data-half="pm"]) { --c: var(--pj-teal); --cw: var(--pj-cw); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button.is-on .a4pj-chip.is-top { --c: var(--pj-high); --cw: var(--pj-cw); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-late { --c: var(--pj-late); --cw: var(--pj-cw); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg button.is-on[data-st="in-progress"], .a4pj-stseg button.is-on[data-st="blocked"], .a4pj-halfseg button.is-on:is([data-half="am"], [data-half="pm"]), .a4pj-prisel button.is-on .a4pj-chip.is-top, .a4pj-pick.is-today, .a4pj-pick.is-late) {
+  color: color-mix(in srgb, var(--c) var(--cw), var(--pj-paper));
+  background: color-mix(in srgb, var(--c) 12%, var(--pj-bg2));
+  border-color: color-mix(in srgb, var(--c) 45%, var(--pj-bg2));
+  font-weight: 600;
+}
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button.is-on:is([data-st="in-progress"], [data-st="blocked"], [data-half="am"], [data-half="pm"]) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--pj-bg2)); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late):hover { background: color-mix(in srgb, var(--c) 18%, var(--pj-bg2)); border-color: color-mix(in srgb, var(--c) 70%, var(--pj-bg2)); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late) .a4pj-ic svg { color: currentColor; }
+/* neutral picks: Open, Any time, Normal / Low / None */
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button { color: var(--pj-choice); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button:hover { color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button.is-on:is([data-st="open"], [data-half="any"]) { background: var(--pj-bg3); color: var(--pj-paper); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button .a4pj-chip { color: var(--pj-choice); border-color: var(--pj-hair); font-weight: 500; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button:hover .a4pj-chip { color: var(--pj-paper); border-color: var(--pj-hair2); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button.is-on .a4pj-chip { background: var(--pj-bg3); color: var(--pj-paper); border-color: var(--pj-hair2); font-weight: 600; }
+/* the tick circle: an outline in the accent; filled when done */
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick { border-color: var(--pj-acc); color: var(--ink-on-marker, var(--pj-bg2)); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick:hover { border-color: var(--pj-acc); background: color-mix(in srgb, var(--pj-acc) 12%, var(--pj-bg2)); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick.is-on { background: var(--pj-acc); border-color: var(--pj-acc); }
+
+/* Task links (0.6.0): TaskNotes' old inline task look on links to task notes,
+ * measured from TaskNotes 4.12.5 (ring 0.85em / 1.5px, priority dot 0.7em,
+ * 4px apart, done = filled ring, struck muted title, row at 60%). */
+html:not(#a4pj-guard) .a4pj-tl { display: inline; padding: 2px 0; vertical-align: baseline; }
+html:not(#a4pj-guard) .a4pj-tl-hidden { display: none; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-dot { display: inline-block; box-sizing: border-box; width: 0.85em; height: 0.85em; border: 1.5px solid var(--text-faint); border-radius: 50%; background: transparent; margin: 0 4px 0 0; padding: 0; transform: translateY(0.1em); vertical-align: baseline; cursor: var(--cursor-link, pointer); transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-dot:hover { box-shadow: 0 0 6px rgba(100, 149, 237, 0.4); transform: translateY(0.1em) scale(1.1); }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-dot:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-pri { display: inline-block; box-sizing: border-box; width: 0.7em; height: 0.7em; border-radius: 50%; margin: 0 4px 0 0; transform: translateY(0.05em); vertical-align: baseline; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-title { color: var(--text-normal); cursor: var(--cursor-link, pointer); text-decoration: none; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-title:hover { color: var(--interactive-accent); }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-rep { display: inline-block; width: 12px; height: 12px; margin-left: 6px; color: var(--text-muted); opacity: 0.7; vertical-align: baseline; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-rep svg { width: 12px; height: 12px; }
+html:not(#a4pj-guard) .a4pj-tl .a4pj-tl-date { margin-left: 6px; font-size: 0.7em; color: var(--text-muted); white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-tl.is-done { opacity: 0.6; }
+html:not(#a4pj-guard) .a4pj-tl.is-done .a4pj-tl-title { color: var(--text-muted); text-decoration: line-through; }
+
+/* Board action dialogs (section 4) */
+.a4pj-ask-input { width: 100%; }
+/* Projects page switches (Projects / Tasks, List / Board): the mockup's on look, not the filter chips' */
+html:not(#a4pj-guard) .a4pj-root .a4pj-seg.a4pj-switch button.is-on { background: var(--pj-wash); color: var(--pj-paper); box-shadow: inset 0 0 0 1px var(--pj-marker); }
+
+/* Projects board (section 7, mockup approved 2026-10-13). Theme variables only. */
+html:not(#a4pj-guard) .a4pj-root { --pj-danger: var(--ink-danger, var(--text-error)); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btn.is-primary { background: var(--pj-marker); color: var(--pj-on-marker); border-color: var(--pj-marker); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btn.is-primary:hover { background: var(--pj-marker); filter: brightness(1.08); }
+html:not(#a4pj-guard) .a4pj-root [data-col="backlog"] { --c: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root [data-col="active"] { --c: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root [data-col="waiting"] { --c: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root [data-col="paused"] { --c: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root [data-col="blocked"] { --c: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root [data-col="done"] { --c: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root [data-col="open"] { --c: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root [data-col="in-progress"] { --c: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root [data-col="someday"] { --c: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root [data-col="closed"] { --c: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tabs { display: flex; border-bottom: 1px solid var(--pj-hair); margin-bottom: 14px; overflow-x: auto; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tabs button { flex: 1 0 auto; text-align: center; padding: 9px 14px 10px; color: var(--pj-faint); font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tabs button.is-on { color: var(--pj-paper); border-bottom-color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-badge { display: inline-grid; place-items: center; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 999px; background: var(--pj-bg3); border: 1px solid var(--pj-hair); font: 500 11px var(--pj-f-mono); color: var(--pj-dim); margin-left: 6px; vertical-align: middle; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-areas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-areas button { padding: 6px 12px; border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); background: var(--pj-bg2); font-weight: 600; font-size: 12.5px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-areas button:hover { background: var(--pj-bg3); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-areas button.is-on { border-color: var(--pj-marker); background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tile { display: block; text-align: left; border: 1px solid var(--pj-hair); border-top: 3px solid var(--c); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 8px 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tile:hover { border-color: var(--pj-hair2); border-top-color: var(--c); background: var(--pj-bg2); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tile b { display: block; font: 640 22px/1.1 var(--pj-f-display); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tile span { font-size: 12px; color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bfind { display: flex; flex-direction: column; gap: 5px; margin: 0 0 16px auto; width: min(520px, 100%); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bfind span { font-weight: 600; font-size: 12.5px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bfind input { background: var(--pj-bg2); color: var(--pj-paper); border: 1px solid var(--pj-hair2); border-radius: var(--pj-r-control); padding: 8px 12px; font-size: 13.5px; height: auto; box-shadow: none; outline: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bfind input:focus { border-color: var(--pj-marker); }
+/* 150px, not 220: six columns fit a Mac window down to a ~1000px wide board, side panels open (220 made Closed run off the right, 2026-10-19). */
+html:not(#a4pj-guard) .a4pj-root .a4pj-board { display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr)); gap: 12px; align-items: stretch; overflow-x: auto; padding: 0 4px 8px 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-col { border-top: 3px solid var(--c); padding-top: 8px; min-height: 120px; border-radius: 2px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-col.is-drop { background: var(--pj-wash); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-col.is-flash { animation: a4pj-flash 1s; }
+@keyframes a4pj-flash { 0%, 60% { background: var(--pj-wash); } 100% { background: transparent; } }
+html:not(#a4pj-guard) .a4pj-root .a4pj-colhead { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-colhead h3 { margin: 0; font: 640 18px/1.2 var(--pj-f-display); color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-colhead .a4pj-badge { margin: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-colsub { font-size: 12px; color: var(--pj-faint); margin: 1px 0 10px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-cards { display: flex; flex-direction: column; gap: 10px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-dropzone { border: 1px dashed var(--pj-hair2); border-radius: var(--pj-r-micro); padding: 34px 10px; text-align: center; font-size: 12.5px; color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-col.is-drop .a4pj-dropzone { border-color: var(--pj-marker); color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard { border: 1px solid var(--pj-hair); border-radius: var(--pj-r-subtle); background: var(--pj-bg2); padding: 12px 14px; cursor: pointer; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard[draggable="true"] { cursor: grab; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard:hover { border-color: var(--pj-hair2); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard.is-dragging { opacity: .45; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btop { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill { --a: var(--pj-marker); display: inline-block; font: 500 10px/1.8 var(--pj-f-mono); letter-spacing: .06em; text-transform: uppercase; padding: 0 8px; border-radius: 999px; color: var(--a); border: 1px solid color-mix(in srgb, var(--a) 50%, transparent); background: color-mix(in srgb, var(--a) 10%, transparent); white-space: nowrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-personal { --a: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-proj { --a: var(--pj-dim); text-transform: none; letter-spacing: 0; font: 600 11.5px/1.8 var(--pj-f-body); border-radius: var(--pj-r-control); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-high { --a: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-low { --a: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bwhen.is-late { color: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bwhen { font: 500 10.5px var(--pj-f-mono); color: var(--pj-faint); text-align: right; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard > .a4pj-bwhen { font: 500 12px/1.4 var(--pj-f-body); text-align: left; margin: -2px 0 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btitle { font-weight: 500; font-size: 16px; line-height: 1.3; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bdesc { color: var(--pj-dim); font-size: 13px; margin-top: 3px; }
+/* Card text clamps to 3 lines with an ellipsis; long words wrap inside the card. */
+html:not(#a4pj-guard) .a4pj-root .a4pj-btitle, html:not(#a4pj-guard) .a4pj-root .a4pj-bdesc, html:not(#a4pj-guard) .a4pj-root .a4pj-btext { overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bdesc, html:not(#a4pj-guard) .a4pj-root .a4pj-btext { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bdesc:empty { display: none; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bsec { border-top: 1px solid var(--pj-hair); margin-top: 10px; padding-top: 9px; font-size: 13px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-lab { display: block; font: 500 9.5px/1.9 var(--pj-f-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-lab.is-go { color: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-by { font-size: 11.5px; color: var(--pj-faint); margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bacts { display: flex; gap: 16px; justify-content: flex-end; margin-top: 10px; font-size: 12.5px; font-weight: 600; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bacts button { color: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bacts2 { display: flex; justify-content: flex-end; margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bacts2 button { color: var(--pj-danger); font-size: 12.5px; font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-root :is(.a4pj-bacts, .a4pj-bacts2) button:hover { text-decoration: underline; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-activity { display: flex; flex-direction: column; gap: 8px; max-width: 820px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-log { font-size: 13px; padding: 7px 0; border-bottom: 1px solid var(--pj-hair); display: flex; gap: 12px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-log .a4pj-when { font: 500 10.5px/2 var(--pj-f-mono); color: var(--pj-faint); flex: none; width: 120px; margin-left: 0; }
+/* Ideas and Cold Storage (section 8): heading + one line, cards two across, as in the mockup */
+html:not(#a4pj-guard) .a4pj-root .a4pj-sechead { display: flex; align-items: center; gap: 12px; max-width: 1220px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sechead h2 { font: 640 24px/1.2 var(--pj-f-display); margin: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-secnote { color: var(--pj-dim); font-size: 14px; margin: 6px 0 16px; max-width: 800px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; max-width: 1220px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf .a4pj-bcard { padding: 14px 18px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-shelf .a4pj-bdesc { font-size: 14px; margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-from { --a: var(--pj-paper); text-transform: none; letter-spacing: 0; font: 600 11.5px/1.8 var(--pj-f-body); border-radius: var(--pj-r-control); }
+/* Long project and area names wrap inside the card instead of running past its right edge (Mac board, 2026-10-19).
+   Name pills only: short tags (WORK, PERSONAL, priority) stay one line, and the date beside them wraps instead (0.1.12).
+   break-word, not anywhere: names wrap between words and split a word only when it alone is wider than the card (0.1.13). */
+html:not(#a4pj-guard) .a4pj-root :is(.a4pj-pill.is-proj, .a4pj-pill.is-from) { max-width: 100%; white-space: normal; overflow-wrap: break-word; }
+/* The date beside the tags drops under them only when a name's longest word and the date's longest word cannot share the line,
+   never splitting a name to make room (0.1.13). 100cqi: a word wider than the whole card still splits, never runs past its edge. */
+html:not(#a4pj-guard) .a4pj-root .a4pj-btop { flex-wrap: wrap; container-type: inline-size; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btop :is(.a4pj-pill.is-proj, .a4pj-pill.is-from) { max-width: 100cqi; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btop > .a4pj-pills { flex: 3 1 0%; max-width: max-content; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-btop > .a4pj-bwhen { flex: 2 1 0%; max-width: max-content; margin-left: auto; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn { color: var(--pj-success); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-outline { border-color: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-fill { background: var(--pj-success); border-color: var(--pj-success); color: var(--pj-bg); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-fill:hover { filter: brightness(1.08); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-sbtns .a4pj-btn.is-del { border-color: transparent; color: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-waiting { color: var(--pj-warning); border-color: color-mix(in srgb, var(--pj-warning) 60%, transparent); border-style: dashed; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-chip.a4pj-st-blocked { color: var(--pj-danger); border-color: color-mix(in srgb, var(--pj-danger) 60%, transparent); }
+.a4pj-ask-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.a4pj-ask-field label { font-weight: 600; font-size: var(--font-ui-small); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-shelf { grid-template-columns: 1fr; }
+/* phone: tiles 3 by 2, one column per screen, swiped (section 10 checks it) */
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-tiles { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-bfind { width: 100%; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-board { grid-template-columns: repeat(6, 86%); scroll-snap-type: x mandatory; gap: 10px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-col { scroll-snap-align: start; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow :is(.a4pj-bacts, .a4pj-bacts2) button { min-height: 32px; }
+
+/* Text to task: the project box rows (mockup-text-to-task.html) */
+html:not(#a4pj-guard) .a4pj-ttt { --pj-faint: var(--ink-paper-faint, var(--text-faint)); } /* the box sits outside .a4pj-root, so the token is set here */
+html:not(#a4pj-guard) .a4pj-ttt-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 12px; }
+html:not(#a4pj-guard) .a4pj-ttt-row .a4pj-ttt-name { min-width: 0; overflow-wrap: anywhere; }
+/* Narrow box: the hint drops under the name instead of squeezing it. */
+html:not(#a4pj-guard) .a4pj-ttt-row .a4pj-ttt-hint { color: var(--pj-faint); font-size: var(--font-ui-smaller); white-space: nowrap; } /* space-between: right of the name on one line, under it (left) when wrapped */
+
+/* Areas (0.1.5, mockup approved 2026-10-18): a project card with a stack icon in place of the ring,
+ * the area page's header, the "not an area" link, the area page's own bits. */
+html:not(#a4pj-guard) .a4pj-root .a4pj-pcard.is-area, html:not(#a4pj-guard) .a4pj-root .a4pj-pcard.is-area:hover, html:not(#a4pj-guard) .a4pj-root .a4pj-phead.is-area { border-left-color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-aicon { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--pj-bg3); color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-aicon svg { width: 20px; height: 20px; stroke-width: 1.8; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-aicon.is-big { width: 64px; height: 64px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-aicon.is-big svg { width: 26px; height: 26px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bad { text-decoration: line-through; color: var(--pj-faint); margin-right: 4px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-gap { margin-top: 18px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-stat { font-size: 13px; color: var(--pj-dim); padding: 2px 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-stat b { color: var(--pj-paper); font-family: var(--pj-f-mono); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-small { font-size: 12px; color: var(--pj-faint); margin: 8px 0 0; }
+.a4pj-modal-note { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: 0; }
+
+/* Settings › Tasks › Where your tasks live (mockup v6): one radio row per source. */
+.a4pj-settings .a4pj-srcs { display: flex; flex-direction: column; gap: 4px; margin: 0 0 var(--size-4-2); }
+.a4pj-settings .a4pj-src { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); cursor: pointer; }
+.a4pj-settings .a4pj-src.is-on { border-color: var(--interactive-accent); }
+.a4pj-settings .a4pj-src:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); }
+.a4pj-settings .a4pj-src-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--text-muted); margin-top: 2px; flex-shrink: 0; }
+.a4pj-settings .a4pj-src.is-on .a4pj-src-dot { border-color: var(--interactive-accent); background: radial-gradient(var(--interactive-accent) 45%, transparent 50%); }
+.a4pj-settings .a4pj-src b { display: block; }
+.a4pj-settings .a4pj-src small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.a4pj-settings .a4pj-src-tag { font-size: 10.5px; border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 0 6px; margin-left: 6px; color: var(--text-muted); font-weight: 400; }
+.a4pj-settings .a4pj-src-sub { margin: 0 0 var(--size-4-2) 26px; }
+.a4pj-settings .a4pj-src-sub .setting-item-description { margin: var(--size-4-1) 0; }

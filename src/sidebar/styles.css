@@ -1,0 +1,167 @@
+/* Sidebar: Lifeworld's sidebar layout with the type hierarchy flipped.
+ *   section (My Life, Rooms)   16px display, bold, full ink
+ *   group   (Direction, ...)   13.5px, semibold, dim ink
+ *   item    (Goals, Inbox, ...) 12.5px to 13px, regular
+ *   sub-folder / note          12px, faint ink
+ * Room colours: the same values icor-rooms.css gives the room folders. */
+.a4sb {
+  --a4sb-display: var(--ink-font-display, var(--font-interface));
+  --a4sb-body: var(--ink-font-body, var(--font-interface));
+  --a4sb-mono: var(--ink-font-mono, var(--font-monospace));
+  --a4sb-hand: var(--ink-font-hand, var(--font-interface));
+  --a4sb-ink: var(--text-normal);
+  --a4sb-dim: var(--text-muted);
+  --a4sb-faint: var(--text-faint);
+  --a4sb-marker: #ff5a2d;
+  --a4sb-hover: rgba(246, 243, 236, .06);
+  --a4sb-sel: rgba(255, 90, 45, .16);
+  --a4sb-line: var(--background-modifier-border);
+  --a4sb-room-0: #c2a35c; --a4sb-room-1: #c2765a; --a4sb-room-2: #ff5a2d; --a4sb-room-3: #7a99a1;
+  --a4sb-room-4: #7d9a7f; --a4sb-room-5: #a87795; --a4sb-room-6: #8087a6;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--a4sb-body);
+  color: var(--a4sb-ink);
+}
+.theme-light .a4sb {
+  --a4sb-marker: #d43f16;
+  --a4sb-hover: rgba(23, 26, 32, .05);
+  --a4sb-sel: rgba(212, 63, 22, .12);
+  --a4sb-room-0: #7f662f; --a4sb-room-1: #9e4526; --a4sb-room-2: #b3401f; --a4sb-room-3: #4e6b73;
+  --a4sb-room-4: #5e7a60; --a4sb-room-5: #7c5570; --a4sb-room-6: #565e7e;
+}
+.a4sb [role="button"] { cursor: pointer; text-align: left; border-radius: 4px; justify-content: flex-start; } .a4sb [role="button"]:focus-visible { outline: 1px solid var(--a4sb-marker); }
+.a4sb-icon { flex: none; }
+
+.a4sb-top { height: 46px; display: flex; align-items: center; padding: 0 16px; flex: none; }
+.a4sb-brand { display: flex; align-items: center; gap: 9px; }
+.a4sb-brand-name { font: 700 17px var(--a4sb-display); letter-spacing: -.02em; }
+.a4sb-brand-mark { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--a4sb-ink); position: relative; display: inline-block; }
+.a4sb-brand-mark::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--a4sb-marker); }
+.a4sb-brand-mark i { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--a4sb-ink); top: -4px; right: -3px; border: 2px solid var(--background-secondary); }
+.a4sb-search { flex: none; margin: 2px 12px 8px; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--a4sb-line); color: var(--a4sb-faint); font-size: 13px; width: calc(100% - 24px); }
+.a4sb-search:hover { color: var(--a4sb-ink); background: var(--a4sb-hover); }
+
+.a4sb-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 16px; }
+
+.a4sb-nav { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+.a4sb-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; color: var(--a4sb-dim); font: 600 15px var(--a4sb-body); position: relative; }
+.a4sb-nav-item:hover { background: var(--a4sb-hover); color: var(--a4sb-ink); }
+.a4sb-nav-item.is-on { color: var(--a4sb-ink); background: var(--a4sb-hover); }
+.a4sb-nav-item.is-on::before { content: ''; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--a4sb-marker); }
+.a4sb-nav-item.is-on .a4sb-icon { color: var(--a4sb-marker); }
+
+.a4sb-section { margin-top: 12px; }
+.a4sb-sec-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 10px 10px 6px; border-radius: 0; border-top: 1px solid var(--a4sb-line); font: 650 16px/1.2 var(--a4sb-display); letter-spacing: -.01em; color: var(--a4sb-ink); }
+.a4sb-grp-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 10px 4px 12px; font: 600 13.5px var(--a4sb-body); color: var(--a4sb-dim); }
+.a4sb-grp-head:hover { color: var(--a4sb-ink); background: var(--a4sb-hover); }
+.a4sb-chev { color: var(--a4sb-faint); transition: transform .14s; }
+.a4sb .is-closed > .a4sb-chev, .a4sb-fold.is-closed { transform: rotate(-90deg); }
+.a4sb .is-hidden { display: none; }
+
+.a4sb-row { display: flex; align-items: center; gap: 7px; min-height: 26px; padding: 0 6px 0 12px; border-radius: 4px; color: var(--a4sb-dim); font-size: 12.5px; cursor: pointer; user-select: none; }
+.a4sb-row:hover { background: var(--a4sb-hover); color: var(--a4sb-ink); }
+.a4sb-row.is-on { background: var(--a4sb-sel); color: var(--a4sb-ink); }
+.a4sb-row.is-drop { outline: 1px dashed var(--a4sb-marker); background: var(--a4sb-sel); }
+.a4sb-row.is-dragging { opacity: .5; }
+.a4sb-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a4sb-count { font: 10.5px var(--a4sb-mono); color: var(--a4sb-faint); }
+.a4sb-ext { font: 9.5px var(--a4sb-mono); color: var(--a4sb-faint); text-transform: uppercase; border: 1px solid var(--a4sb-line); border-radius: 3px; padding: 0 3px; }
+.a4sb-fold { width: 14px; display: inline-grid; place-items: center; color: var(--a4sb-faint); transition: transform .14s; flex: none; }
+.a4sb-act { opacity: 0; width: 20px; height: 20px; border-radius: 4px; color: var(--a4sb-faint); display: grid; place-items: center; flex: none; }
+.a4sb-row:hover .a4sb-act { opacity: 1; }
+.a4sb-act:hover { background: var(--background-modifier-hover); color: var(--a4sb-ink); }
+
+/* My Life items: the chevron sits in the indent and stays quiet until hover or open. */
+.a4sb-life { padding-left: 14px; }
+.a4sb-life .a4sb-fold { opacity: .35; }
+.a4sb-life:hover .a4sb-fold, .a4sb-life .a4sb-fold:not(.is-closed) { opacity: 1; }
+.a4sb-life .a4sb-life-icon { color: var(--a4sb-faint); }
+.a4sb-life.is-on .a4sb-life-icon, .a4sb-life:hover .a4sb-life-icon { color: var(--a4sb-marker); }
+
+.a4sb-room { font-size: 13px; font-weight: 500; }
+/* Monochrome room icons (2026-10-03): the theme's normal text colour,
+   so they follow light and dark mode. Room colours stay in icor-rooms.css
+   for the Files tab only. */
+.a4sb-room .a4sb-room-icon { color: var(--text-normal); }
+.a4sb-sub, .a4sb-file, .a4sb-more { font-size: 12px; color: var(--a4sb-faint); min-height: 24px; }
+.a4sb-sub:hover, .a4sb-file:hover { color: var(--a4sb-ink); }
+.a4sb-more { font-style: italic; }
+
+.a4sb-foot { flex: none; display: flex; flex-direction: column; padding: 8px 16px 10px; border-top: 1px solid var(--a4sb-line); }
+.a4sb-hand { font-family: var(--a4sb-hand); color: var(--a4sb-dim); font-size: 19px; line-height: 1.1; }
+.a4sb-small { font-size: 11.5px; color: var(--a4sb-faint); }
+
+.a4sb-rename-input { width: 100%; }
+.a4sb-rename-err { color: var(--text-error); font-size: 12px; min-height: 18px; margin-top: 6px; }
+
+/* Toolbar: the theme's .micor-tree-slot rules (the owner's theme, its file-tree
+   header slot), copied under our own class. ICOR Connect strips
+   .micor-tree-slot from every row on the page when it unloads, so sharing
+   that class would make this toolbar depend on Connect's load state. */
+.a4sb .a4sb-header { flex: none; padding-top: 8px; }
+.a4sb .a4sb-tools { display: flex; justify-content: center; align-items: center; gap: 4px; height: 24px; margin-bottom: 8px; padding: 0 8px; }
+.a4sb .a4sb-tools .clickable-icon { width: 24px; height: 24px; padding: 0; border-radius: var(--ink-radius-control, 4px); color: var(--ink-paper-faint, var(--icon-color)); background: transparent; border: none; display: inline-flex; align-items: center; justify-content: center; }
+.a4sb .a4sb-tools .clickable-icon:hover { color: var(--ink-paper, var(--icon-color-hover)); background: var(--ink-hover-wash, var(--background-modifier-hover)); transition: color 140ms var(--ink-ease-draw, ease), background 140ms var(--ink-ease-draw, ease); }
+.a4sb .a4sb-tools .clickable-icon:focus-visible { outline: 2px solid var(--ink-marker, var(--a4sb-marker)); outline-offset: 2px; }
+.a4sb .a4sb-tools .clickable-icon svg { width: 16px; height: 16px; }
+
+/* Active room (2026-10-03): the exact Today/Planner/Focus "on" look,
+   shown while the open note lives in that room. */
+.a4sb-row.a4sb-room { position: relative; }
+.a4sb-row.a4sb-room.is-on { color: var(--a4sb-ink); background: var(--a4sb-hover); }
+.a4sb-row.a4sb-room.is-on::before { content: ''; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--a4sb-marker); }
+.a4sb-row.a4sb-room.is-on .a4sb-room-icon { color: var(--a4sb-marker); }
+
+/* Phone and tablet (0.3.0): every tap target at least 44px tall, and 44px
+   wide where it is an icon. Computer sizes above are untouched. */
+.is-mobile .a4sb .a4sb-tools { height: 44px; gap: 2px; }
+.is-mobile .a4sb .a4sb-tools .clickable-icon { width: 44px; height: 44px; }
+.is-mobile .a4sb .a4sb-tools .clickable-icon svg { width: 20px; height: 20px; }
+.is-mobile .a4sb .a4sb-search { min-height: 44px; font-size: 15px; }
+.is-mobile .a4sb .a4sb-nav-item { min-height: 44px; }
+.is-mobile .a4sb .a4sb-sec-head, .is-mobile .a4sb .a4sb-grp-head { min-height: 44px; }
+.is-mobile .a4sb-row, .is-mobile .a4sb-sub, .is-mobile .a4sb-file, .is-mobile .a4sb-more { min-height: 44px; font-size: 15px; }
+.is-mobile .a4sb-room, .is-mobile .a4sb-life { font-size: 15.5px; }
+.is-mobile .a4sb-fold { width: 44px; height: 44px; margin-left: -14px; margin-right: -10px; }
+.is-mobile .a4sb-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.is-mobile .a4sb-row:hover { background: transparent; }
+.is-mobile .a4sb-row.is-on { background: var(--a4sb-sel); }
+.is-mobile .a4sb-row.a4sb-room.is-on { background: var(--a4sb-hover); }
+
+/* project status after the name (paused, backlog...) in the split Projects lists */
+.a4sb-status { font: 9.5px var(--a4sb-mono); color: var(--a4sb-faint); text-transform: uppercase; letter-spacing: .04em; flex: none; }
+
+/* ---- Files tab chrome (0.7.0, plugin overhaul step 3) -------------------
+ * Our own classes on Obsidian's Files tab, replacing what ICOR Connect drew.
+ * The row matches the owner theme's centred toolbar row (the same values as
+ * .a4sb-tools above); sort and collapse-all keep their place at the end. */
+.a4sb-files-tools { display: flex; justify-content: center; align-items: center; gap: 4px; height: 24px; margin-bottom: 8px; padding: 0 8px; }
+.a4sb-files-tools .clickable-icon { width: 24px; height: 24px; padding: 0; border-radius: var(--ink-radius-control, 4px); color: var(--ink-paper-faint, var(--icon-color)); background: transparent; border: none; display: inline-flex; align-items: center; justify-content: center; }
+.a4sb-files-tools .clickable-icon:hover { color: var(--ink-paper, var(--icon-color-hover)); background: var(--ink-hover-wash, var(--background-modifier-hover)); transition: color 140ms var(--ink-ease-draw, ease), background 140ms var(--ink-ease-draw, ease); }
+.a4sb-files-tools .clickable-icon:focus-visible { outline: 2px solid var(--ink-marker, #ff5a2d); outline-offset: 2px; }
+.a4sb-files-tools .clickable-icon svg { width: 16px; height: 16px; }
+.a4sb-files-tools .clickable-icon:has(svg.lucide-sort-asc), .a4sb-files-tools .clickable-icon:has(svg.lucide-sort-desc) { order: 1; }
+.a4sb-files-tools .clickable-icon:has(svg.lucide-chevrons-down-up), .a4sb-files-tools .clickable-icon:has(svg.lucide-chevrons-up-down) { order: 2; }
+.is-mobile .a4sb-files-tools { height: 44px; gap: 2px; }
+.is-mobile .a4sb-files-tools .clickable-icon { width: 44px; height: 44px; }
+.is-mobile .a4sb-files-tools .clickable-icon svg { width: 20px; height: 20px; }
+
+/* An add-on's footer: bottom of the Files tab. */
+.a4sb-files-foot { flex: 0 0 auto; margin-top: auto; padding: 8px 10px 10px; border-top: 1px solid var(--ink-hairline, var(--background-modifier-border)); }
+.a4sb-files-foot + .a4sb-files-foot { margin-top: 0; }
+
+/* An add-on's buttons and Settings on the right sidebar's tab row. */
+.a4sb-top-btn { align-self: center; color: var(--ink-paper-faint, var(--text-faint)); padding: 4px; margin-right: 2px; }
+.a4sb-top-btn:hover { color: var(--ink-paper, var(--text-normal)); }
+
+/* Bases button drop-down (0.9.0): Obsidian's own menu; the folder each base
+ * lives in sits faintly on the right; the title row is a quiet label. */
+.a4sb-bases-menu { min-width: 240px; }
+.a4sb-bases-menu .menu-item-title { display: flex; align-items: baseline; gap: 12px; flex: 1 1 auto; }
+.a4sb-bases-menu .a4sb-base-where { margin-left: auto; font-size: var(--font-ui-smaller, 11px); color: var(--ink-paper-faint, var(--text-faint)); white-space: nowrap; }
+.a4sb-bases-menu .menu-item.is-label .menu-item-title { font-family: var(--font-mono, var(--font-monospace)); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-paper-faint, var(--text-faint)); }
+.a4sb .a4sb-tools .clickable-icon.is-open, .a4sb-files-tools .clickable-icon.is-open { color: var(--ink-paper, var(--icon-color-hover)); background: var(--ink-hover-wash, var(--background-modifier-hover)); }
+/* An area under Work / Personal projects (0.1.5): the stack icon before its name. */
+.a4sb-file .a4sb-life-icon { flex: none; color: var(--a4sb-faint); }

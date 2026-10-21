@@ -1,0 +1,5 @@
+{
+  "//": "Only for the type-aware lint rules (eslint.config.mjs); nothing is compiled. The source is plain JS bundled by esbuild.",
+  "compilerOptions": { "allowJs": true, "checkJs": false, "noEmit": true, "target": "es2020", "module": "commonjs", "moduleResolution": "node", "lib": ["es2020", "dom"], "types": [] },
+  "include": ["src/**/*.js"]
+}

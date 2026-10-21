@@ -1,0 +1,8 @@
+{
+  "id": "a4-projects",
+  "name": "Projects",
+  "version": "0.7.6",
+  "minAppVersion": "1.5.7",
+  "description": "Projects split into Work and Personal, a page per project, an Inbox for tasks with no project or date, and a task card on every task note. Comes with its own task engine, which reads and writes your existing task notes exactly as TaskNotes does (or hands the writing to TaskNotes, your choice in Settings).",
+  "isDesktopOnly": false
+}

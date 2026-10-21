@@ -1,0 +1,58 @@
+# LifeWorld releases. Pushing a version tag (e.g. 0.2.3) builds main.js and styles.css from src/
+# (npm ci, npm run build, the same build the community directory's scanner runs), runs the
+# self-checks, and creates the GitHub release with main.js, manifest.json and styles.css plus a
+# signed build provenance attestation (recommended by Obsidian's community directory).
+# The release notes are the tag's message.
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check the tag matches manifest.json and versions.json
+        run: |
+          v="$(jq -r .version manifest.json)"
+          [ "$v" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match manifest.json version $v"; exit 1; }
+          jq -e --arg v "$v" 'has($v)' versions.json > /dev/null || { echo "versions.json has no $v"; exit 1; }
+
+      - name: Build and self-check
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils # pdftotext, for the PDF manual checks
+          npm ci
+          npm test
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "LifeWorld $GITHUB_REF_NAME" \
+            --notes-from-tag \
+            --verify-tag \
+            main.js manifest.json styles.css
