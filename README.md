@@ -77,14 +77,21 @@ they are done. One button moves everything overdue to today, with Undo.
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for "LifeWorld", select
    **Install**, then **Enable**.
-2. Open **Settings → LifeWorld**. Under **Parts**, switch on the parts you want.
-3. Under **Your vault**, check the folders. A new install uses `Tasks` (finished ones in `Tasks/Archive`),
+2. The first time LifeWorld starts, a welcome window shows what it found in your vault: your daily
+   notes, your tasks (task notes or checkboxes), your projects folder and your top folders. Nothing is
+   changed until you select **Start with this**, which sets LifeWorld up with what it found. **Set up
+   later** or the X closes it without changing anything, and it does not open by itself again. To see
+   it again, open **Settings → LifeWorld → Your vault** and select **Run setup**.
+3. Open **Settings → LifeWorld**. Under **Parts**, switch on the parts you want.
+4. Under **Your vault**, check the folders. A new install uses `Tasks` (finished ones in `Tasks/Archive`),
    `Projects`, `Goals`, `Habits`, `Journal` and `Mood`, and your settings from Obsidian's Daily notes plugin. Point them at your own folders if
    you already have them. The names of the task properties can be changed there too.
-4. Select the sun icon in the ribbon to open the Today page, or run **LifeWorld: Open today** from the
+5. Select the sun icon in the ribbon to open the Today page, or run **LifeWorld: Open today** from the
    command palette.
 
 LifeWorld works on Obsidian for desktop, iPhone, iPad and Android. Things 3 is offered only on a Mac.
+
+![The welcome window](screenshots/welcome-light.png)
 
 ![Settings](screenshots/settings-light.png)
 

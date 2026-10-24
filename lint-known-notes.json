@@ -1,0 +1,12 @@
+{
+  "src/main.js obsidianmd/settings-tab/prefer-setting-definitions": 1,
+  "src/main.js obsidianmd/ui/sentence-case": 3,
+  "src/planner/main.js obsidianmd/ui/sentence-case": 3,
+  "src/projects/main.js obsidianmd/settings-tab/prefer-setting-definitions": 1,
+  "src/projects/main.js obsidianmd/ui/sentence-case": 7,
+  "src/sidebar/main.js obsidianmd/settings-tab/prefer-setting-definitions": 1,
+  "src/sidebar/main.js obsidianmd/ui/sentence-case": 5,
+  "src/today/main.js obsidianmd/settings-tab/prefer-setting-definitions": 1,
+  "src/today/main.js obsidianmd/ui/sentence-case": 9,
+  "src/today/mood.js obsidianmd/ui/sentence-case": 2
+}

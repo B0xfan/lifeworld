@@ -1,12 +1,15 @@
-// The community review's CSS checks, as errors: browser features only partly supported by the
-// Chromium in Obsidian's Electron (doiuse data), no !important, no :has.
-// shortcut: browsers pinned to Chromium 124 for Obsidian 1.6.5; the flagged features (text-decoration
-// longhands, multi-column) are partial in every Chromium, so the exact version does not change results.
+// Obsidian's directory scanner CSS rules, exactly (obsidianmd/obsidian-workflows src/lint.ts, SCANNER_STYLELINT_CONFIG):
+// stylelint-config-obsidianmd's own rules WITHOUT its stylelint-config-standard base, which the scanner does not run
+// (decided 2026-10-21: match the review, no formatting rewrite). npm scripts run with --max-warnings 0.
+// Browser target follows manifest minAppVersion (1.7.2 -> Electron 30); stylelint-disable comments are ignored, as the scanner ignores them.
+import obsidianmd from 'stylelint-config-obsidianmd';
+
 export default {
-  plugins: ['stylelint-no-unsupported-browser-features'],
+  ...obsidianmd,
+  extends: [],
+  ignoreDisables: true,
   rules: {
-    'plugin/no-unsupported-browser-features': [true, { browsers: ['chrome 124'], severity: 'error' }],
-    'declaration-no-important': true,
-    'selector-pseudo-class-disallowed-list': ['has'],
+    ...obsidianmd.rules,
+    'plugin/no-unsupported-browser-features': [true, { severity: 'warning', browsers: ['electron >= 30'], ignore: ['css-nesting', 'css-cascade-layers'] }],
   },
 };

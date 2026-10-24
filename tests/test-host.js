@@ -55,7 +55,7 @@ class Setting {
   addExtraButton(cb) { const b = { setIcon(v) { b.icon = v; return b; }, setTooltip(v) { b.tip = v; return b; }, setDisabled(v) { b.disabled = v; return b; }, onClick(f) { b.click = f; return b; } }; (this.rec.extras = this.rec.extras || []).push(b); cb(b); return this; }
   addButton(cb) { const b = { setButtonText(v) { b.label = v; return b; }, onClick(f) { b.click = f; return b; }, setCta() { b.cta = true; return b; }, setDisabled(v) { b.disabled = v; return b; } }; (this.rec.buttons = this.rec.buttons || []).push(b); cb(b); return this; }
 }
-class Modal { constructor(app) { this.app = app; this.contentEl = fakeEl('div'); } open() { this.isOpen = true; this.onOpen(); } close() { this.isOpen = false; this.onClose(); } setTitle(t) { this.title = t; return this; } }
+class Modal { constructor(app) { this.app = app; this.contentEl = fakeEl('div'); this.modalEl = fakeEl('div'); } open() { this.isOpen = true; this.onOpen(); } close() { this.isOpen = false; this.onClose(); } setTitle(t) { this.title = t; return this; } }
 class TFile { constructor(path) { this.path = path; this.basename = path.split('/').pop().replace(/\.md$/, ''); this.name = path.split('/').pop(); this.extension = 'md'; } }
 class TFolder { constructor(path, children) { this.path = path; this.children = children; } }
 // The type-ahead list under a box (Obsidian 1.14.4 app.js, read 2026-10-20): setValue/close on the box; each one made is kept.
@@ -102,7 +102,7 @@ const adapter = {
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
 let openTabs = {}; // tab type -> leaves already open when LifeWorld starts
-const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter } }; }; // no app.plugins: lookups must not need it
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { configDir: '.obsidian', adapter, getRoot: () => new TFolder('', []), getMarkdownFiles: () => [], getAbstractFileByPath: () => null }, metadataCache: { getFileCache: () => null } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -461,6 +461,7 @@ const start = async (data) => {
     ['Mood folder', 'Your mood check-ins', 'Mood', 'Mood'],
     ['Daily notes', "Uses Obsidian's own Daily notes settings (the vault's top folder, YYYY-MM-DD)", undefined, 'Open'],
     ['Property names', 'status, due, scheduled, priority, projects, reminders', undefined, 'Change'],
+    ['Look for my notes again', 'Shows the welcome window again. Nothing changes unless you choose to start with what it found.', undefined, 'Run setup'],
   ], 'new install: the Your vault rows and defaults as drawn');
   const freshEngine = new Engine({ app: fresh.app, settings: {} });
   eq([freshEngine.cfg().tasksFolder, freshEngine.cfg().archiveFolder], ['Tasks', 'Tasks/Archive'], 'new install: the task engine uses the same folders');
@@ -1182,6 +1183,116 @@ const start = async (data) => {
     ok(/extraButton\(bar, 'clickable-icon nav-action-button', t, \(\) => this\.closeDrawer\(\)\)/.test(sbSrc) && /runExtra\(x\)\.then\(\(\) => this\.closeDrawer\(\)\)/.test(sbSrc), 'Sidebar tab: add-on toolbar buttons and rows close the phone drawer');
     ex.host.unload();
     eq(ex.host.ready, false, 'LifeWorld off: no longer ready');
+  }
+
+  // First-run setup window (factory job 2026-10-24-lifeworld-first-run-setup).
+  {
+    const V = LW.vault;
+    const tick = () => new Promise((r) => setTimeout(r, 20));
+    const tf = (p) => new TFile(p);
+    // A vault: path list -> folders and files; caches: path -> metadata cache entry.
+    const vaultOf = (paths, caches = {}) => {
+      const root = new TFolder('', []); const dirs = { '': root }; const all = [];
+      const dir = (p) => { if (dirs[p]) return dirs[p]; const d = new TFolder(p, []); d.name = p.split('/').pop(); dir(p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '').children.push(d); return (dirs[p] = d); };
+      for (const p of paths) { const f = tf(p); all.push(f); dir(p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '').children.push(f); }
+      return { getRoot: () => root, getMarkdownFiles: () => all, getAbstractFileByPath: (p) => dirs[p] || all.find((f) => f.path === p) || null, cache: { getFileCache: (f) => caches[f.path] || null } };
+    };
+    const startIn = async (data, v, more = {}) => {
+      const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
+      if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data);
+      const app = newApp();
+      if (v) { Object.assign(app.vault, { getRoot: v.getRoot, getMarkdownFiles: v.getMarkdownFiles, getAbstractFileByPath: v.getAbstractFileByPath }); app.metadataCache = v.cache; }
+      Object.assign(app, more);
+      const host = new LW(app, { id: 'lifeworld', name: 'LifeWorld', dir });
+      await host.load();
+      return { app, host, dir };
+    };
+    const rowsOf = (h) => h.setup.found.rows.map((r) => r.title);
+
+    // Who sees it: a new install (no file) once the layout is ready; an existing file or a carry-over never.
+    const neu = await startIn(undefined);
+    ok(neu.host.setup && neu.host.setup.isOpen, 'new install: the setup window opens by itself');
+    eq(neu.app.vault.getMarkdownFiles().length, 0, 'fixture: empty vault');
+    const before = disk[neu.dir];
+    neu.host.setup.close();
+    await tick();
+    ok(JSON.parse(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
+    const again = await startIn(disk[neu.dir]);
+    ok(!again.host.setup, 'after it was closed: never opens by itself again');
+    const old = await startIn({ 'a4-today': { layout: [] } });
+    ok(!old.host.setup, 'an existing settings file: never opens by itself');
+    disk['.obsidian/plugins/a4-sidebar'] = JSON.stringify({ placed: true });
+    const carried = await startIn(undefined);
+    ok(!carried.host.setup, 'old plugin settings carried over at this start: never opens by itself');
+    delete disk['.obsidian/plugins/a4-sidebar'];
+
+    // Sync: settings arrive while it is open -> it closes, nothing saved, the file stays as it arrived.
+    const dev2 = await startIn(undefined);
+    const synced = JSON.stringify({ lifeworld: { vault: { folders: { tasks: 'Mine' } } } });
+    disk[dev2.dir] = synced;
+    await dev2.host.onExternalSettingsChange();
+    await tick();
+    eq([dev2.host.setup.isOpen, disk[dev2.dir]], [false, synced], 'Sync while open: closed, synced settings untouched');
+
+    // What it finds: TaskNotes on wins; else a Tasks folder; else checkboxes; else none yet. Projects in any case.
+    const daily = { internalPlugins: { getEnabledPluginById: (id) => (id === 'daily-notes' ? { options: { folder: 'Daily', format: 'YYYY-MM-DD' } } : null) } };
+    const v1 = vaultOf(['Daily/2026-10-01.md', 'Daily/2026-10-02.md', 'Daily/notes.md', 'tasks/a.md', 'tasks/Archive/b.md', 'projects/P1.md', 'projects/P2.md', 'projects/sub/x.md', 'Other/n.md']);
+    const s1 = await startIn(undefined, v1, daily);
+    eq(rowsOf(s1.host), ['2 daily notes in "Daily"', '2 tasks in "tasks"', '2 projects in "projects"', 'Sidebar: your 4 top folders', 'Weather and calendars: off'], 'Tasks folder and lower-case projects found');
+    eq([s1.host.setup.found.source, s1.host.setup.found.folders], ['builtin', { tasks: 'tasks', projects: 'projects' }], 'Start would save LifeWorld tasks and those folders');
+    const v2 = vaultOf(['Inbox.md', 'Day.md'], { 'Inbox.md': { listItems: [{ task: ' ' }, { task: 'x' }, { task: ' ' }] }, 'Day.md': { listItems: [{ task: ' ' }] } });
+    const s2 = await startIn(undefined, v2);
+    eq(rowsOf(s2.host).slice(0, 3), ['No daily notes yet', '3 checkboxes in your notes', 'Projects folder: none yet'], 'checkboxes counted from the note index (open ones)');
+    const v3 = vaultOf(['TN/t1.md', 'TN/t2.md', 'TN/plain.md', 'Tasks/x.md'], { 'TN/t1.md': { frontmatter: { tags: ['task'] } }, 'TN/t2.md': { frontmatter: { tags: 'task' } } });
+    const s3 = await startIn(undefined, v3, { plugins: { plugins: { tasknotes: { settings: { tasksFolder: 'TN', archiveFolder: 'TN/Done', taskTag: 'task' } } } } });
+    eq([rowsOf(s3.host)[1], s3.host.setup.found.source, s3.host.setup.found.folders], ['2 tasks from the TaskNotes plugin', 'tasknotes', { tasks: 'TN', archive: 'TN/Done' }], 'TaskNotes on: first match, its folder and tag');
+    eq(rowsOf(neu.host).slice(0, 2), ['No daily notes yet', 'LifeWorld tasks, none yet'], 'empty vault: nothing found, said plainly');
+
+    // Start with this: the found source through the task engine, the found folders through Your vault.
+    const calls = [];
+    const pj = s1.host.running['a4-projects'];
+    pj.settings = { source: 'checkbox' }; pj.setSource = async (id) => { calls.push(id); };
+    await s1.host.applySetup(s1.host.setup.found);
+    eq([calls, JSON.parse(disk[s1.dir]).lifeworld.vault.folders, V.vaultFolders.tasks], [['builtin'], { tasks: 'tasks', projects: 'projects' }, 'tasks'], 'Start: source and folders saved and read');
+    await s1.host.setVaultSettings({ folders: { tasks: '', projects: '' } }); // back to defaults for the checks after
+
+    // Parts off: Tasks and Projects rows need the task engine, the Sidebar row the Sidebar.
+    const partsOff = await startIn({ lifeworld: { parts: { 'a4-today': false, 'a4-planner': false, 'a4-projects': false, 'a4-sidebar': false } } }, v1, daily);
+    partsOff.host.openSetup(false);
+    eq(rowsOf(partsOff.host), ['2 daily notes in "Daily"', 'Weather and calendars: off'], 'parts off: their rows hidden');
+
+    // Weather and calendars: their real state (spec amendment 2026-10-24), not always "off".
+    const wxRow = (h) => { h.openSetup(false); const r = h.setup.found.rows.find((x) => x.key === 'weather'); h.setup.closeQuietly(); return [r.title, r.ok]; };
+    // The parts here are stand-ins: a town set = the real Today part's weatherCfg after its start.
+    const withTown = (x) => { x.host.running['a4-today'].weatherCfg = { place: { name: 'Springfield', lat: 40, lon: -89 } }; return x.host; };
+    const link = { loadLocalStorage: (k) => (k === 'lifeworld-calendar-links' ? [{ id: 'a', url: 'https://x.test/c.ics', name: 'Home' }] : null) };
+    eq(wxRow((await startIn({ 'a4-today': {} }, v1)).host), ['Weather and calendars: off', false], 'nothing set: off');
+    eq(wxRow(withTown(await startIn({ 'a4-today': {} }, v1))), ['Weather: on, calendars: off', true], 'a town set: weather on');
+    eq(wxRow((await startIn({ 'a4-today': {} }, v1, link)).host), ['Calendars: on, weather: off', true], 'a calendar link: calendars on');
+    eq(wxRow(withTown(await startIn({ 'a4-today': {} }, v1, link))), ['Weather and calendars: on', true], 'both on');
+    eq(wxRow((await startIn({ lifeworld: { parts: { 'a4-today': false, 'a4-planner': false } } }, v1, link)).host), ['Weather and calendars: off', false], 'Today and Planner off: nothing shows them, off');
+    const mine0 = await startIn({ 'a4-today': {} }, v1);
+    await mine0.host.setVaultSettings({ feeds: { weather: 'Feeds/W.md', calendar: 'Feeds/C.md' } });
+    eq(wxRow(mine0.host), ['Weather and calendars: on', true], 'weather and calendar notes set: on');
+    await mine0.host.setVaultSettings({ feeds: { weather: '', calendar: '' } });
+
+    // Run setup in a set-up vault (found in the owner's copy, sandbox 2026-10-24): its own nested Tasks and Projects
+    // folders win over checkboxes elsewhere, so Start would keep the task source, not switch it to checkboxes.
+    const vJ = vaultOf(['02 Planner/Tasks/t1.md', '02 Planner/Tasks/t2.md', 'Life/Projects/P.md', 'Day.md'], { 'Day.md': { listItems: [{ task: ' ' }] } });
+    const setUp = await startIn({ lifeworld: { vault: { folders: { tasks: '02 Planner/Tasks', projects: 'Life/Projects' } } } }, vJ);
+    setUp.host.openSetup(false);
+    eq([rowsOf(setUp.host).slice(1, 3), setUp.host.setup.found.source], [['2 tasks in "02 Planner/Tasks"', '1 project in "Life/Projects"'], 'builtin'], 'set-up vault: its own folders are found, source stays LifeWorld tasks');
+    setUp.host.setup.closeQuietly();
+    await setUp.host.setVaultSettings({ folders: { tasks: '', projects: '' } });
+
+    // Run setup on an existing setup: opens; closing it changes nothing on disk.
+    const mine = await startIn({ 'a4-today': { layout: [] } }, v1);
+    const was = disk[mine.dir];
+    mine.host.openSetup(false);
+    ok(mine.host.setup.isOpen, 'Run setup opens it in any vault');
+    mine.host.setup.close();
+    await tick();
+    eq(disk[mine.dir], was, 'Run setup closed without Start: settings file unchanged');
   }
 
   console.log(`host self-check: OK (${n} checks)`);

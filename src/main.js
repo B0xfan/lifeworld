@@ -8,6 +8,8 @@
 import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
 import { PARTS, ADDON } from './core/parts';
 import * as vault from './core/vault';
+import { findSetup, SetupModal } from './setup';
+import { linksOf } from './core/calendars';
 import projectsManifest from './projects/manifest.json';
 import Projects from './projects/main';
 import todayManifest from './today/manifest.json';
@@ -95,6 +97,9 @@ class LifeWorldPlugin extends Plugin {
     this.gone = false;
     const found = await this.readStore();
     if (!found) await this.setAsideDamaged();
+    // A brand-new install: no settings file yet (or an empty one), nothing carried over below. Only then
+    // does the setup window open by itself (spec criteria 1, 3, 4); an existing setup never sees it.
+    this.firstRun = !!found && Object.keys(found).length === 0;
     // A damaged file starts on defaults with carry-over marked done, so a part that saves nothing
     // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
     /** @type {LwStore} */
@@ -111,6 +116,7 @@ class LifeWorldPlugin extends Plugin {
     let carried = false;
     if (!(this.store[HOST] && this.store[HOST].carriedOver)) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
     // A failed save here must not stop LifeWorld: it runs on what was carried, the next save retries.
+    if (carried) this.firstRun = false;
     if (carried) await this.writeStore().catch((e) => {
       console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
       new Notice('LifeWorld: your old settings were taken over but could not be saved yet. LifeWorld will try again at the next change.', 0);
@@ -127,6 +133,7 @@ class LifeWorldPlugin extends Plugin {
     // A tab open before the later parts started (Today before the Planner) drew them as off: all open
     // tabs draw again now, or at a cold start once the layout is back (a tab not yet loaded is skipped).
     this.app.workspace.onLayoutReady(() => { if (!this.gone) this.redrawViews(); });
+    this.app.workspace.onLayoutReady(() => { if (!this.gone && this.firstRun) this.openSetup(true); });
     // A companion add-on that started first hears that the hooks below are there (one that starts later
     // checks `ready`); it hears it again after LifeWorld is turned off and on, which drops what it added.
     this.ready = true;
@@ -356,7 +363,38 @@ class LifeWorldPlugin extends Plugin {
     if (cards) draw('task cards', () => cards.refreshAll());
   }
 
+  // The setup window: first = opened by itself on a new install (closing it in any way records that it
+  // was seen); otherwise from Settings › Your vault › Run setup (nothing saved unless Start is pressed).
+  /** @param {boolean} first */
+  openSetup(first) {
+    if (first) this.firstRun = false;
+    let found;
+    try {
+      const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
+      // Weather shows on Today (its note or a town); calendars on Today and the Planner (their note or links).
+      const weather = !!td && (!!vault.feedNotes.weather || !!(td.weatherCfg && td.weatherCfg.place));
+      const calendars = !!(td || this.running['a4-planner']) && (!!vault.feedNotes.calendar || linksOf(this.app).length > 0);
+      found = findSetup(this.app, { engine: !!this.running['a4-projects'], sidebar: !!this.running['a4-sidebar'], weather, calendars });
+    } catch (e) { console.error('LifeWorld: the setup window could not look at the vault', e); return; }
+    this.setup = new SetupModal(this.app, found, {
+      onStart: (f) => this.applySetup(f),
+      onChange: () => { const s = this.app.setting; s.open(); if (typeof s.openTabById === 'function') s.openTabById(this.manifest.id); },
+      onSeen: first ? () => { this.store[HOST] = { ...(this.store[HOST] || {}), setupSeen: true }; this.writeStore().catch((e) => console.error('LifeWorld: could not save that setup was seen', e)); } : null,
+    });
+    this.setup.open();
+  }
+
+  // Start with this: the found task source and folders, through the existing settings (Tasks, Your vault).
+  /** @param {{ source: string | null, folders: Record<string, string> }} found */
+  async applySetup(found) {
+    const pj = /** @type {PartTypes['a4-projects'] | undefined} */ (/** @type {unknown} */ (this.running['a4-projects']));
+    if (pj && found.source && pj.settings.source !== found.source) await pj.setSource(found.source);
+    if (Object.keys(found.folders).length) await this.setVaultSettings({ folders: found.folders });
+    this.app.workspace.trigger('lifeworld:tasks');
+  }
+
   onunload() {
+    if (this.setup) this.setup.closeQuietly();
     this.gone = true; // a switch or outside change still under way starts nothing more
     this.ready = false; // its hooks are gone with it
     this.running = {};
@@ -432,6 +470,10 @@ class LifeWorldPlugin extends Plugin {
   // The file changed outside (Obsidian Sync): each part whose corner changed hears it, as before,
   // and its settings page is redrawn if open (what Obsidian did for each plugin).
   async onExternalSettingsChange() {
+    // Settings arrived from another device (Sync): this is not a new install after all. The setup window
+    // closes without saving anything, so the synced settings stay as they arrived (spec criterion 5).
+    this.firstRun = false;
+    if (this.setup) this.setup.closeQuietly();
     const before = this.store;
     const was = this.ondisk;
     const now = await this.readStore();
@@ -549,6 +591,8 @@ class LifeWorldSettingTab extends PluginSettingTab {
       .addButton((b) => b.setButtonText('Open').onClick(() => { const s = this.app.setting; if (s && typeof s.openTabById === 'function') s.openTabById('daily-notes'); }));
     new Setting(el).setName('Property names').setDesc(PROP_SUMMARY.map((k) => vault.propNames[k]).join(', '))
       .addButton((b) => b.setButtonText('Change').onClick(() => new PropertyNamesModal(this.app, this.plugin, () => this.display()).open()));
+    new Setting(el).setName('Look for my notes again').setDesc('Shows the welcome window again. Nothing changes unless you choose to start with what it found.')
+      .addButton((b) => b.setButtonText('Run setup').onClick(() => this.plugin.openSetup(false)));
   }
 
   // Leaving the page: each part's page lets go of what it listens to, as when its own page closed.

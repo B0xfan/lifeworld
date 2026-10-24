@@ -1,17 +1,14 @@
-// Official Obsidian ESLint (eslint-plugin-obsidianmd), set up like the community plugin
-// scanner (docs/configuration.md, "Community plugin scanner configuration"): only the security
-// rules are errors, everything else is advice (warn). `npm run lint` fails on errors only.
+// Obsidian's official review rules: eslint-plugin-obsidianmd's recommended config at its own severities.
+// npm scripts run with --max-warnings 0, so every warning fails. Stricter than the community scanner on purpose:
+// the type-aware "unsafe any" rules are errors (the scanner warns), and disable comments need a reason
+// (the scanner requires one too: eslint-comments/require-description).
 import { defineConfig, globalIgnores } from 'eslint/config';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 
 const SECURITY = ['no-eval', 'no-implied-eval', 'no-unsanitized/method', 'no-unsanitized/property', 'obsidianmd/regex-lookbehind', 'obsidianmd/no-forbidden-elements'];
-// The scanner's type-aware "unsafe any" warnings (review of 1.0.0); errors here, so npm test (eslint --quiet) keeps them at zero.
 const UNSAFE = ['no-unsafe-argument', 'no-unsafe-member-access', 'no-unsafe-assignment', 'no-unsafe-call', 'no-unsafe-return'].map((r) => `@typescript-eslint/${r}`);
-const OFF = ['no-undef', '@typescript-eslint/restrict-template-expressions', '@typescript-eslint/no-base-to-string', 'import/no-unresolved', 'obsidianmd/validate-manifest', 'obsidianmd/validate-license', 'obsidianmd/commands/no-command-in-command-id', 'obsidianmd/commands/no-plugin-id-in-command-id'];
-
-// The scanner downgrades every non-security rule to warn; do the same to the recommended set.
-const warnOnly = (sev) => (sev === 'error' || sev === 2 ? 'warn' : sev);
-const recommended = obsidianmd.configs.recommended.map((c) => (c.rules ? { ...c, rules: Object.fromEntries(Object.entries(c.rules).map(([k, v]) => [k, Array.isArray(v) ? [warnOnly(v[0]), ...v.slice(1)] : warnOnly(v)])) } : c));
+// The scanner switches these off too (docs/configuration.md): TypeScript covers them, or they misfire on plain JS.
+const OFF = ['no-undef', '@typescript-eslint/restrict-template-expressions', '@typescript-eslint/no-base-to-string', 'import/no-unresolved'];
 
 export default defineConfig([
   {
@@ -19,11 +16,11 @@ export default defineConfig([
       parserOptions: { projectService: { allowDefaultProject: ['eslint.config.*', 'manifest.json'] }, extraFileExtensions: ['.json'] },
     },
   },
-  ...recommended,
+  ...obsidianmd.configs.recommended,
   {
     files: ['**/*.{ts,cts,mts,tsx,js,cjs,mjs,jsx}'],
-    rules: { ...Object.fromEntries(UNSAFE.map((r) => [r, 'error'])), ...Object.fromEntries(SECURITY.map((r) => [r, 'error'])), ...Object.fromEntries(OFF.map((r) => [r, 'off'])) },
+    rules: { ...Object.fromEntries([...UNSAFE, ...SECURITY].map((r) => [r, 'error'])), ...Object.fromEntries(OFF.map((r) => [r, 'off'])), 'eslint-comments/require-description': 'error' },
   },
-  // What the scanner ignores (build output, tests, build scripts), plus this repo's frozen test vault.
-  globalIgnores(['node_modules', 'dist', 'build', 'main.js', 'tests/**', '**/*.mjs', '**/*.cjs']),
+  // What the scanner ignores (build output, tests, build scripts, docs), plus this repo's frozen test vault.
+  globalIgnores(['node_modules', 'dist', 'build', 'main.js', 'tests/**', 'scripts/**', 'docs/**', '**/*.mjs', '**/*.cjs']),
 ]);
