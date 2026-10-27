@@ -1,6 +1,11 @@
 /* LifeWorld's own settings page: a widget whose part is off is dimmed, as drawn (mockup v6). */
-.lw-settings .lw-dim { opacity: .45; }
-.lw-settings .lw-hint { margin: var(--size-4-1) 0 var(--size-4-3); }
+.setting-item.lw-dim { opacity: .45; }
+.lw-hint { margin: var(--size-4-1) 0 var(--size-4-3); }
+/* A settings row that holds a block (a list, a picker) under its name, or alone (bare). */
+.setting-item.lw-wrap { flex-wrap: wrap; }
+.setting-item.lw-wrap > .lw-full { flex-basis: 100%; }
+.setting-item.lw-bare { display: block; }
+.setting-item.lw-bare > .setting-item-info, .setting-item.lw-bare > .setting-item-control { display: none; }
 /* Settings › Your vault › Property names (the approved mockup's dialog). */
 .lw-names .lw-names-intro { color: var(--text-muted); font-size: var(--font-ui-small); }
 .lw-names input.lw-bad { border-color: var(--text-error); }

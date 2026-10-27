@@ -14,6 +14,7 @@ const CORE = path.join(__dirname, '..', 'src', 'core');
 const EXPORTS = {
   dates: ['pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
   lists: ['asList'],
+  settings: ['drawRows', 'blockRow', 'noCleanup'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['ADDON', 'PARTS', 'partOf'],
@@ -33,6 +34,13 @@ for (const [mod, names] of Object.entries(EXPORTS)) {
 }
 // A thrown value's field is read off any object, as `e && e.message` did in 1.0.0 (review of 1.0.1).
 check(() => assert.deepStrictEqual([core.sources.errField({ message: 'm' }, 'message'), core.sources.errField(new Error('x'), 'message'), core.sources.errField(null, 'plain'), core.sources.errField('text', 'message'), core.sources.errStatus({ status: 429 })], ['m', 'x', undefined, undefined, 429], 'errField reads any object, nothing else'));
+// Obsidian 1.13+ calls whatever a row's render returns as a clean-up on redraw ('t is not a function'), so none returns anything.
+check(() => { const ran = []; const [a, g] = core.settings.noCleanup([{ name: 'a', render: (s) => (ran.push(s), s) }, { type: 'group', items: [{ name: 'b', render: () => 2 }, { name: 'c' }] }]);
+  assert.deepStrictEqual([a.render('S'), g.items[0].render('S'), g.items[1].render, ran], [undefined, undefined, undefined, ['S']], 'noCleanup: each render still runs and returns nothing'); });
+// A redraw reuses the row (1.13+): blockRow replaces its block instead of adding a second one.
+check(() => { const kids = []; const el = { addClass() {}, createDiv: () => { const d = { remove: () => kids.splice(kids.indexOf(d), 1) }; kids.push(d); return d; } };
+  const b1 = core.settings.blockRow({ settingEl: el }, 'x'); const b2 = core.settings.blockRow({ settingEl: el }, 'x');
+  assert.deepStrictEqual([kids.length, kids[0] === b2, b1 !== b2], [1, true, true], 'blockRow: one block per row after a redraw'); });
 check(() => assert.deepStrictEqual(fs.readdirSync(CORE).sort(), Object.keys(EXPORTS).map((m) => `${m}.js`).sort(), 'every core file is listed here'));
 
 // Each plugin and each core file: no own copy of a core name, every core name it uses is

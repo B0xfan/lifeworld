@@ -10,6 +10,7 @@ import { PARTS, ADDON } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
 import { linksOf } from './core/calendars';
+import { drawRows, blockRow, noCleanup } from './core/settings';
 import projectsManifest from './projects/manifest.json';
 import Projects from './projects/main';
 import todayManifest from './today/manifest.json';
@@ -109,6 +110,8 @@ class LifeWorldPlugin extends Plugin {
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
+    /** @type {LifeWorldSettingTab | null} LifeWorld's settings page (it sets this itself) */
+    this.settingPage = null;
     // A part with no corner yet takes its old plugin's settings file once (read only, left as it
     // was), so switching over needs no script and works for anyone who had the old plugins.
     // Not after a damaged file: older settings must never quietly replace the newer ones in the
@@ -170,6 +173,7 @@ class LifeWorldPlugin extends Plugin {
     // Kept for LifeWorld's one settings page instead of a page of its own.
     part.addSettingTab = (/** @type {PartSettingTab} */ tab) => {
       this.tabs[id] = tab; part.settingTab = tab;
+      tab.redraw = () => this.redrawSettings();
       part.register(() => { if (typeof tab.hide === 'function') tab.hide(); if (this.tabs[id] === tab) delete this.tabs[id]; part.settingTab = null; });
     };
     // Its tab types, so switching it off can close its tabs (the mockup: Sidebar off gives back
@@ -278,6 +282,10 @@ class LifeWorldPlugin extends Plugin {
     let done = false;
     return () => { if (done) return; done = true; remove(); changed(); };
   }
+
+  // LifeWorld's settings page draws again. On 1.13+ also when closed: update() reads the rows again and
+  // draws only an open page, so reopening it shows today's rows.
+  redrawSettings() { const t = this.settingPage; if (t && (t.settingItems || t.containerEl.isConnected)) t.redraw(); }
 
   // A sync that arrives while Settings is open: the Calendars picker draws again (review p2-s7).
   redrawCalendarPicker() {
@@ -507,92 +515,110 @@ class LifeWorldPlugin extends Plugin {
       // No write: the file holds our save, not `now`; else the next Sync change looks local and is dropped (review p2-s5).
       this.ondisk = ours;
     }
+    let partsChanged = false;
     for (const [m] of PART_LIST) {
       const p = this.running[m.id];
       if (!p || typeof p.onExternalSettingsChange !== 'function') continue;
       if (JSON.stringify(before[m.id]) === JSON.stringify(this.store[m.id])) continue;
       await /** @type {() => Promise<unknown>} */ (p.onExternalSettingsChange)();
-      const tab = this.tabs[m.id];
-      if (tab && tab.containerEl && tab.containerEl.isConnected) tab.display();
+      partsChanged = true;
     }
     // Parts switched on or off, or Your vault changed, elsewhere (the phone): follow them here too.
-    if (JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST])) {
+    const hostChanged = JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST]);
+    if (hostChanged) {
       const h = this.store[HOST];
-      // The settings page needs no redraw here: Obsidian 1.14.4 calls the open page's update() after
-      // this handler, which draws it again (refreshCurrentPage).
       if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) this.applyVault(h && h.vault);
       await this.applyParts();
     }
+    // Once, last, and only before 1.13: from 1.13 Obsidian calls the open page's update() after this handler.
+    if ((partsChanged || hostChanged) && !(this.settingPage && this.settingPage.settingItems)) this.redrawSettings();
   }
 }
 
-// LifeWorld's one settings page: Parts, then each running part's own settings, drawn by the part's
-// own settings page into a section here (so every part's page works exactly as before).
+// LifeWorld's one settings page: Parts, then each running part's own settings, as rows the part's
+// own settings page lists (getSettingDefinitions), under its heading here.
 class LifeWorldSettingTab extends PluginSettingTab {
   /** @param {import('obsidian').App} app @param {LifeWorldPlugin} plugin */
-  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; plugin.settingPage = this; this.containerEl.addClass('lw-settings'); }
 
+  // Obsidian 1.13+ draws the page from these, and its settings search finds every row.
+  /** @returns {(Row | Group)[]} */
+  getSettingDefinitions() {
+    /** @type {(Row | Group)[]} */
+    const items = [
+      { name: 'User manual', desc: 'How to use every part, with pictures. Opens the PDF in your web browser, where you can also download it.',
+        render: (s) => s.addButton((b) => b.setButtonText('Open manual').onClick(() => window.open(MANUAL_URL))) },
+      { type: 'group', heading: 'Parts', items: [
+        ...SWITCHES.map((x) => /** @type {Row} */ ({ name: x.name, desc: x.desc, render: (s) => s.addToggle((t) => t
+          .setValue(this.plugin.isOn(x.id))
+          .onChange(async (v) => { await this.plugin.setPart(x.id, v); this.redraw(); })) })),
+        { name: 'Parts', searchable: false, render: (s) => blockRow(s, '', true).createDiv({ cls: 'setting-item-description lw-hint', text: 'Each part works on its own. Turn on only what you want.' }) },
+      ] },
+      this.planning(),
+      this.yourVault(),
+    ];
+    for (const [id, heading] of HEADINGS) {
+      const tab = this.plugin.tabs[id];
+      if (!tab) continue;
+      if (typeof tab.getSettingDefinitions !== 'function') { console.error(`LifeWorld: ${heading} has no settings rows`); continue; }
+      // The part's first group goes under LifeWorld's heading for it.
+      tab.getSettingDefinitions().forEach((g, i) => items.push(i ? g : { ...g, heading }));
+    }
+    return noCleanup(items);
+  }
+
+  // Opening the page (1.13+) reads its rows again, so changes made elsewhere while it was closed show:
+  // a right-click folder sort, Obsidian's own Daily notes setting.
+  renderTab() { this.settingItems = this.getSettingDefinitions(); super.renderTab(); }
+
+  // Obsidian before 1.13: the same rows, drawn here.
   display() {
     this.hide();
     const el = this.containerEl;
     el.empty();
-    el.addClass('lw-settings');
-    new Setting(el).setName('User manual').setDesc('How to use every part, with pictures. Opens the PDF in your web browser, where you can also download it.')
-      .addButton((b) => b.setButtonText('Open manual').onClick(() => window.open(MANUAL_URL)));
-    new Setting(el).setName('Parts').setHeading();
-    for (const x of SWITCHES) {
-      new Setting(el).setName(x.name).setDesc(x.desc).addToggle((t) => t
-        .setValue(this.plugin.isOn(x.id))
-        .onChange(async (v) => { await this.plugin.setPart(x.id, v); this.display(); }));
-    }
-    el.createDiv({ cls: 'setting-item-description lw-hint', text: 'Each part works on its own. Turn on only what you want.' });
-    this.drawPlanning(el);
-    this.drawVault(el);
-    for (const [id, heading] of HEADINGS) {
-      const tab = this.plugin.tabs[id];
-      if (!tab) continue;
-      new Setting(el).setName(heading).setHeading();
-      tab.containerEl = el.createDiv();
-      tab.display();
-    }
+    drawRows(el, this.getSettingDefinitions());
   }
+
+  // Draws the page again after a change: on 1.13+ through update() (it set settingItems when the page
+  // was added), before that by display().
+  redraw() { if (this.settingItems) this.update(); else this.display(); }
 
   taskSource() { const pj = this.plugin.running['a4-projects']; return pj && pj.settings ? pj.settings.source : 'builtin'; }
 
   // Planning: one choice every part follows when a task is put on a day (0.1.16).
-  /** @param {HTMLElement} el */
-  drawPlanning(el) {
-    new Setting(el).setName('Planning').setHeading();
-    new Setting(el).setName('When you place a task on a day')
-      .setDesc(this.taskSource() === 'checkbox' ? 'Checkboxes: "Set its due date" writes 📅, "Just plan it" writes ⏳.' : 'Dragging a task onto a day, picking a day for it, or adding one straight onto a day. "Set its due date": that day becomes its due date. "Just plan it for that day": the task shows on that day and its due date, if it has one, stays as it is.')
-      .addDropdown((d) => d.addOption('due', 'Set its due date').addOption('plan', 'Just plan it for that day')
+  /** @returns {Group} */
+  planning() {
+    return { type: 'group', heading: 'Planning', items: [{
+      name: 'When you place a task on a day',
+      desc: this.taskSource() === 'checkbox' ? 'Checkboxes: "Set its due date" writes 📅, "Just plan it" writes ⏳.' : 'Dragging a task onto a day, picking a day for it, or adding one straight onto a day. "Set its due date": that day becomes its due date. "Just plan it for that day": the task shows on that day and its due date, if it has one, stays as it is.',
+      render: (s) => s.addDropdown((d) => d.addOption('due', 'Set its due date').addOption('plan', 'Just plan it for that day')
         .setValue(vault.planning.setsDue ? 'due' : 'plan')
-        .onChange(async (v) => { await this.plugin.setVaultSettings({ placeOnDay: v }); this.plugin.app.workspace.trigger('lifeworld:tasks'); }));
+        .onChange(async (v) => { await this.plugin.setVaultSettings({ placeOnDay: v }); this.plugin.app.workspace.trigger('lifeworld:tasks'); })),
+    }] };
   }
 
   // Your vault: the six folders, Daily notes (Obsidian's own setting), Property names.
-  /** @param {HTMLElement} el */
-  drawVault(el) {
-    new Setting(el).setName('Your vault').setHeading();
-    for (const [key, name, desc] of FOLDER_ROWS) {
-      new Setting(el).setName(name).setDesc(desc).addText((t) => {
+  /** @returns {Group} */
+  yourVault() {
+    const dn = vault.dailyNotes(this.app);
+    const where = dn.folder ? `folder "${dn.folder}"` : "the vault's top folder";
+    const tpl = dn.template ? `, template "${dn.template.split('/').pop()}"` : '';
+    return { type: 'group', heading: 'Your vault', items: [
+      ...FOLDER_ROWS.map(([key, name, desc]) => /** @type {Row} */ ({ name, desc, render: (s) => s.addText((t) => {
         t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(vault.vaultFolders[key]);
         // Saved when the box is left or Enter is pressed (the change event), not on every keystroke:
         // a half-typed folder would be read and sent out through Sync (review p2-s4).
         t.inputEl.addEventListener('change', () => this.plugin.setVaultSettings({ folders: { [key]: t.getValue().trim() } }));
         t.inputEl.setAttr('aria-label', name);
-      });
-    }
-    const dn = vault.dailyNotes(this.app);
-    const where = dn.folder ? `folder "${dn.folder}"` : "the vault's top folder";
-    const tpl = dn.template ? `, template "${dn.template.split('/').pop()}"` : '';
-    new Setting(el).setName('Daily notes').setDesc(`Uses Obsidian's own Daily notes settings (${where}, ${dn.format}${tpl})`)
-      // shortcut: app.setting is Obsidian's undocumented settings window; upgrade if it gets an API.
-      .addButton((b) => b.setButtonText('Open').onClick(() => { const s = this.app.setting; if (s && typeof s.openTabById === 'function') s.openTabById('daily-notes'); }));
-    new Setting(el).setName('Property names').setDesc(PROP_SUMMARY.map((k) => vault.propNames[k]).join(', '))
-      .addButton((b) => b.setButtonText('Change').onClick(() => new PropertyNamesModal(this.app, this.plugin, () => this.display()).open()));
-    new Setting(el).setName('Look for my notes again').setDesc('Shows the welcome window again. Nothing changes unless you choose to start with what it found.')
-      .addButton((b) => b.setButtonText('Run setup').onClick(() => this.plugin.openSetup(false)));
+      }) })),
+      { name: 'Daily notes', desc: `Uses Obsidian's own Daily notes settings (${where}, ${dn.format}${tpl})`,
+        // shortcut: app.setting is Obsidian's undocumented settings window; upgrade if it gets an API.
+        render: (s) => s.addButton((b) => b.setButtonText('Open').onClick(() => { const w = this.app.setting; if (w && typeof w.openTabById === 'function') w.openTabById('daily-notes'); })) },
+      { name: 'Property names', desc: PROP_SUMMARY.map((k) => vault.propNames[k]).join(', '),
+        render: (s) => s.addButton((b) => b.setButtonText('Change').onClick(() => new PropertyNamesModal(this.app, this.plugin, () => this.redraw()).open())) },
+      { name: 'Look for my notes again', desc: 'Shows the welcome window again. Nothing changes unless you choose to start with what it found.',
+        render: (s) => s.addButton((b) => b.setButtonText('Run setup').onClick(() => this.plugin.openSetup(false))) },
+    ] };
   }
 
   // Leaving the page: each part's page lets go of what it listens to, as when its own page closed.

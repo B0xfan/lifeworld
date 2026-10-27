@@ -46,6 +46,7 @@ import { partOf, ADDON } from '../core/parts'; // the other parts, and what an a
 // each time the panel draws. A new install has none and lists its top folders.
 import { sidebarContent } from '../core/vault';
 import { errField } from '../core/sources';
+import { drawRows, blockRow } from '../core/settings';
 const SBC = sidebarContent;
 // Phone and tablet (0.3.0): same panel, bigger touch targets, long-press for
 // the menu, no drag-to-move (iOS sends no HTML drag events from a finger),
@@ -1527,8 +1528,7 @@ class SidebarPlugin extends Plugin {
     try { d = await this.loadData(); } catch { return; }
     if (!d || typeof d !== 'object' || Array.isArray(d)) return;
     this.state.sort = normalizeSort(/** @type {Fm} */ (d).sort);
-    this.scheduleRender();
-    for (const t of [this.settingTab]) if (t && t.containerEl && t.containerEl.isConnected) t.display();
+    this.scheduleRender(); // LifeWorld's settings page, where these rows are, redraws itself after a sync
   }
 
   /** @param {string} id */
@@ -1625,43 +1625,45 @@ class NewestFirstListModal extends Modal {
 class SidebarSettingTab extends PluginSettingTab {
   /** @param {import('obsidian').App} app @param {SidebarPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; plugin.settingTab = this; }
-  display() {
-    const el = this.containerEl;
-    el.empty();
-    el.addClass('a4sb-settings');
+  /** @returns {Group[]} */
+  getSettingDefinitions() {
     const sort = () => this.plugin.state.sort;
     /** @param {Partial<SortSettings>} patch */
     const save = async (patch) => { await this.plugin.updateSort({ ...sort(), ...patch }); };
-    // No own heading: LifeWorld's page puts these under "Sidebar" (decided 2026-10-13).
-    new Setting(el).setName('Dates').setDesc('Notes whose name starts with a date are sorted by the real date and time.')
-      .addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: /** @type {'first' | 'last'} */ (v) })));
     const nf = sort().newestFirstIn;
-    new Setting(el).setName('Always newest first in').setDesc(nf.length ? nf.map(folderDisplay).join(', ') : 'No folders.')
-      .addButton((b) => b.setButtonText('Edit').onClick(() => new NewestFirstListModal(this.app, this.plugin, () => this.display()).open()));
-    new Setting(el).setName('Text').setDesc('Everything without a date.')
-      .addDropdown((d) => d.addOption('az', 'A to Z').addOption('za', 'Z to A').setValue(sort().text).onChange((v) => save({ text: /** @type {'az' | 'za'} */ (v) })));
-    new Setting(el).setName('Sort folders by these rules too').setDesc('Off: folders stay on top, A to Z. A folder with its own order below sorts its folders that way too.')
-      .addDropdown((d) => d.addOption('off', 'Off').addOption('on', 'On').setValue(sort().folders ? 'on' : 'off').onChange((v) => save({ folders: v === 'on' })));
-
-    new Setting(el).setName('Folder by folder').setHeading()
-      .setDesc("Any folder can get its own order. Folders not on this list follow the settings above. A subfolder follows its parent unless it's listed too. You can also set this by right-clicking a folder in the sidebar.");
     const entries = Object.entries(sort().perFolder).sort((a, b) => collator.compare(a[0], b[0]));
-    for (const [path, mode] of entries) {
-      const s = new Setting(el).setName(folderDisplay(path)).setClass('a4sb-sort-folder');
-      s.settingEl.dataset.folder = path;
-      if (!this.app.vault.getAbstractFileByPath(path)) s.setDesc('This folder is not in the vault right now.');
-      s.addDropdown((d) => {
-        d.addOption('main', 'Use main setting');
-        for (const m of SORT_MODES) d.addOption(m, SORT_LABEL[m]);
-        d.setValue(mode).onChange(async (v) => { await this.plugin.setFolderSort(path, v === 'main' ? null : v); if (v === 'main') this.display(); });
-      });
-      s.addExtraButton((b) => b.setIcon('x').setTooltip('Remove').onClick(async () => { await this.plugin.setFolderSort(path, null); this.display(); }));
-    }
-    new Setting(el).addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (/** @type {string} */ path) => {
-      await this.plugin.setFolderSort(path, 'az');
-      this.display();
-    }, new Set(Object.keys(sort().perFolder))).open()));
+    // No own heading: LifeWorld's page puts the first group under "Sidebar" (decided 2026-10-13).
+    return [{ type: 'group', cls: 'a4sb-settings', items: [
+      { name: 'Dates', desc: 'Notes whose name starts with a date are sorted by the real date and time.',
+        render: (s) => s.addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: /** @type {'first' | 'last'} */ (v) }))) },
+      { name: 'Always newest first in', desc: nf.length ? nf.map(folderDisplay).join(', ') : 'No folders.',
+        render: (s) => s.addButton((b) => b.setButtonText('Edit').onClick(() => new NewestFirstListModal(this.app, this.plugin, () => this.redraw()).open())) },
+      { name: 'Text', desc: 'Everything without a date.',
+        render: (s) => s.addDropdown((d) => d.addOption('az', 'A to Z').addOption('za', 'Z to A').setValue(sort().text).onChange((v) => save({ text: /** @type {'az' | 'za'} */ (v) }))) },
+      { name: 'Sort folders by these rules too', desc: 'Off: folders stay on top, A to Z. A folder with its own order below sorts its folders that way too.',
+        render: (s) => s.addDropdown((d) => d.addOption('off', 'Off').addOption('on', 'On').setValue(sort().folders ? 'on' : 'off').onChange((v) => save({ folders: v === 'on' }))) },
+    ] }, { type: 'group', heading: 'Folder by folder', cls: 'a4sb-settings', items: [
+      { name: 'Folder by folder', searchable: false, render: (s) => blockRow(s, '', true).createDiv({ cls: 'setting-item-description', text: "Any folder can get its own order. Folders not on this list follow the settings above. A subfolder follows its parent unless it's listed too. You can also set this by right-clicking a folder in the sidebar." }) },
+      ...entries.map(([path, mode]) => /** @type {Row} */ ({ id: path, name: folderDisplay(path), render: (s) => {
+        s.setClass('a4sb-sort-folder');
+        s.settingEl.dataset.folder = path;
+        s.setDesc(this.app.vault.getAbstractFileByPath(path) ? '' : 'This folder is not in the vault right now.'); // a reused row keeps its old text otherwise
+        s.addDropdown((d) => {
+          d.addOption('main', 'Use main setting');
+          for (const m of SORT_MODES) d.addOption(m, SORT_LABEL[m]);
+          d.setValue(mode).onChange(async (v) => { await this.plugin.setFolderSort(path, v === 'main' ? null : v); if (v === 'main') this.redraw(); });
+        });
+        s.addExtraButton((b) => b.setIcon('x').setTooltip('Remove').onClick(async () => { await this.plugin.setFolderSort(path, null); this.redraw(); }));
+      } })),
+      { name: '', searchable: false, render: (s) => s.addButton((b) => b.setButtonText('Add a folder').onClick(() => new FolderPickModal(this.app, async (/** @type {string} */ path) => {
+        await this.plugin.setFolderSort(path, 'az');
+        this.redraw();
+      }, new Set(Object.keys(sort().perFolder))).open())) },
+    ] }];
   }
+  display() { this.containerEl.empty(); drawRows(this.containerEl, this.getSettingDefinitions()); }
+  // LifeWorld's page sets this to draw itself again; alone, this page draws again.
+  redraw() { this.display(); }
 }
 
 export default SidebarPlugin;

@@ -161,5 +161,8 @@ type PartPlugin = import('obsidian').Plugin & {
   extrasChanged?: () => unknown; onVaultChange?: () => unknown; onExternalSettingsChange?: () => Promise<unknown>;
   cards?: { refreshAll(): void }; settings?: { source?: string };
 };
-/** A part's settings page, drawn inside LifeWorld's own. */
-type PartSettingTab = import('obsidian').PluginSettingTab & { calHost?: HTMLElement; renderCalendars?: () => void; hide?: () => void };
+/** A settings row and a group of them, in Obsidian 1.13+'s settings definitions (src/core/settings.js). */
+interface Row { id?: string; name: string; desc?: string; aliases?: string[]; searchable?: boolean; render?: (s: import('obsidian').Setting) => unknown }
+interface Group { type: 'group'; heading?: string; cls?: string; items: Row[] }
+/** A part's settings page: its rows, under its heading on LifeWorld's own page. */
+type PartSettingTab = import('obsidian').PluginSettingTab & { getSettingDefinitions: () => Group[]; redraw?: () => void; calHost?: HTMLElement; renderCalendars?: () => void; hide?: () => void };

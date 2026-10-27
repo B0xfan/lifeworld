@@ -768,8 +768,8 @@ const startupChecks = (async () => {
   eq([threw, named.p.userName], [true, 'Lee'], 'your name: a failed save is reported and leaves the name as it was (review p2-s5)');
   const src0 = require('fs').readFileSync(SRC, 'utf8');
   const tab = src0.slice(src0.indexOf('class TodaySettingTab'));
-  ok(/\.setName\('Your name'\)\s*\.setDesc\('Shown in the greeting\. Leave empty for none\.'\)\s*\.addText\(\(t\) => \{\s*t\.setPlaceholder\('Optional'\)/.test(tab), 'Your name row: wording and placeholder as drawn');
-  ok([...tab.matchAll(/\.setName\('([^']+)'\)/g)][0][1] === 'Your name', 'Your name is the first Today page row, as drawn');
+  ok(/name: 'Your name', desc: 'Shown in the greeting\. Leave empty for none\.', render: \(s\) => s\.addText\(\(t\) => \{\s*t\.setPlaceholder\('Optional'\)/.test(tab), 'Your name row: wording and placeholder as drawn');
+  ok([...tab.matchAll(/\bname: '([^']+)'/g)][0][1] === 'Your name', 'Your name is the first Today page row, as drawn');
   // The calendar sync is a companion add-on's (section 7): without one there is nothing to run.
   ok(!on.p.canRunSync() && (await on.p.runCalendarSync(true)) === false && on.p.scheduleCalendarSync(() => {}) === false, 'no add-on: no sync is run, the picker only saves');
   const runs = []; let release;

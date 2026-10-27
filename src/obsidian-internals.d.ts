@@ -30,6 +30,8 @@ declare module 'obsidian' {
   interface WorkspaceParent { children?: WorkspaceItem[]; selectTab?(leaf: WorkspaceLeaf): void }
   // Menu's own item and section lists (not in Obsidian's typings), read defensively.
   interface Menu { items?: unknown[]; sections?: string[]; lifeworldNoTn?: boolean }
+  // Obsidian 1.13+ (newer than the typings LifeWorld builds with): set and called only on those versions.
+  interface PluginSettingTab { settingItems?: unknown[]; update(): void; renderTab(): void }
 }
 
 declare global {

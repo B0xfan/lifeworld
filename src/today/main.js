@@ -111,6 +111,7 @@ import { vaultFolders, propNames, feedNotes, planning, dailyNotes, readable, wri
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
 import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
+import { drawRows, blockRow } from '../core/settings';
 import { isHttp, linksOf, saveLinks, calendarEvents, refreshCalendars, calendarErrors, resetCalendars } from '../core/calendars'; // calendar links (launch section 6)
 import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertUnderHeading, newDailyContent, writeDailyNote } from '../core/daily'; // a day's daily note (launch section 5)
 
@@ -1700,15 +1701,27 @@ class TodaySettingTab extends PluginSettingTab {
   /** @param {import('obsidian').App} app @param {TodayPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
 
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.addClass('a4t-settings');
+  /** @returns {Group[]} */
+  getSettingDefinitions() {
     const look = { ...this.plugin.look };
     /** @type {HTMLElement | undefined} */
     let swatches;
     /** @type {HTMLElement | undefined} */
     let preview;
+    /** @type {import('obsidian').DropdownComponent | undefined} */
+    let accent;
+    const dark = () => document.body.classList.contains('theme-dark');
+    const paintSwatches = () => {
+      const box = swatches;
+      if (!box) return;
+      box.empty();
+      ACCENTS.filter((a) => a.light).forEach((a) => {
+        const sw = box.createSpan({ cls: `a4t-swatch${look.accent === a.id ? ' is-on' : ''}`, attr: { 'aria-label': a.name, 'data-accent': a.id } });
+        sw.style.setProperty('--a4t-sw', /** @type {string} */ (dark() ? a.dark : a.light));
+        sw.addEventListener('click', () => { if (accent) accent.setValue(a.id); update({ accent: a.id }); });
+      });
+    };
+    const paintPreview = () => { if (preview) this.plugin.styleLook(preview, look); };
     /** @param {Partial<TodayLook>} patch */
     const update = async (patch) => {
       Object.assign(look, patch);
@@ -1716,11 +1729,9 @@ class TodaySettingTab extends PluginSettingTab {
       paintSwatches();
       paintPreview();
     };
-    // The approved step 0 mockup's first Today page row (lifeworld-step0-mockup.html, Settings).
-    new Setting(containerEl)
-      .setName('Your name')
-      .setDesc('Shown in the greeting. Leave empty for none.')
-      .addText((t) => {
+    return [{ type: 'group', cls: 'a4t-settings', items: [
+      // The approved step 0 mockup's first Today page row (lifeworld-step0-mockup.html, Settings).
+      { name: 'Your name', desc: 'Shown in the greeting. Leave empty for none.', render: (s) => s.addText((t) => {
         t.setPlaceholder('Optional').setValue(this.plugin.userName);
         t.inputEl.setAttr('aria-label', 'Your name');
         // Saved when the box is left or Enter is pressed, not on every keystroke.
@@ -1729,67 +1740,55 @@ class TodaySettingTab extends PluginSettingTab {
           t.setValue(this.plugin.userName); // the box shows what is saved (trimmed, cut to length, or the old name)
           if (preview && preview.isConnected) /** @type {HTMLElement} */ (preview.querySelector('.a4t-pv-title')).setText(greetingLine(new Date().getHours(), this.plugin.userName));
         });
-      });
-    new Setting(containerEl)
-      .setName('Open the today page when Obsidian starts')
-      .setDesc('Turn off to reopen whatever you had open last.')
-      .addToggle((t) => {
-        t.setValue(this.plugin.openOnStartup);
-        t.onChange((v) => this.plugin.saveOpenOnStartup(v));
-      })
-      .then((s) => s.settingEl.addClass('a4t-startup'));
-    this.widgetsHost = containerEl.createDiv({ cls: 'a4t-widget-list' });
-    this.renderWidgetList();
-    new Setting(containerEl)
-      .setName('Accent colour')
-      .setDesc('Colour of the underline under the greeting and the handwritten lines. Following the Obsidian accent uses the accent from settings › appearance, shaded so it stays readable.')
-      .addDropdown((d) => {
-        ACCENTS.forEach((a) => d.addOption(a.id, a.name));
-        d.setValue(look.accent);
-        d.onChange((v) => update({ accent: v }));
-      })
-      .then((s) => { swatches = s.controlEl.createDiv({ cls: 'a4t-swatches' }); });
-    new Setting(containerEl)
-      .setName('Handwriting font')
-      .setDesc('Used for the line under the greeting and the small handwritten notes. All four are bundled with the plugin.')
-      .addDropdown((d) => {
+      }) },
+      { name: 'Open the today page when Obsidian starts', desc: 'Turn off to reopen whatever you had open last.', render: (s) => {
+        s.addToggle((t) => {
+          t.setValue(this.plugin.openOnStartup);
+          t.onChange((v) => this.plugin.saveOpenOnStartup(v));
+        });
+        s.settingEl.addClass('a4t-startup');
+      } },
+      { name: 'Widgets', aliases: allWidgets().map((w) => w.name), render: (s) => { this.widgetsHost = blockRow(s, 'a4t-widget-list', true); this.renderWidgetList(); } },
+      { name: 'Accent colour', desc: 'Colour of the underline under the greeting and the handwritten lines. Following the Obsidian accent uses the accent from settings › appearance, shaded so it stays readable.', render: (s) => {
+        s.addDropdown((d) => {
+          accent = d;
+          ACCENTS.forEach((a) => d.addOption(a.id, a.name));
+          d.setValue(look.accent);
+          d.onChange((v) => update({ accent: v }));
+        });
+        swatches = s.controlEl.createDiv({ cls: 'a4t-swatches' });
+        paintSwatches();
+      } },
+      { name: 'Handwriting font', desc: 'Used for the line under the greeting and the small handwritten notes. All four are bundled with the plugin.', render: (s) => s.addDropdown((d) => {
         HAND_FONTS.forEach((f) => d.addOption(f.id, f.name));
         d.setValue(look.font);
         d.onChange((v) => update({ font: v }));
-      });
-    const pv = containerEl.createDiv({ cls: 'a4t-preview' });
-    preview = pv;
-    pv.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
-    pv.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours(), this.plugin.userName) });
-    pv.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
-    const dark = () => document.body.classList.contains('theme-dark');
-    const paintSwatches = () => {
-      const box = /** @type {HTMLElement} */ (swatches);
-      box.empty();
-      ACCENTS.filter((a) => a.light).forEach((a) => {
-        const sw = box.createSpan({ cls: `a4t-swatch${look.accent === a.id ? ' is-on' : ''}`, attr: { 'aria-label': a.name, 'data-accent': a.id } });
-        sw.style.setProperty('--a4t-sw', /** @type {string} */ (dark() ? a.dark : a.light));
-        sw.addEventListener('click', () => { const dd = containerEl.querySelector('select'); if (dd) dd.value = a.id; update({ accent: a.id }); });
-      });
-    };
-    const paintPreview = () => this.plugin.styleLook(pv, look);
-    paintSwatches();
-    paintPreview();
-    if (this._cssRef) this.app.workspace.offref(this._cssRef);
-    this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
-    this.plugin.registerEvent(this._cssRef);
-
-    this.setupHost = containerEl.createDiv({ cls: 'a4t-setup' });
-    this.renderSetup();
-    this.calHost = containerEl.createDiv({ cls: 'a4t-cal-picker' });
-    this.calStatus = '';
-    this.renderCalendars();
-    if (this._calRef) this.app.metadataCache.offref(this._calRef);
-    this._calRef = this.app.metadataCache.on('changed', (file) => {
-      if (file && feedNotes.calendar && file.path === feedNotes.calendar && this.calHost && this.calHost.isConnected) this.renderCalendars();
-    });
-    this.plugin.registerEvent(this._calRef);
+      }) },
+      { name: 'Preview', searchable: false, render: (s) => {
+        const pv = blockRow(s, 'a4t-preview', true);
+        preview = pv;
+        pv.createDiv({ cls: 'a4t-pv-k', text: 'Preview' });
+        pv.createDiv({ cls: 'a4t-pv-title', text: greetingLine(new Date().getHours(), this.plugin.userName) });
+        pv.createDiv({ cls: 'a4t-pv-hand', text: '5 things on your plate today' });
+        paintPreview();
+        if (this._cssRef) this.app.workspace.offref(this._cssRef);
+        this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
+      } },
+      { name: 'Widget setup', aliases: ['World clock', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder'],
+        render: (s) => { this.setupHost = blockRow(s, 'a4t-setup', true); this.renderSetup(); } },
+      { name: 'Calendars', aliases: ['Refresh list'], render: (s) => {
+        this.calHost = blockRow(s, 'a4t-cal-picker', true);
+        this.calStatus = '';
+        this.renderCalendars();
+        if (this._calRef) this.app.metadataCache.offref(this._calRef);
+        this._calRef = this.app.metadataCache.on('changed', (file) => {
+          if (file && feedNotes.calendar && file.path === feedNotes.calendar && this.calHost && this.calHost.isConnected) this.renderCalendars();
+        });
+      } },
+    ] }];
   }
+
+  display() { this.containerEl.empty(); drawRows(this.containerEl, this.getSettingDefinitions()); }
 
   // Settings › Today page › widgets (mockup v6): grouped Top, Left, Middle, Right; each with up/down and
   // on/off. Off widgets are listed at the end of their own zone. A widget whose part is off is greyed.

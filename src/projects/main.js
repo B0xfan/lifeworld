@@ -149,6 +149,7 @@ import { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccur
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, planning, inTaskFolders, readable, writable, toNote, isRenamed } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
+import { drawRows, blockRow } from '../core/settings';
 
 /* ========================================================================== *
  * TaskNotes-compatible engine: configuration
@@ -5886,14 +5887,27 @@ class TaskCardManager {
 class ProjectsSettingTab extends PluginSettingTab {
   /** @param {import('obsidian').App} app @param {ProjectsPlugin} plugin */
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.addClass('a4pj-settings');
+  /** @returns {Group[]} */
+  getSettingDefinitions() {
     const s = this.plugin.settings;
-    // Where your tasks live (mockup v6): one choice; Things only on a Mac.
-    new Setting(containerEl).setName('Where your tasks live').setDesc('Today, the Planner and Projects read the one you pick.').settingEl.addClass('a4pj-src-head');
-    const box = containerEl.createDiv({ cls: 'a4pj-srcs', attr: { role: 'radiogroup', 'aria-label': 'Where your tasks live' } });
+    const q = s.archiveQueue.length;
+    return [{ type: 'group', cls: 'a4pj-settings', items: [
+      // Where your tasks live (mockup v6): one choice; Things only on a Mac.
+      { name: 'Where your tasks live', desc: 'Today, the Planner and Projects read the one you pick.',
+        aliases: [...SOURCES.map((x) => x.name), ...SOURCES.flatMap((x) => (x.key ? [x.key[0]] : [])), 'Only lines with this tag', 'New ClickUp tasks go to'],
+        render: (row) => { row.settingEl.addClass('a4pj-src-head'); this.drawSources(blockRow(row, '')); } },
+      { name: "Hide Obsidian's properties list on task notes",
+        desc: 'The task card shows and edits the same fields, and opens the full list for anything unusual. Nothing in the notes changes either way.',
+        render: (row) => row.addToggle((t) => t.setValue(s.hideProps).onChange(async (v) => { s.hideProps = v; await this.plugin.save(); this.plugin.cards.refreshAll(); })) },
+      { name: 'Archive', searchable: false, render: (row) => blockRow(row, '', true).createDiv({ cls: 'setting-item-description a4pj-set-note', text: `Done tasks move to the archive folder five minutes after they are ticked, as with TaskNotes${q ? ` (${q} waiting now)` : ''}.` }) },
+    ] }];
+  }
+
+  // The choices and, under them, what the chosen one needs (a tag, a key, a list).
+  /** @param {HTMLElement} el */
+  drawSources(el) {
+    const s = this.plugin.settings;
+    const box = el.createDiv({ cls: 'a4pj-srcs', attr: { role: 'radiogroup', 'aria-label': 'Where your tasks live' } });
     for (const x of SOURCES.filter((y) => !y.mac || thingsOffered() || s.source === y.id)) {
       const on = s.source === x.id;
       const row = box.createDiv({ cls: `a4pj-src${on ? ' is-on' : ''}`, attr: { role: 'radio', 'aria-checked': String(on), tabindex: '0', 'data-src': x.id } });
@@ -5905,13 +5919,13 @@ class ProjectsSettingTab extends PluginSettingTab {
       const pick = async () => {
         if (s.source === x.id) return;
         if (x.id === 'tasknotes' && !this.plugin.tnApi()) new Notice('TaskNotes is not turned on, so ticks and new tasks will not work until it is.');
-        await this.plugin.setSource(x.id); this.display();
+        await this.plugin.setSource(x.id); this.redraw();
       };
       row.addEventListener('click', pick);
       row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
     }
     const src = SOURCES.find((x) => x.id === s.source) || SOURCES[0];
-    const sub = containerEl.createDiv({ cls: 'a4pj-src-sub' });
+    const sub = el.createDiv({ cls: 'a4pj-src-sub' });
     if (src.id === 'checkbox') {
       new Setting(sub).setName('Only lines with this tag').setDesc('Leave empty to count every checkbox.').addText((t) => {
         t.setPlaceholder('#task').setValue(s.cbTag);
@@ -5928,7 +5942,7 @@ class ProjectsSettingTab extends PluginSettingTab {
         t.inputEl.setAttr('aria-label', src.key[0]);
         t.inputEl.setAttr('autocomplete', 'off');
         t.setPlaceholder('Paste your key').setValue(keyOf(this.app, src.id));
-        t.inputEl.addEventListener('change', () => { setKey(this.app, src.id, t.getValue()); if (this.plugin.ext) this.plugin.ext.refresh().then(() => { if (src.id === 'clickup' && containerEl.isConnected) this.display(); }); });
+        t.inputEl.addEventListener('change', () => { setKey(this.app, src.id, t.getValue()); if (this.plugin.ext) this.plugin.ext.refresh().then(() => { if (src.id === 'clickup' && el.isConnected) this.redraw(); }); });
       });
       const lists = src.id === 'clickup' && this.plugin.ext ? /** @type {{ lists?: Map<string, string> }} */ (this.plugin.ext).lists : null;
       if (lists && lists.size) {
@@ -5941,13 +5955,11 @@ class ProjectsSettingTab extends PluginSettingTab {
     }
     if (src.id === 'things') sub.createDiv({ cls: 'setting-item-description', text: thingsOffered() ? 'No key needed. The first time, your Mac asks once to let Obsidian use Things.' : 'Things tasks show only on a Mac.' });
     if (this.plugin.ext && this.plugin.ext.status().error) sub.createDiv({ cls: 'setting-item-description mod-warning', text: this.plugin.ext.status().error });
-    new Setting(containerEl)
-      .setName("Hide Obsidian's properties list on task notes")
-      .setDesc('The task card shows and edits the same fields, and opens the full list for anything unusual. Nothing in the notes changes either way.')
-      .addToggle((t) => t.setValue(s.hideProps).onChange(async (v) => { s.hideProps = v; await this.plugin.save(); this.plugin.cards.refreshAll(); }));
-    const q = s.archiveQueue.length;
-    containerEl.createDiv({ cls: 'setting-item-description a4pj-set-note', text: `Done tasks move to the archive folder five minutes after they are ticked, as with TaskNotes${q ? ` (${q} waiting now)` : ''}.` });
   }
+
+  display() { this.containerEl.empty(); drawRows(this.containerEl, this.getSettingDefinitions()); }
+  // LifeWorld's page sets this to draw itself again; alone, this page draws again.
+  redraw() { this.display(); }
 }
 
 ProjectsPlugin.logic = logic;

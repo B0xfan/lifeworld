@@ -89,7 +89,7 @@ for (const id of IDS) {
     await new Promise((r) => setTimeout(r, 5));
     this.addCommand({ id: 'open', name: 'Open' });
     this.registerView(`${id}-view`, () => null);
-    this.addSettingTab({ part: id, containerEl: { isConnected: false }, display() { log.push(`redraw ${id}`); this.drawnIn = this.containerEl; }, hide() { log.push(`hide ${id}`); } });
+    this.addSettingTab({ part: id, containerEl: { isConnected: false }, getSettingDefinitions: () => [{ type: 'group', items: [{ name: `${id} row` }] }], hide() { log.push(`hide ${id}`); } });
     this.saved = await this.loadData();
     log.push(`started ${id}`);
   };
@@ -166,12 +166,23 @@ const start = async (data) => {
   delete parts['a4-today'].look;
 
   // Settings changed outside (Sync): only the part whose corner changed hears it, with the new data,
-  // and its settings page is redrawn when open.
+  // and LifeWorld's settings page (where the part's rows are) is redrawn when open.
   log.length = 0;
-  host.tabs['a4-sidebar'].containerEl.isConnected = true;
+  const page = host.settingPage;
+  page.containerEl.isConnected = true;
+  const redraw0 = page.redraw; page.redraw = () => log.push('redraw page');
   disk[dir] = JSON.stringify({ ...file, 'a4-sidebar': { sort: 'za' } });
   await host.onExternalSettingsChange();
-  eq(log, ['external a4-sidebar', 'redraw a4-sidebar'], 'only the Sidebar hears it, its open page redrawn');
+  eq(log, ['external a4-sidebar', 'redraw page'], 'only the Sidebar hears it, the open settings page redrawn');
+  // Obsidian 1.13+ (settingItems set) redraws the page itself after this handler: no redraw here, however many parts changed.
+  log.length = 0; page.settingItems = [];
+  disk[dir] = JSON.stringify({ ...file, 'a4-sidebar': { sort: 'az' }, 'a4-today': { name: 'J' } });
+  await host.onExternalSettingsChange();
+  ok(!log.includes('redraw page'), 'on 1.13+ a sync leaves the redraw to Obsidian');
+  delete page.settingItems;
+  page.redraw = redraw0; page.containerEl.isConnected = false;
+  disk[dir] = JSON.stringify({ ...file, 'a4-sidebar': { sort: 'za' } });
+  await host.onExternalSettingsChange();
   eq(parts['a4-sidebar'].saved, { sort: 'za' }, 'with the new settings');
 
   // Stop: every part stops, its commands go, and the parts no longer find each other.
@@ -209,8 +220,8 @@ const start = async (data) => {
     ['Sidebar', "The LifeWorld panel on the left. Off: Obsidian's normal file list.", true, false],
   ], 'Parts: the four switches as drawn, all on for a setup that never switched one');
   eq(heads(pg.host), ['Parts', 'Planning', 'Your vault', 'Tasks', 'Today page', 'Sidebar'], 'then each part\'s own settings under the mockup\'s heading, in its order');
-  const secs = pg.host.settingTab.containerEl.kids.filter((k) => !k.rec && !k.cls.includes('lw-hint'));
-  ok(secs.length === 3 && secs.every((d, i) => pg.host.tabs[['a4-projects', 'a4-today', 'a4-sidebar'][i]].drawnIn === d), 'each part draws its own settings into its section');
+  const names = draw(pg.host).filter((r) => r !== 'section').map((r) => r.name);
+  ok(['a4-projects', 'a4-today', 'a4-sidebar'].every((id, i) => names.indexOf(`${id} row`) === names.lastIndexOf(heads(pg.host)[3 + i]) + 1), 'each part\'s own rows sit under its heading');
   ok(pg.host.settingTab.containerEl.cls.includes('lw-settings'), 'the page carries LifeWorld\'s class');
 
   // Planner off: not running, no command, its choice saved; the others untouched.
@@ -451,7 +462,7 @@ const start = async (data) => {
   // New install: the rows as drawn, with the drawn defaults; Obsidian's Daily notes defaults.
   const fresh = await start({});
   withDaily(fresh.app, null);
-  eq(vaultRows(fresh.host).map((r) => [r.name, r.desc, r.value, r.placeholder || (r.buttons || []).map((b) => b.label).join()]), [
+  eq(vaultRows(fresh.host).map((r) => [r.name, r.desc || '', r.value, r.placeholder || (r.buttons || []).map((b) => b.label).join()]), [
     ['Task notes folder', '', 'Tasks', 'Tasks'],
     ['Finished tasks folder', 'Archived tasks move here', 'Tasks/Archive', 'Tasks/Archive'],
     ['Projects folder', '', 'Projects', 'Projects'],
