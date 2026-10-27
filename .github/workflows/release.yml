@@ -59,6 +59,13 @@ jobs:
           [ "$v" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match manifest.json version $v"; exit 1; }
           jq -e --arg v "$v" 'has($v)' versions.json > /dev/null || { echo "versions.json has no $v"; exit 1; }
 
+      # checkout stores the tag as a plain pointer to the commit, so --notes-from-tag below would
+      # publish the commit message (1.0.3, 1.1.0, 1.1.1). Fetching the tag by name brings its message back.
+      - name: Fetch the tag's release notes
+        run: |
+          git fetch --force --depth=1 origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ] || { echo "Tag $GITHUB_REF_NAME has no message; push an annotated tag (git tag -a)"; exit 1; }
+
       - name: Build and self-check
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils # pdftotext, for the PDF manual checks
