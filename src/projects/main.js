@@ -4278,6 +4278,7 @@ class ProjectsView extends ItemView {
     const inbox = this.tasks.filter((t) => isInboxTask(t, cfg));
     const overdueAll = this.tasks.filter((t) => isOverdueTask(t, today, cfg));
     // Opened from the sidebar's Work / Personal item: that list only (the crumb goes back to all).
+    // The Areas page and the boards filter by this.area (their Work / Personal buttons) instead.
     const sp = this.state.focus;
     const ui = this.plugin.settings.ui;
     const tasksKind = ui.kind === 'tasks'; // Tasks is always a board (spec 14)
