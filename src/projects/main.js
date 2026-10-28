@@ -4297,7 +4297,7 @@ class ProjectsView extends ItemView {
       // + Add task: the plugin's own New task box (Inbox page, as the "Add a task" command); new tasks start in Open.
       tasksKind ? { label: '+ Add task', cls: 'is-primary', run: () => this.go({ page: 'inbox', focusAdd: true }) }
         : board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() }
-          : { label: '+ Add area', cls: 'is-primary', run: () => this.plugin.addArea(sp) },
+          : { label: '+ Add area', cls: 'is-primary', run: () => this.plugin.addArea(areasKind ? this.area : sp) },
     ]);
     // Areas / Projects / Tasks (Areas first, owner request 2026-10-19), then List / Board (Projects only: Tasks is a board).
     const act = /** @type {HTMLElement} */ (page.querySelector('.a4pj-actions'));
@@ -4315,8 +4315,10 @@ class ProjectsView extends ItemView {
     }
     if (tasksKind) { this.renderTaskBoard(page); return; }
     if (areasKind) {
+      // The same Work / Personal buttons as the boards, not how the tab was opened (bug, 2026-10-28).
+      this.areaButtons(page);
       const host = el(page, 'div', 'a4pj-lists');
-      if (!this.areaSection(host, areaList(this.areas, '', sp))) el(host, 'div', 'a4pj-empty', 'no areas yet');
+      if (!this.areaSection(host, areaList(this.areas, '', this.area))) el(host, 'div', 'a4pj-empty', this.area ? `no ${SPHERE_LABEL[this.area].toLowerCase()} areas yet` : 'no areas yet');
       return;
     }
     if (board) { this.renderBoard(page); return; }

@@ -34,7 +34,7 @@ const node = () => { const n = { kids: [], listeners: {}, className: '', textCon
 global.createDiv = () => node();
 const page = node(); page.act = node();
 const host = { settings: normalizeSettings({ ui: { view: 'board' } }), saved: null, async save() { this.saved = this.settings; } };
-const view = { plugin: host, cfg: {}, today: '2026-10-13', tasks: [], state: {}, query: 'x', tab: 'projects', head() {}, render() {}, renderBoard() {} };
+const view = { plugin: host, cfg: {}, today: '2026-10-13', tasks: [], state: {}, query: 'x', tab: 'projects', head() {}, render() {}, renderBoard() {}, areaButtons() {} };
 plugin.ProjectsView.prototype.renderOverview.call(view, page);
 host.settings = normalizeSettings({ ui: { view: 'board' } }); // Sync reload: new object, same pick
 const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c, text)).find(Boolean);
@@ -54,5 +54,15 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   assert.deepStrictEqual(drawn, ['a', 'B'], 'every area, A to Z');
   assert.ok(!find(ap.act, 'List'), 'no List / Board on the Areas page');
   assert.strictEqual(find(ap.act, 'Areas').className, 'is-on', 'Areas is on');
+  // Opened as "Personal projects", then the Work / Personal buttons cleared: the Areas page follows
+  // the buttons, not how the tab was opened (owner bug report 2026-10-28), and shows the buttons itself.
+  let buttons = 0;
+  const pg = () => { const n = node(); n.act = node(); return n; };
+  const pv = { ...av, state: { focus: 'personal' }, area: null, areaButtons() { buttons++; } };
+  plugin.ProjectsView.prototype.renderOverview.call(pv, pg());
+  assert.deepStrictEqual(drawn, ['a', 'B'], 'buttons cleared: every area, even in a Personal tab');
+  assert.strictEqual(buttons, 1, 'the Areas page has the Work / Personal buttons');
+  plugin.ProjectsView.prototype.renderOverview.call({ ...pv, area: 'work' }, pg());
+  assert.deepStrictEqual(drawn, ['B'], 'Work pressed: work areas only');
   console.log('view switch self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });
