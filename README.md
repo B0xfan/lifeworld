@@ -46,7 +46,8 @@ due date as it is (**Settings → LifeWorld → Planning**).
 ### Projects and areas
 
 Your projects, split into work and personal, as a list or as a board by status, each with its own page
-of tasks and notes. Areas hold ongoing work that never finishes, like a studio or your home, with the
+of tasks and notes. Drag a task by the dots on its left to put a project's list in your own order.
+Areas hold ongoing work that never finishes, like a studio or your home, with the
 projects and one-off tasks that belong to it. An Inbox collects tasks with no project or date yet.
 
 ![Projects as a board](screenshots/projects-board-dark.png)

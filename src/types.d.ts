@@ -98,6 +98,7 @@ interface TnTask {
 interface ProjTask extends TaskItem {
   archived: boolean; projectLink: string | null; projectKey: string | null; completedDate: string | null; dateCreated: string | null;
   modified: string | null; start: string | null; scheduled: string | null; dueTime: string | null; startTime: string | null; reminderSet: number | null;
+  projectOrder: number | null;
   steps?: { total: number; done: number }; openBlockers?: { path: string; title: string }[]; blocks?: { path: string; title: string }[]; ext?: ExtInfo; repeats?: boolean; weeklyGoal?: boolean;
 }
 /** A project note (readProject); area fields are set by linkAreas. */

@@ -695,6 +695,9 @@ function readTask(fm, path, basename, cfg, inArchive) {
   it.startTime = it.recurrenceRaw ? it.time : timeOf(fm[cfg.F.scheduled]);
   // The reminder as stored, also while there is no time to ring at (it rings again once one comes back).
   it.reminderSet = reminderOf(fm);
+  // The hand-made order on a project page (drag to sort); none = the automatic order.
+  const po = fm.project_order == null || fm.project_order === '' ? NaN : Number(fm.project_order);
+  it.projectOrder = Number.isFinite(po) ? po : null;
   return it;
 }
 
@@ -4109,7 +4112,7 @@ function ring(parent, done, total, big) {
  * The Projects view: overview, project page, Inbox
  * ========================================================================== */
 
-/** @typedef {{ showProject?: boolean, inProject?: boolean, inDone?: boolean, inbox?: boolean }} RowOpts */
+/** @typedef {{ showProject?: boolean, inProject?: boolean, inDone?: boolean, inbox?: boolean, grp?: string }} RowOpts */
 /** @typedef {{ mtime: number | null | undefined, line: string, reading?: number | null, targets?: Set<HTMLElement> | null, refills?: Set<() => void> | null }} CardDesc */
 class ProjectsView extends ItemView {
   // Set on every render (no value before the first one).
@@ -4943,9 +4946,12 @@ class ProjectsView extends ItemView {
     if (o.barFirst) this.quickAdd(main, { project: p, placeholder: o.placeholder });
     const list = el(main, 'div', 'a4pj-list');
     const shown = open.filter((t) => (isSomeday(t) ? showSomeday : (showLater || !isLaterTask(t, today))));
-    const sorted = [...sortOpenTasks(shown.filter((t) => !isSomeday(t) && !isLaterTask(t, today)), today, cfg), ...sortOpenTasks(shown.filter((t) => isLaterTask(t, today)), today, cfg), ...sortOpenTasks(shown.filter((t) => isSomeday(t)), today, cfg)];
-    if (!sorted.length) el(list, 'div', 'a4pj-empty', 'nothing open here');
-    for (const t of sorted) this.taskRow(list, t, { inProject: true });
+    // Hand-sorted tasks first in their dragged order, the rest below in the automatic order.
+    /** @param {ProjTask[]} xs */
+    const hand = (xs) => { const s = sortOpenTasks(xs, today, cfg); return [...s.filter((t) => t.projectOrder != null).sort((a, b) => /** @type {number} */ (a.projectOrder) - /** @type {number} */ (b.projectOrder)), ...s.filter((t) => t.projectOrder == null)]; };
+    const groups = /** @type {[string, ProjTask[]][]} */ ([['now', shown.filter((t) => !isSomeday(t) && !isLaterTask(t, today))], ['later', shown.filter((t) => isLaterTask(t, today))], ['someday', shown.filter((t) => isSomeday(t))]]);
+    if (!shown.length) el(list, 'div', 'a4pj-empty', 'nothing open here');
+    for (const [grp, xs] of groups) for (const t of hand(xs)) this.taskRow(list, t, { inProject: true, grp });
     // Done
     const done = doneGroups(mine, cfg).filter((d) => !this.justDone.has(d.task.path));
     const ui = this.plugin.settings.ui;
@@ -5121,6 +5127,11 @@ class ProjectsView extends ItemView {
     const blocked = !done && !o.inDone && isBlockedTask(t);
     const r = el(parent, 'div', 'a4pj-task' + (done ? ' is-done' : '') + ((isLaterTask(t, today) || isSomeday(t)) && !done ? ' is-later' : '') + (blocked ? ' is-blocked' : ''));
     r.dataset.path = t.path;
+    if (o.grp && !done && !t.ext) {
+      r.dataset.grp = o.grp;
+      const g = el(r, 'span', 'a4pj-grip'); setIcon(g, 'grip-vertical'); g.setAttr('aria-label', 'Drag to sort');
+      g.addEventListener('pointerdown', (e) => this.dragSort(e, g, r, o.grp || ''));
+    }
     if (o.inProject && !o.inDone) {
       const has = t.steps && t.steps.total;
       const ex = el(r, 'button', 'a4pj-expand' + (has ? (this.expanded.has(t.path) ? ' is-open' : '') : ' is-blank'));
@@ -5164,6 +5175,69 @@ class ProjectsView extends ItemView {
     }
     if (o.inProject && !o.inDone && this.expanded.has(t.path)) this.renderSteps(parent, t);
     return r;
+  }
+
+  // Drag a project task by its grip: a line shows where it lands; Escape or letting go outside the list puts it back.
+  /** @param {PointerEvent} e @param {HTMLElement} grip @param {HTMLElement} row @param {string} grp */
+  dragSort(e, grip, row, grp) {
+    const list = row.parentElement;
+    if (e.button !== 0 || !list) return;
+    e.preventDefault(); e.stopPropagation();
+    grip.setPointerCapture(e.pointerId);
+    const y0 = e.clientY;
+    let on = false; let idx = -1;
+    /** @type {HTMLElement | null} */
+    let line = null;
+    const rows = () => /** @type {HTMLElement[]} */ ([...list.querySelectorAll(`.a4pj-task[data-grp="${grp}"]`)]);
+    /** @param {PointerEvent} ev */
+    const move = (ev) => {
+      if (!on && Math.abs(ev.clientY - y0) < 5) return; // a few pixels is a click, not a drag
+      if (!on) { on = true; row.addClass('is-dragging'); line = el(list, 'div', 'a4pj-dropline'); }
+      const lr = list.getBoundingClientRect();
+      const ln = /** @type {HTMLElement} */ (line);
+      if (ev.clientX < lr.left || ev.clientX > lr.right || ev.clientY < lr.top - 24 || ev.clientY > lr.bottom + 24) { idx = -1; ln.hide(); return; }
+      const rs = rows();
+      idx = rs.findIndex((x) => { const b = x.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; });
+      if (idx < 0) idx = rs.length;
+      const y = idx < rs.length ? rs[idx].getBoundingClientRect().top : rs[rs.length - 1].getBoundingClientRect().bottom;
+      ln.show(); ln.setCssProps({ top: `${y - lr.top + list.scrollTop - 1}px` });
+    };
+    /** @param {boolean} commit */
+    const end = (commit) => {
+      grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', cancel);
+      document.removeEventListener('keydown', key, true);
+      if (line) line.remove();
+      row.removeClass('is-dragging');
+      if (commit && on && idx >= 0) void this.dropSort(rows().map((x) => x.dataset.path || ''), row.dataset.path || '', idx);
+    };
+    const up = () => end(true);
+    const cancel = () => end(false);
+    /** @param {KeyboardEvent} ev */
+    const key = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); end(false); } };
+    grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', cancel);
+    document.addEventListener('keydown', key, true);
+  }
+
+  // Writes project_order: the first drag in a list numbers every task in it (nothing jumps), later drags only the moved one.
+  /** @param {string[]} paths @param {string} moved @param {number} idx */
+  async dropSort(paths, moved, idx) {
+    const from = paths.indexOf(moved);
+    if (from < 0 || idx === from || idx === from + 1) return;
+    const next = paths.filter((p) => p !== moved);
+    const at = idx > from ? idx - 1 : idx;
+    next.splice(at, 0, moved);
+    const byPath = new Map(this.tasks.map((t) => [t.path, t]));
+    const list = next.map((p) => byPath.get(p));
+    const eng = this.plugin.engine;
+    try {
+      if (list.some((t) => !t || t.projectOrder == null)) {
+        for (const [i, t] of list.entries()) if (t && t.projectOrder !== (i + 1) * 10) await eng.write(t.path, (fm) => { fm.project_order = (i + 1) * 10; });
+      } else {
+        const others = /** @type {ProjTask[]} */ (list).filter((t) => t.path !== moved).map((t) => /** @type {number} */ (t.projectOrder));
+        await eng.write(moved, (fm) => { fm.project_order = orderForInsert(others, at); });
+      }
+    } catch (err) { console.error('[LifeWorld] sort', err); new Notice(String((err && err.message) || err)); }
+    // No render here: the metadata 'changed' event redraws once the new order is read (an early redraw flashed the old one).
   }
 
   /** @param {HTMLElement} meta @param {ProjTask} t */

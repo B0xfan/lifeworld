@@ -672,3 +672,16 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-small { font-size: 12px; color: var(--pj-
 .a4pj-settings .a4pj-src-tag { font-size: 10.5px; border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 0 6px; margin-left: 6px; color: var(--text-muted); font-weight: 400; }
 .a4pj-settings .a4pj-src-sub { margin: 0 0 var(--size-4-2) 26px; }
 .a4pj-settings .a4pj-src-sub .setting-item-description { margin: var(--size-4-1) 0; }
+/* Long project names wrap inside the task card instead of running past its edge. */
+html:not(#a4pj-guard) .a4pj-card .a4pj-crumb { min-width: 0; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-crumb button { white-space: normal; height: auto; padding: 0; text-align: left; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick { max-width: 100%; height: auto; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick .a4pj-ic { flex-shrink: 0; }
+/* Drag to sort on a project page (mockup approved 2026-10-28): six-dot grip on hover (always on phone and tablet), a line where it lands. */
+html:not(#a4pj-guard) .a4pj-root .a4pj-list { position: relative; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-grip { flex: none; width: 14px; margin: 2px -6px 0 -4px; color: var(--pj-faint); cursor: grab; touch-action: none; opacity: 0; display: inline-flex; justify-content: center; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-grip svg { width: 14px; height: 14px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task:hover .a4pj-grip, html:not(#a4pj-guard) body.is-mobile .a4pj-root .a4pj-grip, html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-dragging .a4pj-grip { opacity: 1; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-dragging { opacity: .45; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-dragging .a4pj-grip { cursor: grabbing; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-dropline { position: absolute; left: 0; right: 0; height: 2px; background: var(--interactive-accent); border-radius: 1px; pointer-events: none; z-index: 2; }
