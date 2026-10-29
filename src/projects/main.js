@@ -4979,6 +4979,20 @@ class ProjectsView extends ItemView {
     const body = el(main, 'div', 'a4pj-body-note');
     el(body, 'div', 'a4pj-kicker', label);
     const md = el(body, 'div', 'a4pj-md markdown-rendered');
+    // MarkdownRenderer leaves link clicks to the view that owns the text; task-row links keep their own.
+    /** @param {MouseEvent} e */
+    const openLink = (e) => {
+      if (e.type === 'auxclick' && e.button !== 1) return;
+      const t = /** @type {HTMLElement | null} */ (e.target);
+      const a = t && t.closest ? t.closest('a.internal-link') : null;
+      if (!a || a.closest('.a4pj-tl')) return;
+      const href = a.getAttribute('data-href') || a.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      void this.app.workspace.openLinkText(href, p.path, Keymap.isModEvent(e));
+    };
+    md.addEventListener('click', openLink);
+    md.addEventListener('auxclick', openLink);
     if (!file) return;
     this.bodyComp = new Component(); this.bodyComp.load();
     const comp = this.bodyComp;
