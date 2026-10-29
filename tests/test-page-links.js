@@ -22,7 +22,7 @@ let rendered;
 const fake = new Proxy({
   Component: class { load() {} },
   Keymap: { isModEvent: (e) => (e.metaKey ? 'tab' : e.button === 1 ? 'tab' : false) },
-  MarkdownRenderer: { render: async (app, src, md) => { rendered = md; const p = md.createEl('p'); link(p, 'Business Ideas.base'); link(p, 'Article Vault'); link(p, 'https://example.com', 'external-link'); const tl = p.createEl('span'); tl.className = 'a4pj-tl'; link(tl, 'Some task'); } },
+  MarkdownRenderer: { render: async (app, src, md) => { rendered = md; const p = md.createEl('p'); link(p, 'Business Ideas.base'); link(p, 'Article Vault'); link(p, 'https://example.com', 'external-link'); const tl = p.createEl('span'); tl.className = 'a4pj-tl'; link(p, 'Some task', 'internal-link a4pj-tl-hidden'); } },
 }, { get: (t, k) => (k in t ? t[k] : class {}) });
 const ld = Module._load;
 Module._load = function (r, ...a) { return r === 'obsidian' ? fake : ld.call(this, r, ...a); };
@@ -37,7 +37,7 @@ const { part } = require('./lib/paths');
   await new Promise((r) => setTimeout(r, 10));
   assert.ok(rendered, 'the note text was drawn');
   const md = rendered;
-  const [table, idea, ext, task] = [md.kids[0].kids[0], md.kids[0].kids[1], md.kids[0].kids[2], md.kids[0].kids[3].kids[0]];
+  const [table, idea, ext, task] = [md.kids[0].kids[0], md.kids[0].kids[1], md.kids[0].kids[2], md.kids[0].kids[4]];
   const click = (target, extra = {}, type = 'click') => { let prevented = false; for (const f of md.on[type] || []) f({ type, target, button: 0, preventDefault() { prevented = true; }, ...extra }); return prevented; };
 
   assert.ok(click(table), 'a click on the table link is handled (criterion 1)');
@@ -46,12 +46,12 @@ const { part } = require('./lib/paths');
   click(idea, { button: 1 }, 'auxclick');
   click(idea, { button: 2 }, 'auxclick');
   assert.strictEqual(click(ext), false, 'an external link is left to Obsidian (criterion 4)');
-  assert.strictEqual(click(task), false, 'a task row link keeps its own handling (criterion 3)');
+  assert.strictEqual(click(task), false, 'a link hidden behind a task row is left alone (criterion 3)');
   assert.deepStrictEqual(opened, [
-    ['Business Ideas.base', 'Projects/Business Ideas.md', false],
-    ['Article Vault', 'Projects/Business Ideas.md', false],
+    ['Business Ideas.base', 'Projects/Business Ideas.md', 'tab'],
     ['Article Vault', 'Projects/Business Ideas.md', 'tab'],
     ['Article Vault', 'Projects/Business Ideas.md', 'tab'],
-  ], 'opened from the page note; Cmd-click and middle-click open a new tab, right-click opens nothing (criteria 1, 2)');
+    ['Article Vault', 'Projects/Business Ideas.md', 'tab'],
+  ], 'opened from the page note in a new tab, like the page\'s other links; right-click opens nothing (criteria 1, 2)');
   console.log('page links: 4 checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
