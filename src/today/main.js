@@ -104,6 +104,7 @@ const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
 import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
 import { asList } from '../core/lists';
+import { parseClock } from '../core/quickadd';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
@@ -726,9 +727,38 @@ function clockAt(now, tz) {
   const ap = String(p.dayPeriod || '').toLowerCase();
   return { time: `${String(p.hour).padStart(2, '0')}:${p.minute} ${ap}`, big: `${p.hour}:${p.minute}:${p.second} ${ap}`, day: String(p.weekday).toUpperCase(), date: `${p.weekday}, ${p.month} ${p.day}`, zone: p.timeZoneName || '', h: h24, m: Number(p.minute), s: Number(p.second) };
 }
-// The hands' angles in degrees for a clock face.
-/** @param {{ h: number, m: number, s: number }} c */
-function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
+
+// Today's sun times as local hours (fractions for minutes), from the weather the Today page already shows
+// (its sunrise and sunset, e.g. '5:33 AM'), so the ring always agrees with the weather line. null when either is missing.
+// shortcut: first and last light are 25 minutes off sunrise and sunset (civil twilight is 20 to 30 minutes
+// below about 50° latitude); work them out from the place's latitude if someone far north asks.
+/** @param {{ sunrise?: unknown, sunset?: unknown } | null | undefined} w */
+function sunFrom(w) {
+  /** @param {unknown} t */
+  const hrs = (t) => { const c = parseClock(String(t || '')); return c ? Number(c.slice(0, 2)) + Number(c.slice(3)) / 60 : null; };
+  const rise = hrs(w && w.sunrise), set = hrs(w && w.sunset);
+  return rise === null || set === null || set <= rise ? null : { dawn: rise - 25 / 60, rise, set, dusk: set + 25 / 60 };
+}
+// The ring colour at local hour `h` (the 24-hour World clock, 2026-10-29): night purple, light orange at
+// first light growing to bright orange at sunrise, easing to day blue over 80 minutes; the evening mirrors it.
+// No sun times (no weather): day blue all round. -> 'rgb(r,g,b)'
+/** @param {number} h @param {ReturnType<typeof sunFrom>} sun */
+function ringColour(h, sun) {
+  const NIGHT = [91, 74, 138], FIRST = [255, 214, 170], SUNUP = [255, 140, 26], DAY = [90, 200, 250], BLEND = 80 / 60;
+  /** @param {number[]} a @param {number[]} b @param {number} t */
+  const mix = (a, b, t) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * Math.max(0, Math.min(1, t)))).join(',')})`;
+  if (!sun) return mix(DAY, DAY, 0);
+  const { dawn, rise, set, dusk } = sun;
+  if (h < dawn || h > dusk) return mix(NIGHT, NIGHT, 0);
+  if (h < rise) return mix(FIRST, SUNUP, (h - dawn) / (rise - dawn));
+  if (h < rise + BLEND) return mix(SUNUP, DAY, (h - rise) / BLEND);
+  if (h < set - BLEND) return mix(DAY, DAY, 0);
+  if (h < set) return mix(DAY, SUNUP, (h - (set - BLEND)) / BLEND);
+  return mix(SUNUP, FIRST, (h - set) / (dusk - set));
+}
+// A local hour (fractions for minutes) as '5:31 AM'.
+/** @param {number} h */
+function hourLabel(h) { const mins = Math.round(h * 60) % 1440, H = Math.floor(mins / 60); return `${H % 12 || 12}:${String(mins % 60).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; }
 
 /* ---- widgets and layout ---------------------------------------------------- */
 
@@ -1002,7 +1032,7 @@ function projectLines(projects, ix) {
 }
 
 const logic = {
-  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles,
+  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, sunFrom, ringColour, hourLabel,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
@@ -3212,40 +3242,61 @@ class TodayView extends ItemView {
     }
   }
 
-  // World clock (launch section 4, the dial look in mockup v6; one line per place, 2026-10-20): a dial and
-  // the time here, then one line per added place. The device's own time zone data: works with no internet. Ticks every second.
+  // World clock (24-hour sun ring, 2026-10-29; one line per place, 2026-10-20): noon at the top,
+  // midnight at the bottom, the sun dot at now, day and night coloured from today's weather sunrise and
+  // sunset, then one line per added place. Ticks every second; the ring redraws each minute.
   /** @param {HTMLElement} body @param {HTMLElement} el */
   renderClockWidget(body, el) {
     el.addClass('a4t-card');
     const places = this.plugin.places;
-    this.cardHead(body, 'World clock', `${places.length + 1} place${places.length ? 's' : ''}`);
-    const top = body.createDiv({ cls: 'a4t-clk-top' });
-    const svg = top.createSvg('svg', { cls: 'a4t-clk-face', attr: { viewBox: '0 0 62 62', 'aria-hidden': 'true' } });
-    /** @param {string} cls @param {number} x1 @param {number} y1 @param {number} x2 @param {number} y2 */
-    const line = (cls, x1, y1, x2, y2) => svg.createSvg('line', { cls, attr: { x1, y1, x2, y2 } });
-    svg.createSvg('circle', { cls: 'a4t-clk-dial', attr: { cx: 31, cy: 31, r: 29 } });
+    this.cardHead(body, 'World clock', 'Today');
+    const C = 154, R = 118;
+    /** @param {number} h @param {number} [r] */
+    const pt = (h, r = R) => { const a = Math.PI - ((h - 6) * Math.PI) / 12; return [C + r * Math.cos(a), C - r * Math.sin(a)]; };
+    const wrap = body.createDiv({ cls: 'a4t-clk-ring' });
+    const svg = wrap.createSvg('svg', { attr: { viewBox: '0 0 308 308', 'aria-hidden': 'true' } });
+    const past = svg.createSvg('g'), later = svg.createSvg('g', { cls: 'a4t-clk-later' });
     const ticks = svg.createSvg('g', { cls: 'a4t-clk-ticks' });
-    for (let i = 0; i < 12; i++) ticks.createSvg('line', { attr: { x1: 31, y1: 3.5, x2: 31, y2: i % 3 ? 5.5 : 7.5, transform: `rotate(${i * 30} 31 31)` } });
-    /** @type {Record<string, SVGElement>} */
-    const hands = { h: line('a4t-clk-h', 31, 31, 31, 18.5), m: line('a4t-clk-m', 31, 31, 31, 11), s: line('a4t-clk-s', 31, 35, 31, 9) };
-    svg.createSvg('circle', { cls: 'a4t-clk-pin', attr: { cx: 31, cy: 31, r: 1.6 } });
-    const txt = top.createDiv();
-    const big = txt.createDiv({ cls: 'a4t-clk-big' });
-    const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
+    for (let h = 0; h < 24; h++) {
+      const [x1, y1] = pt(h, R + 12), [x2, y2] = pt(h, R + (h % 6 ? 17 : 21));
+      ticks.createSvg('line', { cls: h % 6 ? undefined : 'is-six', attr: { x1, y1, x2, y2 } });
+    }
+    for (const [h, t] of /** @type {[number, string][]} */ ([[0, '12 AM'], [12, '12 PM']])) {
+      const [x, y] = pt(h, R - 26);
+      svg.createSvg('text', { cls: 'a4t-clk-lab', attr: { x, y: y + 4, 'text-anchor': 'middle' } }).textContent = t;
+    }
+    const sunDot = svg.createSvg('circle', { cls: 'a4t-clk-sun', attr: { r: 8 } });
+    const mid = wrap.createDiv({ cls: 'a4t-clk-mid' });
+    const big = mid.createDiv({ cls: 'a4t-clk-big' });
+    const date = mid.createDiv({ cls: 'a4t-clk-date' });
+    const sunLine = mid.createDiv({ cls: 'a4t-clk-sunline' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
     const rows = places.map((p) => {
       const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
       li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
       return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
     });
+    let drawn = '';
     const paint = () => {
       const now = new Date();
       const here = clockAt(now, null);
-      const a = handAngles(here);
-      for (const k of /** @type {('h' | 'm' | 's')[]} */ (['h', 'm', 's'])) hands[k].setAttr('transform', `rotate(${a[k]} 31 31)`);
-      big.setText(here.big);
-      zone.empty(); zone.appendText(here.zone); zone.createEl('em', { text: ' · ' }); zone.appendText('Here'); zone.createEl('em', { text: ' · ' }); zone.appendText(here.date);
+      const hour = here.h + here.m / 60;
+      big.setText(hourLabel(hour));
       for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(c.time); r.day.setText(c.day); }
+      const key = `${here.date} ${here.h}:${here.m}`;
+      if (key === drawn) return;
+      drawn = key;
+      const sun = sunFrom(this.data && this.data.weather);
+      date.setText(here.date);
+      sunLine.setText(sun ? `☀︎ ${hourLabel(sun.rise)} – ${hourLabel(sun.set)}` : '');
+      past.empty(); later.empty();
+      // 240 short pieces, each a little longer than its step so no seam shows; the later group fades as one.
+      for (let i = 0; i < 240; i++) {
+        const h = i / 10, [x0, y0] = pt(h), [x1, y1] = pt(h + 0.12);
+        (h < hour ? past : later).createSvg('path', { attr: { d: `M${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1}`, stroke: ringColour(h + 0.05, sun) } });
+      }
+      const [sx, sy] = pt(hour);
+      sunDot.setAttr('cx', sx); sunDot.setAttr('cy', sy);
     };
     paint();
     this.clockPaint = () => (body.isConnected ? paint() : null);

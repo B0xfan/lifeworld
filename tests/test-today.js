@@ -513,7 +513,13 @@ eq(L.normalizePlaces([{ name: 'X', tz: 'Nope/Zone' }, { name: ' London ', tz: 'E
   const at = new Date('2026-10-19T15:41:23Z');
   const lon = L.clockAt(at, 'Europe/London'); const tok = L.clockAt(at, 'Asia/Tokyo');
   eq([lon.time, lon.big, lon.day, tok.time, tok.day], ['04:41 pm', '4:41:23 pm', 'MON', '12:41 am', 'TUE'], 'world clock: each place at its own time and day, from the device alone');
-  eq(L.handAngles(L.clockAt(at, 'UTC')), { h: 110.5, m: 248.3, s: 138 }, 'world clock: hand angles');
+  // 24-hour ring (2026-10-29): sun times from the weather line; ring colours across the day.
+  const sun = L.sunFrom({ sunrise: '5:33 AM', sunset: '5:20 PM' });
+  eq([sun && +sun.dawn.toFixed(3), sun && +sun.rise.toFixed(3), sun && +sun.set.toFixed(3), sun && +sun.dusk.toFixed(3)], [5.133, 5.55, 17.333, 17.75], 'ring: first light 25 min before sunrise, last light 25 min after sunset');
+  eq([L.sunFrom(null), L.sunFrom({ sunrise: '5:33 AM' }), L.sunFrom({ sunrise: '?', sunset: '5:20 PM' }), L.sunFrom({ sunrise: '6:00 PM', sunset: '6:00 AM' })], [null, null, null, null], 'ring: no or broken sun times give no day and night colours');
+  eq([L.ringColour(2, sun), L.ringColour(5.14, sun), L.ringColour(5.55, sun), L.ringColour(12, sun), L.ringColour(17 + 20 / 60, sun), L.ringColour(17.74, sun), L.ringColour(23, sun), L.ringColour(3, null)],
+    ['rgb(91,74,138)', 'rgb(255,213,168)', 'rgb(255,140,26)', 'rgb(90,200,250)', 'rgb(255,140,26)', 'rgb(255,212,167)', 'rgb(91,74,138)', 'rgb(90,200,250)'], 'ring: night purple, light orange at first light, bright orange at sunrise and sunset, day blue, blue all round with no weather');
+  eq([L.hourLabel(0), L.hourLabel(11 + 47 / 60), L.hourLabel(12), L.hourLabel(23.999)], ['12:00 AM', '11:47 AM', '12:00 PM', '12:00 AM'], 'ring: hour labels');
   const ut = { name: 'Windsor, Colorado, United States', short: 'Windsor, Colorado', tz: 'America/Denver' }; const on = { name: 'Windsor, Ontario, Canada', short: 'Windsor, Ontario', tz: 'America/Toronto' };
   eq([L.placeFromMatch(ut), L.placeFromMatch(on)], [{ name: 'Windsor, Colorado', tz: 'America/Denver' }, { name: 'Windsor, Ontario', tz: 'America/Toronto' }], 'add a place: the time zone comes from the search match; same-name towns stay apart');
   eq([L.placeFromMatch({ ...ut, tz: 'Nope/Zone' }), L.placeFromMatch({ ...ut, tz: '' }), L.placeFromMatch(null)], [null, null, null], 'add a place: a match whose zone this device cannot read adds nothing');

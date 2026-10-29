@@ -913,10 +913,10 @@ const start = async (data) => {
       const lines = find(two.body, 'a4t-clk-place');
       const at = TL.clockAt(new Date(), 'America/Denver');
       eq([two.heads, find(two.body, 'a4t-clk-city').length, lines.length, lines.map((l) => l.kids.map((k) => k.cls[0])), lines.map((l) => [l.kids[0].text, l.kids[0].attr.title])],
-        [['3 places'], 0, 2, [['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day'], ['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day']], [['Fresno, CA', 'Fresno, CA'], ['Windsor, CO', 'Windsor, CO']]], 'World clock card: no Here tile, one line per place in saved order, full name on hover, count unchanged');
+        [['Today'], 0, 2, [['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day'], ['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day']], [['Fresno, CA', 'Fresno, CA'], ['Windsor, CO', 'Windsor, CO']]], 'World clock card: no Here tile, one line per place in saved order, full name on hover');
       eq([lines[1].kids[2].text, /^\d\d:\d\d [ap]m$/.test(lines[1].kids[1].text)], [at.day, true], 'each line: that zone\'s time and day');
       const none = drawClock([]);
-      eq([none.heads, find(none.body, 'a4t-clk-places').length], [['1 place'], 0], 'no places: only the big clock, no empty list');
+      eq([none.heads, find(none.body, 'a4t-clk-places').length], [['Today'], 0], 'no places: only the big clock, no empty list');
       await row('Calendar').rec.extras[0].click();
       eq([plug.layout.zones.c1.slice(-1), plug.layout.zones.c2[0]], [['calendar'], 'recent'], 'up from the top of Middle: into Left');
       plug.taskKind = () => 'checkbox'; tab.renderWidgetList();
