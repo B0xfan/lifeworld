@@ -278,16 +278,40 @@ const start = async (data) => {
     eq(await again.parts['a4-today'].loadData(), { layout: ['mac'], look: 'phone' }, 'two devices: a later start reads both');
     await mac.parts['a4-planner'].saveData({ mode: 'mac later' });
     eq(plainFile(disk[mac.dir])['a4-planner'], { mode: 'mac later' }, 'a later change wins over the older one');
-    // The log: one entry per setting, old ones go, odd entries are ignored.
+    // The log: one entry per setting, old ones go at the next save, odd entries are ignored.
     await mac.parts['a4-planner'].saveData({ mode: 'mac last' });
-    const logged = Object.values(JSON.parse(disk[mac.dir])).filter((v) => v && v.corner === 'a4-planner' && v.key === 'mode');
-    eq(logged.map((e) => e.value), ['mac last'], 'the log keeps only the newest change to a setting');
-    const old = await start({ 'a4-today': { look: 'now' }, '~change-old': { at: Date.now() - 8 * 864e5, corner: 'a4-today', key: 'look', value: 'stale' }, '~change-bad': { at: Date.now(), corner: '__proto__', key: 'polluted', value: 1 }, '~change-odd': 'text' });
-    eq(await old.parts['a4-today'].loadData(), { look: 'now' }, 'a change older than a week, or a damaged one, is ignored');
+    const log1 = (d) => Object.values(JSON.parse(disk[d.dir])).filter((v) => v && Array.isArray(v.path));
+    eq(log1(mac).filter((e) => e.path.join('/') === 'a4-planner/mode').map((e) => e.value), ['mac last'], 'the log keeps only the newest change to a setting');
+    const week = Date.now() - 8 * 864e5;
+    const old = await start({ 'a4-today': { look: 'old' }, '~change-old': { at: week, path: ['a4-today', 'look'], value: 'merged away' }, '~change-bad': { at: Date.now(), path: ['__proto__', 'polluted'], value: 1 }, '~change-odd': 'text' });
+    eq(await old.parts['a4-today'].loadData(), { look: 'merged away' }, 'an old change not yet saved still counts, a damaged one does not');
     ok(!({}).polluted, 'a damaged change cannot reach other objects');
-    await old.parts['a4-today'].saveData({ look: 'new' });
-    ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'those are dropped at the next save');
-    mac.host.unload(); phone.host.unload(); again.host.unload(); old.host.unload();
+    await old.parts['a4-planner'].saveData({ mode: 'x' });
+    eq(plainFile(disk[old.dir])['a4-today'], { look: 'merged away' }, 'the next save writes it into the settings');
+    ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'and those entries go');
+    // Two switches in one map, on two devices.
+    const mapBase = { lifeworld: { parts: { 'a4-planner': true, 'a4-sidebar': true } } };
+    const m1 = await start(mapBase); const m2 = await start(mapBase);
+    await m1.host.setPart('a4-planner', false); await m2.host.setPart('a4-sidebar', false);
+    const mapMerged = await start(JSON.stringify({ ...JSON.parse(disk[m1.dir]), ...JSON.parse(disk[m2.dir]) }));
+    eq([mapMerged.host.store.lifeworld.parts['a4-planner'], mapMerged.host.store.lifeworld.parts['a4-sidebar']], [false, false], 'two switches changed on two devices: both kept');
+    // A device whose clock runs ahead cannot block a new change here.
+    const ahead = await start({ 'a4-today': { look: 'x' }, '~change-a': { at: Date.now() + 3 * 864e5, path: ['a4-today', 'look'], value: 'ahead' } });
+    await ahead.parts['a4-today'].saveData({ look: 'new here' });
+    eq((await start(disk[ahead.dir])).host.store['a4-today'].look, 'new here', 'a clock running ahead: the new change still wins');
+    // Sync arrives while a save of another setting in the same part waits: both stay.
+    writeDelay = () => 20;
+    const inFlight = await start({ 'a4-today': { look: 'a', layout: ['a'] } });
+    const pendingSave = inFlight.parts['a4-today'].saveData({ look: 'here', layout: ['a'] });
+    disk[inFlight.dir] = JSON.stringify({ 'a4-today': { look: 'a', layout: ['from mac'] } });
+    await inFlight.host.onExternalSettingsChange(); await pendingSave; await inFlight.host.saving; writeDelay = () => 0;
+    eq(plainFile(disk[inFlight.dir])['a4-today'], { look: 'here', layout: ['from mac'] }, 'Sync during a save in the same part: both settings kept');
+    // Settings deleted on purpose stay deleted.
+    delete disk[mac.dir];
+    await mac.host.onExternalSettingsChange();
+    await mac.parts['a4-planner'].saveData({ mode: 'after reset' });
+    eq(Object.keys(plainFile(disk[mac.dir])).sort(), ['a4-planner'], 'the settings file deleted: the log does not bring the old settings back');
+    for (const d of [mac, phone, again, old, m1, m2, mapMerged, ahead, inFlight]) d.host.unload();
   }
 
   // Two switches at once: one change at a time, never two copies of a part.

@@ -479,6 +479,12 @@ class PlannerPlugin extends Plugin {
 
   onunload() { closeOpenPopovers(); }
 
+  // Settings arrived by Sync: take them, or the next save would write the old ones back as new.
+  async onExternalSettingsChange() {
+    const saved = /** @type {Partial<PlannerData>} */ ((await this.loadData().catch(() => null)) || {});
+    this.data = { ...DEFAULT_DATA, ...saved, collapsed: { ...(saved.collapsed || {}) }, made: { ...(saved.made || {}) } };
+  }
+
   async save() { await this.saveData(this.data); }
 
   // The Find window lives in Projects (its search, its engine): one window for Today, the Planner and the command.

@@ -14,6 +14,7 @@ const CORE = path.join(__dirname, '..', 'src', 'core');
 const EXPORTS = {
   dates: ['pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
   lists: ['asList'],
+  'settings-log': ['readFile', 'addChanges', 'carryChanges'],
   settings: ['drawRows', 'blockRow', 'noCleanup'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],

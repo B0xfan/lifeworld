@@ -19,7 +19,7 @@ import plannerManifest from './planner/manifest.json';
 import Planner from './planner/main';
 import sidebarManifest from './sidebar/manifest.json';
 import Sidebar from './sidebar/main';
-import { readFile, addChanges } from './core/settings-log';
+import { readFile, addChanges, carryChanges } from './core/settings-log';
 
 // Start order: Projects first (the task engine the others use).
 /** @typedef {[import('obsidian').PluginManifest, new (app: import('obsidian').App, manifest: import('obsidian').PluginManifest) => PartPlugin]} PartEntry */
@@ -424,7 +424,7 @@ class LifeWorldPlugin extends Plugin {
   async readStore() {
     const before = this.ondisk;
     const d = await this.loadData();
-    if (d === null) return {};
+    if (d === null) { this.changes = {}; return {}; } // no file: a reset, and it stays one
     if (d && typeof d === 'object' && !Array.isArray(d)) {
       const { store, changes } = readFile(/** @type {Record<string, unknown>} */ (d), Date.now());
       // A save under way, or ended during the read: its changes are not in what was read.
@@ -506,17 +506,16 @@ class LifeWorldPlugin extends Plugin {
     const ours = this.ondisk; // what that save put on disk; it landed after the Sync write that started this read
     // shortcut: a damaged file arriving by Sync is ignored (usually half-synced; the full one follows).
     if (!now) { console.warn('LifeWorld: settings changed outside but the file is damaged; kept the current settings'); return; }
-    // A corner changed here and not yet on disk (its save queued or under way) keeps the change
-    // made here; every other corner takes the file's. A write under way carries the corners from
+    // A setting changed here and not yet on disk (its save queued or under way) keeps the change
+    // made here; everything else takes the file's. A write under way carries the corners from
     // before this change, so one more write follows it.
     /** @type {LwStore} */
-    const merged = { ...now };
+    const merged = /** @type {LwStore} */ (carryChanges(/** @type {LwStore} */ (copy(now)), was, before));
     /** @type {string[]} */
     const kept = [];
     for (const k of new Set([...Object.keys(before), ...Object.keys(was)])) {
       if (JSON.stringify(before[k]) === JSON.stringify(was[k])) continue;
       kept.push(k);
-      if (k in before) merged[k] = before[k]; else delete merged[k];
     }
     this.ondisk = now;
     this.store = merged;
