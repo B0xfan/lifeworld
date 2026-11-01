@@ -96,6 +96,8 @@ for (const id of IDS) {
   P.onunload = function () { log.push(`stop ${id}`); };
   P.onExternalSettingsChange = async function () { this.saved = await this.loadData(); log.push(`external ${id}`); };
 }
+// The settings in a file, without its change log (src/core/settings-log.js).
+const plainFile = (t) => Object.fromEntries(Object.entries(JSON.parse(t)).filter(([k]) => !k.startsWith('~change-')));
 const DATA = /\/data\.json$/;
 const adapter = {
   async read(p) { const s = DATA.test(p) ? disk[p.replace(DATA, '')] : files[p]; if (s === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); return s; },
@@ -150,7 +152,7 @@ const start = async (data) => {
   await Promise.all([parts['a4-planner'].saveData(kept), parts['a4-projects'].saveData({ source: 'own' }), parts['a4-today'].saveData({ layout: [] })]);
   kept.folded.push('later');
   writeDelay = () => 0;
-  const file = JSON.parse(disk[dir]);
+  const file = plainFile(disk[dir]);
   eq(file, { 'a4-today': { layout: [] }, 'a4-sidebar': { sort: 'az' }, 'a4-planner': { folded: ['x'] }, 'a4-projects': { source: 'own' } }, 'all four corners in the file after three saves at once; later edits to a saved object do not leak in');
   eq(writes, ['begin', 'end', 'begin', 'end', 'begin', 'end'], 'three writes, one at a time (the slow first one cannot land last)');
 
@@ -230,8 +232,8 @@ const start = async (data) => {
   eq(log.filter((x) => x.startsWith('st')), ['stop a4-planner'], 'Planner off: only the Planner stops');
   eq(cmds(pg.app), ['a4-projects', 'a4-sidebar', 'a4-today'], 'its command is gone');
   eq(pg.app.closed, ['a4-planner-view'], 'its open tabs are closed');
-  eq(JSON.parse(disk[pg.dir]).lifeworld, { parts: { 'a4-planner': false } }, 'the switch is saved in LifeWorld\'s corner');
-  eq(JSON.parse(disk[pg.dir])['a4-today'], { layout: ['weather'] }, 'the parts\' own settings are untouched');
+  eq(plainFile(disk[pg.dir]).lifeworld, { parts: { 'a4-planner': false } }, 'the switch is saved in LifeWorld\'s corner');
+  eq(plainFile(disk[pg.dir])['a4-today'], { layout: ['weather'] }, 'the parts\' own settings are untouched');
 
   // Projects off (launch section 1): Today keeps running; the task engine starts again without its pages.
   log.length = 0;
@@ -253,9 +255,40 @@ const start = async (data) => {
   eq(cmds(pg.app), ['a4-projects', 'a4-sidebar', 'a4-today'], 'commands back for the parts that are on');
   eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and areas', true, false], ['Sidebar', true, false]], 'the Planner\'s own switch kept');
   eq(pg.host.running['a4-today'].saved, { layout: ['weather'] }, 'a part started again reads its saved settings');
-  eq(JSON.parse(disk[pg.dir]).lifeworld.parts, { 'a4-planner': false, 'a4-projects': true, 'a4-today': true }, 'saved');
+  eq(plainFile(disk[pg.dir]).lifeworld.parts, { 'a4-planner': false, 'a4-projects': true, 'a4-today': true }, 'saved');
   await pg.host.setPart('a4-planner', true);
   eq(cmds(pg.app), IDS.slice().sort(), 'Planner on again: all four commands back');
+
+  // Two devices change settings before either has synced. Sync merges the two files, this device's keys on top
+  // (obsidian.md/help/sync/troubleshoot). Both devices' changes are kept, also two changes in one part.
+  {
+    const base = { 'a4-today': { layout: ['old'], look: 'old' }, 'a4-planner': { mode: 'old' } };
+    const mac = await start(base); const phone = await start(base);
+    await mac.parts['a4-today'].saveData({ layout: ['mac'], look: 'old' });
+    await new Promise((res) => setTimeout(res, 5));
+    await phone.parts['a4-today'].saveData({ layout: ['old'], look: 'phone' });
+    await phone.parts['a4-planner'].saveData({ mode: 'phone' });
+    const merged = JSON.stringify({ ...JSON.parse(disk[mac.dir]), ...JSON.parse(disk[phone.dir]) });
+    for (const [name, d] of [['the phone', phone], ['the Mac', mac]]) {
+      disk[d.dir] = merged;
+      await d.host.onExternalSettingsChange(); await d.host.saving;
+      eq([await d.parts['a4-today'].loadData(), await d.parts['a4-planner'].loadData()], [{ layout: ['mac'], look: 'phone' }, { mode: 'phone' }], `two devices, merged on ${name}: both changes kept`);
+    }
+    const again = await start(merged);
+    eq(await again.parts['a4-today'].loadData(), { layout: ['mac'], look: 'phone' }, 'two devices: a later start reads both');
+    await mac.parts['a4-planner'].saveData({ mode: 'mac later' });
+    eq(plainFile(disk[mac.dir])['a4-planner'], { mode: 'mac later' }, 'a later change wins over the older one');
+    // The log: one entry per setting, old ones go, odd entries are ignored.
+    await mac.parts['a4-planner'].saveData({ mode: 'mac last' });
+    const logged = Object.values(JSON.parse(disk[mac.dir])).filter((v) => v && v.corner === 'a4-planner' && v.key === 'mode');
+    eq(logged.map((e) => e.value), ['mac last'], 'the log keeps only the newest change to a setting');
+    const old = await start({ 'a4-today': { look: 'now' }, '~change-old': { at: Date.now() - 8 * 864e5, corner: 'a4-today', key: 'look', value: 'stale' }, '~change-bad': { at: Date.now(), corner: '__proto__', key: 'polluted', value: 1 }, '~change-odd': 'text' });
+    eq(await old.parts['a4-today'].loadData(), { look: 'now' }, 'a change older than a week, or a damaged one, is ignored');
+    ok(!({}).polluted, 'a damaged change cannot reach other objects');
+    await old.parts['a4-today'].saveData({ look: 'new' });
+    ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'those are dropped at the next save');
+    mac.host.unload(); phone.host.unload(); again.host.unload(); old.host.unload();
+  }
 
   // Two switches at once: one change at a time, never two copies of a part.
   log.length = 0;
@@ -299,7 +332,7 @@ const start = async (data) => {
   eq(IDS.map((id) => dmg.parts[id].saved), [null, null, null, null], 'every part starts on defaults');
   eq(disk[dmg.dir], bad, 'the original is not written over at start');
   await dmg.parts['a4-today'].saveData({ layout: [] });
-  eq(JSON.parse(disk[dmg.dir]), { 'a4-today': { layout: [] }, lifeworld: { carriedOver: true } }, 'after the copy exists, saving works again (carry-over marked done)');
+  eq(plainFile(disk[dmg.dir]), { 'a4-today': { layout: [] }, lifeworld: { carriedOver: true } }, 'after the copy exists, saving works again (carry-over marked done)');
   dmg.host.unload();
 
   notices.length = 0; failCopy = true;
@@ -331,11 +364,11 @@ const start = async (data) => {
   ok(warns.length === 1 && warns[0].includes('a4-planner'), 'malformed old file: one warning naming it');
   eq(mig.parts['a4-projects'].saved, null, 'missing old file: Projects starts on defaults');
   eq(mig.parts['a4-sidebar'].saved, { sort: 'az' }, 'a corner already there wins over the old file');
-  eq(JSON.parse(disk[mig.dir]), { 'a4-sidebar': { sort: 'az' }, 'a4-today': { layout: ['calendar'], calendars: { selected: ['x'] } } }, 'what was taken is saved at once');
+  eq(plainFile(disk[mig.dir]), { 'a4-sidebar': { sort: 'az' }, 'a4-today': { layout: ['calendar'], calendars: { selected: ['x'] } } }, 'what was taken is saved at once');
   for (const id of ['a4-today', 'a4-planner', 'a4-sidebar']) eq(disk[OLD(id)], oldFiles[OLD(id)], `old ${id} file left as it was`);
   mig.host.unload();
   disk[OLD('a4-today')] = JSON.stringify({ layout: ['changed later'] });
-  const again = await startQuiet(JSON.parse(disk[mig.dir]));
+  const again = await startQuiet(plainFile(disk[mig.dir]));
   eq(again.parts['a4-today'].saved, { layout: ['calendar'], calendars: { selected: ['x'] } }, 'second start: the old file is not read again');
   again.host.unload();
 
@@ -354,7 +387,7 @@ const start = async (data) => {
   const dmg3 = await startQuiet(bad);
   await dmg3.parts['a4-today'].saveData({ layout: ['new'] });
   dmg3.host.unload();
-  const after = await start(JSON.parse(disk[dmg3.dir]));
+  const after = await start(plainFile(disk[dmg3.dir]));
   eq([after.parts['a4-today'].saved, after.parts['a4-planner'].saved], [{ layout: ['new'] }, null], 'restart after a damaged start: Today keeps its save, the Planner stays on defaults (old file not taken)');
   after.host.unload();
   delete disk[OLD('a4-planner')];
@@ -366,7 +399,7 @@ const start = async (data) => {
   ok(Object.keys(full.host.running).length === 4 && full.parts['a4-today'].saved && full.parts['a4-today'].saved.layout[0] === 'old', 'carry-over save failed: every part starts, Today with the carried settings');
   ok(notices.length === 1 && /could not be saved/.test(notices[0]), 'one notice says so');
   await full.parts['a4-sidebar'].saveData({ sort: 'az' });
-  eq(JSON.parse(disk[full.dir])['a4-today'], { layout: ['old'] }, 'the next save writes the carried settings too');
+  eq(plainFile(disk[full.dir])['a4-today'], { layout: ['old'] }, 'the next save writes the carried settings too');
   full.host.unload();
   for (const id of IDS) delete disk[OLD(id)];
 
@@ -397,24 +430,24 @@ const start = async (data) => {
   eq(log, ['external a4-sidebar'], 'only the Sidebar hears the outside change');
   await s1; await s2; await race.host.saving;
   writeDelay = () => 0;
-  eq(JSON.parse(disk[race.dir]), { 'a4-today': { layout: ['b'] }, 'a4-sidebar': { sort: 'synced' }, 'a4-planner': { folded: ['x'] } }, 'on disk: both saves made here and the Sync change');
+  eq(plainFile(disk[race.dir]), { 'a4-today': { layout: ['b'] }, 'a4-sidebar': { sort: 'synced' }, 'a4-planner': { folded: ['x'] } }, 'on disk: both saves made here and the Sync change');
   eq([await race.parts['a4-today'].loadData(), await race.parts['a4-sidebar'].loadData()], [{ layout: ['b'] }, { sort: 'synced' }], 'in memory the same');
-  disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-today': { layout: ['phone'] } });
+  disk[race.dir] = JSON.stringify({ ...plainFile(disk[race.dir]), 'a4-today': { layout: ['phone'] } });
   await race.host.onExternalSettingsChange();
   eq(await race.parts['a4-today'].loadData(), { layout: ['phone'] }, 'with nothing waiting to be saved, an outside change to a corner is taken');
   // Only one save, under way when Sync lands: one more write follows, so the Sync change is not lost on disk.
   writeDelay = () => 20;
   const s3 = race.parts['a4-today'].saveData({ layout: ['c'] });
   await new Promise((res) => setTimeout(res, 5));
-  disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-sidebar': { sort: 'synced again' } });
+  disk[race.dir] = JSON.stringify({ ...plainFile(disk[race.dir]), 'a4-sidebar': { sort: 'synced again' } });
   await race.host.onExternalSettingsChange();
   await s3; await race.host.saving;
   writeDelay = () => 0;
-  eq([JSON.parse(disk[race.dir])['a4-today'], JSON.parse(disk[race.dir])['a4-sidebar']], [{ layout: ['c'] }, { sort: 'synced again' }], 'a save under way alone: the file ends with both');
+  eq([plainFile(disk[race.dir])['a4-today'], plainFile(disk[race.dir])['a4-sidebar']], [{ layout: ['c'] }, { sort: 'synced again' }], 'a save under way alone: the file ends with both');
   // Review p2-s3 should-fix 2: a second Sync change to the same corner, landing while the follow-up
   // write runs, is taken (it was dropped as if it were a change made here).
   const pause = (ms) => new Promise((res) => setTimeout(res, ms));
-  const syncSidebar = async (v) => { disk[race.dir] = JSON.stringify({ ...JSON.parse(disk[race.dir]), 'a4-sidebar': { sort: v } }); await race.host.onExternalSettingsChange(); };
+  const syncSidebar = async (v) => { disk[race.dir] = JSON.stringify({ ...plainFile(disk[race.dir]), 'a4-sidebar': { sort: v } }); await race.host.onExternalSettingsChange(); };
   writeDelay = () => 20;
   const s4 = race.parts['a4-today'].saveData({ layout: ['d'] });
   await pause(5); await syncSidebar('sync1');
@@ -423,7 +456,7 @@ const start = async (data) => {
   await syncSidebar('sync2');
   await race.host.saving;
   writeDelay = () => 0;
-  eq([await race.parts['a4-sidebar'].loadData(), JSON.parse(disk[race.dir])['a4-sidebar'], JSON.parse(disk[race.dir])['a4-today']], [{ sort: 'sync2' }, { sort: 'sync2' }, { layout: ['d'] }], 'second Sync change kept, in memory and on disk; the change made here too');
+  eq([await race.parts['a4-sidebar'].loadData(), plainFile(disk[race.dir])['a4-sidebar'], plainFile(disk[race.dir])['a4-today']], [{ sort: 'sync2' }, { sort: 'sync2' }, { layout: ['d'] }], 'second Sync change kept, in memory and on disk; the change made here too');
   // Review p2-s3 nice-to-have 3: the follow-up write failing is logged, not swallowed.
   const logged = []; const ce2 = console.error; console.error = (...a) => logged.push(a.join(' '));
   writeDelay = () => 20;
@@ -444,7 +477,7 @@ const start = async (data) => {
   slow.host.loadData = plainRead;
   await slow.host.saving;
   eq([await slow.parts['a4-today'].loadData(), await slow.parts['a4-sidebar'].loadData()], [{ layout: ['mine'] }, { sort: 'synced' }], 'save during the Sync read: in memory, the change made here and the Sync change');
-  eq(JSON.parse(disk[slow.dir]), { 'a4-today': { layout: ['mine'] }, 'a4-sidebar': { sort: 'synced' } }, 'save during the Sync read: on disk, both');
+  eq(plainFile(disk[slow.dir]), { 'a4-today': { layout: ['mine'] }, 'a4-sidebar': { sort: 'synced' } }, 'save during the Sync read: on disk, both');
   slow.host.unload();
 
   // ---- Section 4: Settings › Your vault (lifeworld-your-vault-mockup.html, approved 2026-10-14) ----
@@ -487,7 +520,7 @@ const start = async (data) => {
   eq([disk[fresh.dir], freshEngine.cfg().tasksFolder], [JSON.stringify({}), 'Tasks'], 'a folder being typed is neither saved nor read');
   await vaultRows(fresh.host)[0].text.commit('My Tasks/ ');
   await fresh.host.saving;
-  eq([JSON.parse(disk[fresh.dir]).lifeworld.vault.folders.tasks, freshEngine.cfg().tasksFolder], ['My Tasks/', 'My Tasks'], 'a typed folder is saved and read (trailing slash dropped)');
+  eq([plainFile(disk[fresh.dir]).lifeworld.vault.folders.tasks, freshEngine.cfg().tasksFolder], ['My Tasks/', 'My Tasks'], 'a typed folder is saved and read (trailing slash dropped)');
   await vaultRows(fresh.host)[0].text.commit('');
   eq(freshEngine.cfg().tasksFolder, 'Tasks', 'an emptied folder falls back to the default');
   await vaultRows(fresh.host)[0].text.commit(' ../x//y/./ ');
@@ -497,7 +530,7 @@ const start = async (data) => {
   const placeRow = () => draw(fresh.host).find((r) => r.name === 'When you place a task on a day');
   eq([placeRow().options, placeRow().value, LW.vault.planning.setsDue], [[['due', 'Set its due date'], ['plan', 'Just plan it for that day']], 'due', true], 'Planning: two choices, due date by default');
   await placeRow().change('plan');
-  eq([JSON.parse(disk[fresh.dir]).lifeworld.vault.placeOnDay, LW.vault.planning.setsDue, placeRow().value], ['plan', false, 'plan'], 'Just plan it: saved and read by every part');
+  eq([plainFile(disk[fresh.dir]).lifeworld.vault.placeOnDay, LW.vault.planning.setsDue, placeRow().value], ['plan', false, 'plan'], 'Just plan it: saved and read by every part');
   await placeRow().change('due');
   ok(LW.vault.planning.setsDue, 'back to Set its due date');
   fresh.host.unload();
@@ -518,7 +551,7 @@ const start = async (data) => {
   eq(T.renderTemplate('# {{title}}', oct3), '# 2026-10-03', 'template title: the daily note name (defaults here)');
   eq(T.renderTemplate('# {{title}}', oct3, null, '10-03-2026'), '# 10-03-2026', 'template title: the name it is given');
   await owner.parts['a4-today'].saveData({ layout: ['x'] }); await owner.host.saving;
-  eq(JSON.parse(disk[owner.dir]).lifeworld, fixJson('plugins/lifeworld/data.json').lifeworld, 'preset: saving a part leaves the Your vault settings as they were');
+  eq(plainFile(disk[owner.dir]).lifeworld, fixJson('plugins/lifeworld/data.json').lifeworld, 'preset: saving a part leaves the Your vault settings as they were');
   // Phase 2 section 5: the calendar and weather notes the old code had built in come from the preset.
   const PL = LW.parts['a4-planner'].prototype;
   const notesSeen = [];
@@ -581,16 +614,16 @@ const start = async (data) => {
   field('Status').type('my: status');
   eq([dlg.err.text, doneBtn().disabled], ['"my: status" has a character property names cannot use.', true], 'invalid character refused');
   await dlg.save();
-  ok(dlg.isOpen && !JSON.parse(disk[pn.dir] || '{}').lifeworld, 'Done does nothing while a name is refused');
+  ok(dlg.isOpen && !plainFile(disk[pn.dir] || '{}').lifeworld, 'Done does nothing while a name is refused');
   dlg.contentEl.kids.find((k) => k.rec && k.rec.buttons && k.rec.buttons.length === 2).rec.buttons[0].click();
   ok(!dlg.err.text && !doneBtn().disabled && dlg.inputs.every((x) => x.t.getValue() === x.key), 'Reset to defaults: every name back, no problem');
   field('Due date').type('deadline'); field('Planned day').type(' plan_day ');
   dlg.close();
-  ok(!JSON.parse(disk[pn.dir] || '{}').lifeworld && nameRow().desc === 'status, due, scheduled, priority, projects, reminders', 'closing without Done saves nothing');
+  ok(!plainFile(disk[pn.dir] || '{}').lifeworld && nameRow().desc === 'status, due, scheduled, priority, projects, reminders', 'closing without Done saves nothing');
   dlg = dlgOf();
   field('Due date').type('deadline'); field('Planned day').type(' plan_day '); field('Priority').type('prio');
   await dlg.save(); await pn.host.saving;
-  eq([dlg.isOpen, JSON.parse(disk[pn.dir]).lifeworld.vault.names, nameRow().desc], [false, { priority: 'prio', due: 'deadline', planned_day: 'plan_day' }, 'status, deadline, scheduled, prio, projects, reminders'], 'Done saves only the changed names; the row shows them');
+  eq([dlg.isOpen, plainFile(disk[pn.dir]).lifeworld.vault.names, nameRow().desc], [false, { priority: 'prio', due: 'deadline', planned_day: 'plan_day' }, 'status, deadline, scheduled, prio, projects, reminders'], 'Done saves only the changed names; the row shows them');
 
   // Renamed names, read and written by the task engine under the note's names.
   const notes = { 'Tasks/A.md': { title: 'A', status: 'open', prio: 'high', deadline: '2026-10-01', tags: ['task'], other: 1 }, 'Tasks/B.md': { status: 'open', tags: ['task'], due: 'left alone' } };
@@ -607,7 +640,7 @@ const start = async (data) => {
   await mv.undo();
   eq(notes['Tasks/A.md'], { title: 'A', status: 'open', prio: 'high', deadline: '2026-10-01', tags: ['task'], other: 1 }, 'renamed: Undo puts the note back');
   // Sync brings other names from the phone: taken.
-  disk[pn.dir] = JSON.stringify({ ...JSON.parse(disk[pn.dir]), lifeworld: { vault: { names: {}, folders: { goals: 'Aims' } } } });
+  disk[pn.dir] = JSON.stringify({ ...plainFile(disk[pn.dir]), lifeworld: { vault: { names: {}, folders: { goals: 'Aims' } } } });
   await pn.host.onExternalSettingsChange();
   eq([nameRow().desc, vaultRows(pn.host).find((r) => r.name === 'Goals folder').value], ['status, due, scheduled, priority, projects, reminders', 'Aims'], 'a Your vault change from Sync is taken');
   pn.host.unload();
@@ -1038,7 +1071,7 @@ const start = async (data) => {
     global.createDiv = gc0;
     rmBad(); rmW(); await tick();
     eq([TL.EXTRA_WIDGETS.length, today.layout.zones.c1.includes('tides')], [0, false], 'removed: the widget leaves the layout (its saved place stays in the file)');
-    eq(JSON.parse(disk[ex.dir])['a4-today'].layout.zones.c1, ['tides'], 'adding and removing an add-on widget writes nothing to the settings file');
+    eq(plainFile(disk[ex.dir])['a4-today'].layout.zones.c1, ['tides'], 'adding and removing an add-on widget writes nothing to the settings file');
     // An open Today page: the removed widget's card leaves the page and is forgotten; a hidden one only leaves.
     const gone = []; const card = (id) => ({ id, dataset: {}, toggleClass() {}, querySelector: () => ({}), detach() { gone.push(id); } });
     const zone = () => ({ children: [], insertBefore(el) { this.children.push(el); }, appendChild() {} });
@@ -1193,7 +1226,7 @@ const start = async (data) => {
     // The add-on fills the owner's note paths and mood folder (no rows); other saved values stay.
     await ex.host.setVaultSettings({ feeds: { calendar: 'P/Cal.md' } });
     await ex.host.setVaultSettings({ feeds: { weather: 'P/W.md' }, folders: { mood: 'L/Mood' } });
-    eq([JSON.parse(disk[ex.dir]).lifeworld.vault.feeds, V.feedNotes.calendar, V.vaultFolders.mood], [{ calendar: 'P/Cal.md', weather: 'P/W.md' }, 'P/Cal.md', 'L/Mood'], 'note paths and the mood folder are saved and read');
+    eq([plainFile(disk[ex.dir]).lifeworld.vault.feeds, V.feedNotes.calendar, V.vaultFolders.mood], [{ calendar: 'P/Cal.md', weather: 'P/W.md' }, 'P/Cal.md', 'L/Mood'], 'note paths and the mood folder are saved and read');
     await ex.host.setVaultSettings({ folders: { mood: '' } });
     eq(V.vaultFolders.mood, 'Mood', 'an emptied mood folder: the default, Mood (launch section 9)');
     // An add-on button in the Sidebar tab closes the phone drawer after its click, as the built-in ones do.
@@ -1237,7 +1270,7 @@ const start = async (data) => {
     const before = disk[neu.dir];
     neu.host.setup.close();
     await tick();
-    ok(JSON.parse(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
+    ok(plainFile(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
     const again = await startIn(disk[neu.dir]);
     ok(!again.host.setup, 'after it was closed: never opens by itself again');
     const old = await startIn({ 'a4-today': { layout: [] } });
@@ -1274,7 +1307,7 @@ const start = async (data) => {
     const pj = s1.host.running['a4-projects'];
     pj.settings = { source: 'checkbox' }; pj.setSource = async (id) => { calls.push(id); };
     await s1.host.applySetup(s1.host.setup.found);
-    eq([calls, JSON.parse(disk[s1.dir]).lifeworld.vault.folders, V.vaultFolders.tasks], [['builtin'], { tasks: 'tasks', projects: 'projects' }, 'tasks'], 'Start: source and folders saved and read');
+    eq([calls, plainFile(disk[s1.dir]).lifeworld.vault.folders, V.vaultFolders.tasks], [['builtin'], { tasks: 'tasks', projects: 'projects' }, 'tasks'], 'Start: source and folders saved and read');
     await s1.host.setVaultSettings({ folders: { tasks: '', projects: '' } }); // back to defaults for the checks after
 
     // Parts off: Tasks and Projects rows need the task engine, the Sidebar row the Sidebar.

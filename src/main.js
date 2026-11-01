@@ -19,6 +19,7 @@ import plannerManifest from './planner/manifest.json';
 import Planner from './planner/main';
 import sidebarManifest from './sidebar/manifest.json';
 import Sidebar from './sidebar/main';
+import { readFile, addChanges } from './core/settings-log';
 
 // Start order: Projects first (the task engine the others use).
 /** @typedef {[import('obsidian').PluginManifest, new (app: import('obsidian').App, manifest: import('obsidian').PluginManifest) => PartPlugin]} PartEntry */
@@ -96,6 +97,8 @@ class LifeWorldPlugin extends Plugin {
     /** @type {Promise<void>} */
     this.saving = Promise.resolve();
     this.gone = false;
+    /** @type {import('./core/settings-log').Changes} */
+    this.changes = {};
     const found = await this.readStore();
     if (!found) await this.setAsideDamaged();
     // A brand-new install: no settings file yet (or an empty one), nothing carried over below. Only then
@@ -419,9 +422,15 @@ class LifeWorldPlugin extends Plugin {
   // parse (it logs and does not throw; checked in Obsidian 1.14.4's own code).
   /** @returns {Promise<LwStore | null>} */
   async readStore() {
+    const before = this.ondisk;
     const d = await this.loadData();
     if (d === null) return {};
-    if (d && typeof d === 'object' && !Array.isArray(d)) return /** @type {LwStore} */ (d);
+    if (d && typeof d === 'object' && !Array.isArray(d)) {
+      const { store, changes } = readFile(/** @type {Record<string, unknown>} */ (d), Date.now());
+      // A save under way, or ended during the read: its changes are not in what was read.
+      this.changes = this.writing || this.ondisk !== before ? { ...changes, ...this.changes } : changes;
+      return /** @type {LwStore} */ (store);
+    }
     return null;
   }
 
@@ -465,7 +474,8 @@ class LifeWorldPlugin extends Plugin {
       const snap = /** @type {LwStore} */ (copy(this.store));
       this.writing = true;
       try {
-        await this.saveData(snap);
+        this.changes = addChanges(this.changes, this.ondisk, snap, Date.now());
+        await this.saveData({ ...snap, ...this.changes });
         // A Sync change taken during this write: its corners stay the record of what is on disk
         // (the follow-up write puts them there), or a second Sync change to them would look like
         // a change made here and be dropped (review p2-s3). Corners kept from here are in snap.
