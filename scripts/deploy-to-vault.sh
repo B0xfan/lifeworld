@@ -34,7 +34,12 @@ for f in "${FILES[@]}"; do cp -p "$DEST/$f" "$BACKUP/$f"; done
 before="$(shasum "$DEST/data.json" 2>/dev/null || true)"
 # Every copy first, so a full disk stops here with the old files all in place.
 drop_new() { for f in "${FILES[@]}"; do rm -f "$DEST/$f.new"; done; }
-restore() { drop_new; for f in "${FILES[@]}"; do cp -p "$BACKUP/$f" "$DEST/$f"; done; fail "$1; the old version is back (backup: $BACKUP)"; }
+restore() {
+  drop_new; local back=yes
+  for f in "${FILES[@]}"; do cp -p "$BACKUP/$f" "$DEST/$f" || back=no; done
+  [ "$back" = yes ] && fail "$1; the old version is back (backup: $BACKUP)"
+  fail "$1; could not put the old version back, copy the files from $BACKUP"
+}
 for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" || { drop_new; fail "could not copy $f; nothing changed"; }; done
 for f in "${FILES[@]}"; do mv "$DEST/$f.new" "$DEST/$f" || restore "could not install $f"; done
 for f in "${FILES[@]}"; do cmp "$REPO/$f" "$DEST/$f" || restore "$f did not copy cleanly"; done
