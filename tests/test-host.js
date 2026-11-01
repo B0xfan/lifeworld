@@ -27,7 +27,7 @@ class Component {
   addChild(c) { this._children.push(c); if (this._loaded) c.load(); return c; }
   register(fn) { this._events.push(fn); }
 }
-class Plugin extends Component {
+class Plugin extends Component { registerEvent() {}
   constructor(app, manifest) { super(); this.app = app; this.manifest = manifest; }
   addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; c.name = `${this.manifest.name}: ${c.name}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
   registerView(type) { this.app.views.push(type); }
@@ -104,7 +104,7 @@ const adapter = {
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
 let openTabs = {}; // tab type -> leaves already open when LifeWorld starts
-const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, cleared: [], saveLocalStorage(k, v) { if (v === null) this.cleared.push(k); }, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { on: () => ({}), configDir: '.obsidian', adapter, getRoot: () => new TFolder('', []), getMarkdownFiles: () => [], getAbstractFileByPath: () => null }, metadataCache: { getFileCache: () => null } }; }; // no app.plugins: lookups must not need it
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, cleared: [], saveLocalStorage(k, v) { if (v === null) this.cleared.push(k); }, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { on(name, f) { if (name === 'rename') this.renamed = f; return {}; }, configDir: '.obsidian', adapter, getRoot: () => new TFolder('', []), getMarkdownFiles: () => [], getAbstractFileByPath: () => null }, metadataCache: { getFileCache: () => null } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -806,6 +806,14 @@ const start = async (data) => {
   eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Personal projects', true).groups[0].folders, ['Work projects', 'Gone'], 'renamed to a built-in list name: it leaves its group');
   eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers', true).groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
   sb0.host.unload();
+  // One rename, one change: saved paths and the Sidebar's names together.
+  {
+    const rn = await start({ lifeworld: { vault: { folders: { goals: 'L/Goals', projects: 'L/Projects' }, sidebar: { life: 'L', groups: [{ id: 'g', label: 'G', folders: ['Goals'] }], icons: { Goals: 'target' } } } } });
+    rn.app.vault.renamed(new TFolder('L/Aims', []), 'L/Goals');
+    const v = rn.host.store.lifeworld.vault;
+    eq([v.folders.goals, v.folders.projects, v.sidebar.groups[0].folders, v.sidebar.icons, v.sidebar.life], ['L/Aims', 'L/Projects', ['Aims'], { Aims: 'target' }, 'L'], 'a renamed folder: its setting, group and icon follow together');
+    rn.host.unload();
+  }
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
   const ownerFile = JSON.parse(fs.readFileSync(path.join(FIX, '.obsidian', 'plugins', 'lifeworld', 'data.json'), 'utf8'));

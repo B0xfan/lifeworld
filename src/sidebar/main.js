@@ -70,14 +70,17 @@ const NAV = [
 // `sphere` property (work / personal; ruling 2026-10-04). No rule, no guess:
 // a project with no or another value shows under "Unsorted projects", which
 // appears only when there is one.
-/** @type {Record<string, { folder: string, kind: string, hideEmpty?: boolean }>} */
+/** @type {Record<string, { kind: string, hideEmpty?: boolean }>} */
 const VIRTUAL = {
-  'Work projects': { folder: 'Projects', kind: 'work' },
-  'Personal projects': { folder: 'Projects', kind: 'personal' },
-  'Unsorted projects': { folder: 'Projects', kind: 'unsorted', hideEmpty: true },
+  'Work projects': { kind: 'work' },
+  'Personal projects': { kind: 'personal' },
+  'Unsorted projects': { kind: 'unsorted', hideEmpty: true },
 };
 /** @param {string} n */
-const itemFolder = (n) => (VIRTUAL[n] ? nameOf(vaultFolders.projects) : n);
+const itemFolder = (n) => (VIRTUAL[n] ? nameOf(projectsDir()) : n);
+// The built-in project lists' folder: the Projects folder setting when it sits in the base folder, as it follows
+// a rename; otherwise the one named Projects there, as always.
+function projectsDir() { return parentOf(vaultFolders.projects) === SBC.life ? vaultFolders.projects : `${SBC.life}/Projects`; }
 // A group's folder in the vault: inside the base folder, or at the top when there is none (a new install).
 /** @param {string} n */
 const lifePath = (n) => (SBC.life ? `${SBC.life}/${itemFolder(n)}` : itemFolder(n));
@@ -748,7 +751,7 @@ class SidebarView extends ItemView {
     this.registerEvent(this.app.vault.on('delete', later));
     this.registerEvent(this.app.vault.on('rename', later));
     // a project gaining a client or Career moves between the two lists
-    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (SBC.life && file && file.path.startsWith(`${vaultFolders.projects}/`)) later(); }));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (SBC.life && file && file.path.startsWith(`${projectsDir()}/`)) later(); }));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.markActive()));
     this.registerEvent(this.app.workspace.on('file-open', () => this.markActive()));
   }
@@ -756,7 +759,7 @@ class SidebarView extends ItemView {
   // 'work' / 'personal' for a project note directly in My Life/Projects, else null.
   /** @param {string} path @returns {string | null} */
   classifyPath(path) {
-    const dir = `${vaultFolders.projects}/`;
+    const dir = `${projectsDir()}/`;
     if (!SBC.life || !path || !path.startsWith(dir) || path.slice(dir.length).includes('/')) return null;
     const f = this.app.vault.getAbstractFileByPath(path);
     const fm = /** @type {Fm | null | undefined} */ (f && (this.app.metadataCache.getFileCache(/** @type {TFile} */ (f)) || {}).frontmatter);
@@ -933,7 +936,7 @@ class SidebarView extends ItemView {
   // Areas of one kind (LifeWorld 0.1.5, areas mockup screen 6), A to Z: listed first, never counted.
   /** @param {string} kind @returns {TFile[]} */
   areasOf(kind) {
-    const f = SBC.life ? this.folder(vaultFolders.projects) : null;
+    const f = SBC.life ? this.folder(projectsDir()) : null;
     if (!f) return [];
     return /** @type {TFile[]} */ (f.children.filter((c) => c instanceof TFile && c.extension === 'md'))
       .filter((c) => { const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter); return fm && fm.type === 'area' && sphereOf(fm) === kind; })
@@ -943,7 +946,7 @@ class SidebarView extends ItemView {
   // Projects folder notes of one kind ('work' / 'personal'), active first.
   /** @param {string} kind */
   projectsOf(kind) {
-    const f = SBC.life ? this.folder(vaultFolders.projects) : null;
+    const f = SBC.life ? this.folder(projectsDir()) : null;
     if (!f) return [];
     /** @type {{ file: TFile, name: string, status: string, open: boolean }[]} */
     const list = [];
@@ -962,7 +965,7 @@ class SidebarView extends ItemView {
   lifeItem(parent, name, filePaths) {
     if (VIRTUAL[name]) {
       const v = VIRTUAL[name];
-      const f = this.folder(vaultFolders.projects);
+      const f = this.folder(projectsDir());
       if (!f) return;
       const box = parent.createDiv();
       const members = openProjects(this.projectsOf(v.kind));
@@ -1661,7 +1664,7 @@ class GroupsModal extends Modal {
     const used = new Set(held.map(itemFolder));
     const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !Object.keys(VIRTUAL).includes(c.name)).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
     // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
-    const lists = SBC.life && !held.includes(nameOf(vaultFolders.projects)) && this.app.vault.getAbstractFileByPath(vaultFolders.projects) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
+    const lists = SBC.life && !held.includes(nameOf(projectsDir())) && this.app.vault.getAbstractFileByPath(projectsDir()) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
     return folders.concat(lists);
   }
   draw() {

@@ -195,8 +195,9 @@ function movePath(p, oldPath, newPath) { return p === oldPath ? newPath : p.star
 
 // A folder or note renamed or moved: every saved path at or under it follows, as a change for the saved settings,
 // or null. Obsidian announces each folder and note inside too; once followed, those match nothing.
-/** @param {string} oldPath @param {string} newPath */
-function pathsAfterRename(oldPath, newPath) {
+// topFolders: the top folders now, for a folder renamed; [] for a note.
+/** @param {string} oldPath @param {string} newPath @param {string[]} [topFolders] */
+function pathsAfterRename(oldPath, newPath, topFolders = []) {
   /** @param {string} p */
   const moved = (p) => movePath(p, oldPath, newPath);
   /** @param {Record<string, string>} m */
@@ -209,9 +210,10 @@ function pathsAfterRename(oldPath, newPath) {
   if (sidebar.life && moved(sidebar.life) !== sidebar.life) sb.life = moved(sidebar.life);
   const skip = sidebar.basesSkip.map(moved);
   if (skip.some((p, i) => p !== sidebar.basesSkip[i])) sb.basesSkip = skip;
-  // A top folder that no longer starts with its room's beginning keeps its room under the new name.
-  const top = !oldPath.includes('/') && !newPath.includes('/');
-  const rooms = sidebar.rooms.map((r) => (top && oldPath.startsWith(r.prefix) && !newPath.startsWith(r.prefix) ? { ...r, prefix: newPath } : r));
+  // A room's only folder renamed so it no longer starts as the room says: the room keeps it under the new name.
+  // With another folder still starting that way, the room shows that one and is left alone.
+  const top = topFolders.includes(newPath) && !oldPath.includes('/');
+  const rooms = sidebar.rooms.map((r) => (top && oldPath.startsWith(r.prefix) && !topFolders.some((n) => n.startsWith(r.prefix)) ? { ...r, prefix: newPath } : r));
   if (rooms.some((r, i) => r !== sidebar.rooms[i])) sb.rooms = rooms;
   const change = /** @type {{ folders?: Record<string, string>, feeds?: Record<string, string>, sidebar?: Record<string, unknown> }} */ ({});
   if (Object.keys(fd).length) change.folders = fd;

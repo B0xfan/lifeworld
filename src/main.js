@@ -140,7 +140,7 @@ class LifeWorldPlugin extends Plugin {
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       const sb = vault.sidebarContent;
       const named = f instanceof TFolder ? /** @type {typeof Sidebar} */ (Sidebar).__logic.renameInSidebar(sb, oldPath, f.path, !sb.life || !!this.app.vault.getAbstractFileByPath(sb.life)) : null;
-      const paths = vault.pathsAfterRename(oldPath, f.path);
+      const paths = vault.pathsAfterRename(oldPath, f.path, f instanceof TFolder ? this.app.vault.getRoot().children.filter((c) => c instanceof TFolder).map((c) => c.path) : []);
       if (!named && !paths) return;
       const change = { ...paths, ...(named || (paths && paths.sidebar) ? { sidebar: { ...(paths && paths.sidebar), ...named } } : {}) };
       this.setVaultSettings(change).catch((e) => console.error('LifeWorld: its settings could not follow a renamed folder', e));

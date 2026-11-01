@@ -105,8 +105,10 @@ check(() => {
   assert.strictEqual(V.pathsAfterRename('Other', 'Else'), null, 'nothing saved under it');
   assert.strictEqual(V.pathsAfterRename('P/Cal.md', 'P/Cal.txt'), null, 'a note no longer .md: the old path stays');
   V.setVault({ sidebar: { life: 'L', basesSkip: ['02 Plan/Views/'], rooms: [{ prefix: '02 ', name: 'Planner', icon: 'x' }, { prefix: '03 ', name: 'Work', icon: 'y' }] } });
-  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', '02 Planner').sidebar, { basesSkip: ['02 Planner/Views/'] }, 'bases left out follow; the room still fits');
-  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', 'Plans').sidebar.rooms[0].prefix, 'Plans', 'a room keeps its folder under a new start');
+  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', '02 Planner', ['02 Planner', '03 Work']).sidebar, { basesSkip: ['02 Planner/Views/'] }, 'bases left out follow; the room still fits');
+  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', 'Plans', ['Plans', '03 Work']).sidebar.rooms[0].prefix, 'Plans', 'a room keeps its only folder under a new start');
+  assert.strictEqual(((V.pathsAfterRename('02 Plan', 'Plans', ['Plans', '02 Other', '03 Work']) || {}).sidebar || {}).rooms, undefined, 'another folder still starts that way: the room is left alone');
+  assert.strictEqual(((V.pathsAfterRename('02 draft.md', 'draft.md') || {}).sidebar || {}).rooms, undefined, 'a note never moves a room');
   V.setVault(null);
 });
 console.log(`core self-check: OK (${n} checks)`);
