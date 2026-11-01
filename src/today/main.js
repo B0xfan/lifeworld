@@ -108,11 +108,14 @@ import { parseClock } from '../core/quickadd';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
-import { vaultFolders, propNames, feedNotes, planning, dailyNotes, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
+import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
 import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
 import { drawRows, blockRow } from '../core/settings';
+import { ringsOf, ringsDue, pruneSeen, ringWhen } from '../core/popups'; // Reminder pop-ups (phase 4)
+import { HEAT_MODES, normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords } from '../core/activity'; // Activity heatmap (phase 4)
+import { SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge } from '../core/feeds'; // News feeds (phase 4)
 import { isHttp, linksOf, saveLinks, calendarEvents, refreshCalendars, calendarErrors, resetCalendars } from '../core/calendars'; // calendar links (launch section 6)
 import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertUnderHeading, newDailyContent, writeDailyNote } from '../core/daily'; // a day's daily note (launch section 5)
 
@@ -803,16 +806,18 @@ const WIDGETS = [
   { id: 'mood', name: 'Mood', desc: 'Last check-in', zone: 'c2' },
   { id: 'habits', name: 'Habits', desc: 'Tick today, see streaks', zone: 'c2' },
   { id: 'clock', name: 'World clock', desc: 'Your time plus places you add', zone: 'c2' },
+  { id: 'heatmap', name: 'Activity heatmap', desc: 'A year of active days', zone: 'c2' },
   { id: 'projects', name: 'Active projects', desc: 'One click to each', zone: 'c3', needs: 'projects' },
   { id: 'journal', name: 'Latest journal', desc: 'A few lines from your last entry', zone: 'c3' },
   { id: 'pinned', name: 'Pinned shortcuts', desc: 'Notes and folders you pick', zone: 'c3' },
   { id: 'journalbox', name: 'Journal box', desc: "Write a line under Journal in today's note", zone: 'c3' },
+  { id: 'news', name: 'News feeds', desc: 'Headlines from feeds you add', zone: 'c3' },
 ];
 // A new install starts with the decided starter set (decision 10): everything else starts off.
-const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox'];
+const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news'];
 // Widgets added at launch that a layout saved before them has never seen: they start off there, so an
 // existing Today page looks as before (criterion 43). Today's tasks only shows for checkbox tasks.
-const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox'];
+const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox', 'heatmap', 'news'];
 // Settings wording for a part that is off.
 /** @type {Record<string, string>} */
 const NEEDS_TEXT = { planner: 'Needs the Planner (off under Parts)', projects: 'Needs Projects (off under Parts)' };
@@ -1055,11 +1060,17 @@ function projectLines(projects, ix) {
   return rows.sort((x, y) => order(x) - order(y) || x.area.localeCompare(y.area, undefined, { sensitivity: 'base' }));
 }
 
+// Reminder pop-ups: what has rung on this device, and how many cards show at once.
+const REMINDERS_SEEN = 'lifeworld-reminders-seen';
+const MAX_REMINDER_CARDS = 3;
 const logic = {
+  ringsOf, ringsDue, pruneSeen, ringWhen,
   normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, sunHere, ringColour, hourLabel,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
+  normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords,
+  cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, feedsStale, newsCard, newsAge,
   greetingLine, scratchPathFor, insertUnderHeading, latestDailyEntry, dayFromNoteName, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, canMoveWidget, setWidgetOn, placeWidget, sameLayout, WIDGETS, STARTER_OFF, ADDED_OFF, ZONES, EXTRA_WIDGETS,
@@ -1078,7 +1089,14 @@ class TodayPlugin extends Plugin {
   /** @type {TodaySettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
 
   async onload() {
+    /** @type {Map<string, HTMLElement>} */
+    this.reminderCards = new Map();
     const saved = /** @type {Fm} */ ((await this.loadData()) || {});
+
+    // Reminder pop-ups: on for a new install, off for one that already has settings, so nobody who gets
+    // their reminders elsewhere has them twice. Saved at once, or the next start could not tell.
+    if (!Object.keys(saved).length) { saved.reminderPopups = true; await this.saveData(saved); }
+    this.reminderPopups = saved.reminderPopups === true;
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
@@ -1089,10 +1107,21 @@ class TodayPlugin extends Plugin {
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
+    this.heatCount = normalizeHeatCount(saved.heatCount);
+    this.activity = normalizeActivity(saved.activity);
+    this.feeds = normalizeFeeds(saved.feeds);
+    this.feedCount = normalizeFeedCount(saved.feedCount);
     // Runs the calendar sync now: (refresh) => Promise<boolean>. Set through LifeWorld's setCalendarSync
     // by a companion add-on; none = the picker saves the choice and the next sync picks it up.
     this.calendarSync = null;
     this.addSettingTab(new TodaySettingTab(this.app, this));
+    // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
+    this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
+    this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity()));
+    this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
+    this.registerInterval(window.setInterval(() => this.checkReminders(), 30000));
+    this.app.workspace.onLayoutReady(() => this.checkReminders());
+    this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
     // First run after the picker shipped: adopt what the sync is already
     // fetching (it carried old ticks over) as the saved choice.
     this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && feedNotes.calendar && file.path === feedNotes.calendar) this.adoptCalendarChoice(); }));
@@ -1128,6 +1157,11 @@ class TodayPlugin extends Plugin {
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
+    this.reminderPopups = saved.reminderPopups === true;
+    this.heatCount = normalizeHeatCount(saved.heatCount);
+    this.activity = normalizeActivity(saved.activity);
+    this.feeds = normalizeFeeds(saved.feeds);
+    this.feedCount = normalizeFeedCount(saved.feedCount);
     this.applyLook();
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (!v) return; if (v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); if (v.data && v.renderHeader) v.renderHeader(); });
   }
@@ -1167,6 +1201,125 @@ class TodayPlugin extends Plugin {
   }
   /** @param {unknown} list */
   async saveHabits(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const habits = normalizeHabits(list); data.habits = habits; await this.saveData(data); this.habits = habits; this.layoutChanged(); }
+
+  /** @param {keyof typeof HEAT_MODES} mode */
+  async saveHeatCount(mode) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.heatCount = mode; await this.saveData(data); this.heatCount = mode; this.layoutChanged(); }
+  /** @param {unknown} list */
+  async saveFeeds(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const feeds = normalizeFeeds(list); data.feeds = feeds; await this.saveData(data); this.feeds = feeds; this.layoutChanged(); }
+  /** @param {unknown} n */
+  async saveFeedCount(n) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.feedCount = normalizeFeedCount(n); await this.saveData(data); this.feedCount = data.feedCount; this.layoutChanged(); }
+
+  // Whether pop-ups can run: only LifeWorld's own tasks have reminders here, and TaskNotes has its own alerts.
+  reminderSource() {
+    const pj = this.projectsPlugin();
+    if (pj && pj.settings && pj.settings.source === 'tasknotes') return 'tasknotes';
+    return this.extSource() ? 'other' : 'notes';
+  }
+  /** @param {boolean} on */
+  async saveReminderPopups(on) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.reminderPopups = !!on; await this.saveData(data); this.reminderPopups = !!on; this.checkReminders(); }
+
+  // Every half minute: shows what has come due, takes down cards of tasks finished or moved elsewhere.
+  // shortcut: lives in the Today part, so with Today off there are no pop-ups; move it if people run the Planner alone.
+  checkReminders() {
+    const on = this.reminderPopups && this.reminderSource() === 'notes';
+    /** @type {Map<string, HTMLElement>} */
+    const cards = this.reminderCards;
+    if (!on) { for (const k of [...cards.keys()]) this.closeReminder(k); return; }
+    const now = Date.now();
+    const today = dayOf(new Date(now));
+    const completed = this.completedStatuses();
+    const rings = [];
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      if (!inTaskFolders(f.path)) continue;
+      const c = this.app.metadataCache.getFileCache(f);
+      const item = c && c.frontmatter ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : null;
+      if (item && item.reminder != null) for (const r of ringsOf(item, today, completed)) rings.push({ ...r, item });
+    }
+    const live = new Set(rings.map((r) => r.key));
+    for (const k of [...cards.keys()]) if (!live.has(k)) this.closeReminder(k);
+    const stored = /** @type {unknown} */ (this.app.loadLocalStorage(REMINDERS_SEEN));
+    const seen = pruneSeen(stored && typeof stored === 'object' ? /** @type {Record<string, number>} */ (stored) : {}, today);
+    const due = ringsDue(rings, now, seen, today).filter((r) => !cards.has(r.key));
+    const show = due.slice(0, Math.max(0, MAX_REMINDER_CARDS - cards.size));
+    for (const r of show) { this.showReminder(r, now); seen[r.key] = 0; }
+    this.app.saveLocalStorage(REMINDERS_SEEN, seen);
+    const more = due.length - show.length;
+    if (this.reminderMore) this.reminderMore.setText(more ? `and ${more} more` : '');
+  }
+
+  /** @param {{ key: string, day: string, due: number, item: TaskItem }} r @param {number} now */
+  showReminder(r, now) {
+    if (!this.reminderStack) {
+      this.reminderStack = document.body.createDiv({ cls: 'lw-reminders', attr: { role: 'status', 'aria-live': 'polite' } });
+      this.reminderMore = this.reminderStack.createDiv({ cls: 'lw-rem-more' });
+    }
+    const { item, key, day } = r;
+    const card = this.reminderStack.createDiv({ cls: 'lw-rem' });
+    this.reminderStack.appendChild(this.reminderMore); // stays last
+    this.reminderCards.set(key, card);
+    const top = card.createDiv({ cls: 'lw-rem-top' });
+    setIcon(top.createSpan(), 'bell');
+    top.createSpan({ text: `Reminder · ${ringWhen(r.due, now)}` });
+    card.createDiv({ cls: 'lw-rem-title', text: item.title });
+    card.createDiv({ cls: 'lw-rem-sub', text: [item.project, timeText(item.time || '')].filter(Boolean).join(' · ') });
+    const btns = card.createDiv({ cls: 'lw-rem-btns' });
+    /** @param {string} text @param {() => unknown} act @param {string} [cls] */
+    const btn = (text, act, cls) => { const b = btns.createEl('button', { text, cls }); b.addEventListener('click', () => act()); };
+    btn('Done', async () => {
+      try { if (!isTaskDone(item, day, this.completedStatuses())) await this.toggleTask(item, day); this.closeReminder(key); this.checkReminders(); }
+      catch (e) { new Notice(e instanceof Error && e.message ? e.message : 'That task could not be finished.'); }
+    }, 'mod-cta');
+    btn('In 10 minutes', () => {
+      const stored = /** @type {unknown} */ (this.app.loadLocalStorage(REMINDERS_SEEN));
+      this.app.saveLocalStorage(REMINDERS_SEEN, { ...(stored && typeof stored === 'object' ? stored : {}), [key]: Date.now() + 600000 });
+      this.closeReminder(key); this.checkReminders();
+    });
+    btn('Open', () => { this.openPath(item.path, true); this.closeReminder(key); this.checkReminders(); });
+    btn('Dismiss', () => { this.closeReminder(key); this.checkReminders(); });
+  }
+
+  /** @param {string} key */
+  closeReminder(key) {
+    const c = this.reminderCards.get(key);
+    if (c) c.remove();
+    this.reminderCards.delete(key);
+    if (!this.reminderCards.size && this.reminderMore) this.reminderMore.setText('');
+  }
+
+  scheduleActivity() {
+    if (this._activityTimer || !zoneOf(this.layout, 'heatmap')) return;
+    /** @type {number | null | undefined} */
+    this._activityTimer = window.setTimeout(() => {
+      this._activityTimer = null;
+      this.keepActivity().catch((e) => console.error('[LifeWorld] the activity count could not be saved', e));
+      this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) v.redrawCard('heatmap'); });
+    }, 60000);
+  }
+
+  // Saves today's count of notes when it has grown: the only record of a day once its notes are edited again.
+  async keepActivity() {
+    if (!zoneOf(this.layout, 'heatmap')) return;
+    const today = dayOf(new Date());
+    const n = datesPerDay(this.app.vault.getMarkdownFiles())[today] || 0;
+    if (n <= (this.activity[today] || 0)) return;
+    /** @type {Record<string, number>} */
+    const was = this.activity;
+    this.activity = pruneActivity({ ...was, [today]: n }, today);
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
+    data.activity = this.activity;
+    await this.saveData(data);
+  }
+
+  // Each day's count for the chosen "A day counts when": day -> number.
+  /** @param {string[]} days @returns {Record<string, number>} */
+  heatCounts(days) {
+    if (this.heatCount === 'daily') {
+      return Object.fromEntries(days.map((d) => { const f = this.dailyFileOf(d); return [d, f && f.stat.size > 0 ? 1 : 0]; }));
+    }
+    const files = this.app.vault.getMarkdownFiles();
+    if (this.heatCount === 'edited') return mergeCounts(datesPerDay(files), this.activity);
+    return tasksDonePerDay(files.filter((f) => inTaskFolders(f.path)).map((f) => { const c = this.app.metadataCache.getFileCache(f); return c && c.frontmatter ? readable(/** @type {Fm} */ (c.frontmatter)) : null; }));
+  }
 
   // The daily note of `day` ('YYYY-MM-DD'), or null.
   /** @param {string} day */
@@ -1832,7 +1985,10 @@ class TodaySettingTab extends PluginSettingTab {
         if (this._cssRef) this.app.workspace.offref(this._cssRef);
         this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
       } },
-      { name: 'Widget setup', aliases: ['World clock', 'Clock look', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder'],
+      { name: 'Reminder pop-ups', desc: this.plugin.reminderSource() === 'tasknotes' ? 'Stays off while TaskNotes is your task source: TaskNotes has its own alerts.' : this.plugin.reminderSource() === 'other' ? 'Only task notes have reminders, so this stays off with your current task source.' : "Shows task reminders while Obsidian is open. Nothing can pop up while it's closed; a reminder missed today shows when you next open it.", render: (s) => {
+        s.addToggle((t) => { t.setValue(this.plugin.reminderPopups && this.plugin.reminderSource() === 'notes'); t.setDisabled(this.plugin.reminderSource() !== 'notes'); t.onChange((v) => this.plugin.saveReminderPopups(v)); });
+      } },
+      { name: 'Widget setup', aliases: ['World clock', 'Clock look', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder', 'Activity heatmap', 'A day counts when', 'News feeds', 'Add a feed', 'Headlines shown'],
         render: (s) => { this.setupHost = blockRow(s, 'a4t-setup', true); this.renderSetup(); } },
       { name: 'Calendars', aliases: ['Refresh list'], render: (s) => {
         this.calHost = blockRow(s, 'a4t-cal-picker', true);
@@ -1967,6 +2123,29 @@ class TodaySettingTab extends PluginSettingTab {
       }
       new Setting(host).setName('Add a calendar link').setDesc('Paste the private address from Google, Apple or Outlook calendar. It stays on this device, like a key: not synced or backed up.')
         .addButton((b) => b.setButtonText('Add').onClick(() => new CalendarLinkModal(this.app, () => this.renderSetup()).open()));
+    }
+    if (on('heatmap')) {
+      new Setting(host).setName('Activity heatmap').setHeading();
+      new Setting(host).setName('A day counts when').setDesc("Older days come from each note's created and last-edited dates, so they can show gaps. While this widget is on, each day is kept. Tasks done reads task notes only.")
+        .addDropdown((d) => { for (const [k, v] of Object.entries(HEAT_MODES)) d.addOption(k, v); d.setValue(plugin.heatCount).onChange((v) => plugin.saveHeatCount(normalizeHeatCount(v))); });
+    }
+    if (on('news')) {
+      new Setting(host).setName('News feeds').setHeading();
+      for (const f of plugin.feeds) {
+        new Setting(host).setName(f.name || f.url).setDesc(f.name ? f.url : '')
+          .addButton((b) => b.setButtonText('Remove').onClick(async () => { await plugin.saveFeeds(plugin.feeds.filter((x) => x !== f)); this.renderSetup(); }));
+      }
+      let url = ''; let name = '';
+      const add = new Setting(host).setName('Add a feed').setDesc('LifeWorld contacts only the sites you add here.');
+      add.addText((t) => { t.setPlaceholder('Feed link'); t.inputEl.setAttr('aria-label', 'Feed link'); t.onChange((v) => { url = v; }); });
+      add.addText((t) => { t.setPlaceholder('Name (optional)'); t.inputEl.setAttr('aria-label', 'Feed name'); t.onChange((v) => { name = v; }); });
+      add.addButton((b) => b.setButtonText('Add').onClick(async () => {
+        const clean = cleanFeedUrl(url);
+        if (!clean) { new Notice('A feed link starts with http:// or https://.'); return; }
+        if (plugin.feeds.some((f) => f.url === clean)) { new Notice('That feed is already on the list.'); return; }
+        await plugin.saveFeeds([...plugin.feeds, { url: clean, name }]); this.renderSetup();
+      }));
+      new Setting(host).setName('Headlines shown').addDropdown((d) => { for (const n of SHOW_CHOICES) d.addOption(String(n), String(n)); d.setValue(String(plugin.feedCount)).onChange((v) => plugin.saveFeedCount(Number(v))); });
     }
     if (on('pinned')) {
       new Setting(host).setName('Pinned shortcuts').setHeading();
@@ -2128,6 +2307,7 @@ class TodayView extends ItemView {
     this.registerEvent(this.app.workspace.on('lifeworld:tasks', () => this.scheduleRefresh())); // a task source changed
     this.registerEvent(this.app.workspace.on('lifeworld:calendars', () => this.scheduleRefresh())); // calendar links read again
     this.registerEvent(this.app.workspace.on('lifeworld:weather', () => this.scheduleRefresh())); // the forecast read again
+    this.registerEvent(this.app.workspace.on('lifeworld:news', () => this.redrawCard('news'))); // the feeds read again
     // Clock, stale flag and midnight rollover.
     this.registerInterval(window.setInterval(() => this.tick(), 30000));
     // The World clock's second hand (only while that widget is drawn).
@@ -2175,6 +2355,14 @@ class TodayView extends ItemView {
     }, 1000);
   }
 
+  // One card draws again, from what it reads itself.
+  /** @param {string} id */
+  redrawCard(id) {
+    const el = this.widgetEls.get(id);
+    if (!this.data || !el || !el.isConnected || this.drag) return;
+    this.renderWidget(id, /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody')), el);
+  }
+
   scheduleRefresh() {
     if (this._timer) window.clearTimeout(this._timer);
     this._timer = window.setTimeout(() => { this._timer = null; this.refresh(); }, 300);
@@ -2184,6 +2372,7 @@ class TodayView extends ItemView {
     if (dayOf(new Date()) !== this.renderedDay) { this.refresh(); return; }
     this.renderClock();
     this.renderWeatherAge();
+    if (zoneOf(this.plugin.layout, 'news') && feedsStale(newsResults(this.app), this.plugin.feeds, Date.now())) refreshNews(this.app, this.plugin.feeds);
   }
 
   /* ---- data ------------------------------------------------------------- */
@@ -2632,6 +2821,8 @@ class TodayView extends ItemView {
       if (id === 'recent') return this.renderRecent(body, el);
       if (id === 'pinned') return this.renderPinned(body, el);
       if (id === 'clock') return this.renderClockWidget(body, el);
+      if (id === 'heatmap') return this.renderHeatmap(body, el);
+      if (id === 'news') return this.renderNews(body, el);
       if (x) return Promise.resolve(/** @type {(body: HTMLElement, el: HTMLElement) => unknown} */ (x.render)(body, el)).catch((e) => this.widgetFailed(id, body, e));
     } catch (e) {
       this.widgetFailed(id, body, e);
@@ -3255,6 +3446,61 @@ class TodayView extends ItemView {
       b.createSpan({ text: n.basename });
       b.addEventListener('click', (e) => this.plugin.openPath(n.path, Keymap.isModEvent(e)));
     }
+  }
+
+  // Activity heatmap (phase 4): the year as a week grid, the streak on top; pointing at a day names it.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderHeatmap(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    plugin.keepActivity().catch((e) => console.error('[LifeWorld] the activity count could not be saved', e));
+    const today = dayOf(new Date());
+    const days = heatDays(today);
+    const counts = plugin.heatCounts(days);
+    const streak = propStreak((d) => (counts[d] || 0) > 0, today);
+    const head = this.cardHead(body, 'Activity', streak ? `${streak}-day streak` : 'No streak yet');
+    head.createSpan({ cls: 'a4t-heat-span', text: 'last 12 months' });
+    const months = body.createDiv({ cls: 'a4t-heat-months', attr: { 'aria-hidden': 'true' } });
+    for (const m of heatMonths(days)) months.createSpan({ text: m.label }).setCssProps({ '--a4t-heat-col': String(m.col + 1) });
+    const active = days.filter((d) => counts[d]).length;
+    const grid = body.createDiv({ cls: 'a4t-heat', attr: { role: 'img', 'aria-label': `${active} active days in the last 12 months` } });
+    for (const d of days) grid.createSpan({ cls: `a4t-heat-l${heatLevel(plugin.heatCount === 'daily' ? (counts[d] ? 6 : 0) : counts[d] || 0)}`, attr: { 'data-day': d } });
+    const foot = body.createDiv({ cls: 'a4t-heat-foot' });
+    const line = foot.createSpan({ text: heatWords(today, counts[today] || 0, plugin.heatCount) });
+    const key = foot.createSpan({ cls: 'a4t-heat-key', attr: { 'aria-hidden': 'true' } });
+    key.createSpan({ text: 'less' });
+    for (const l of [0, 1, 2, 3, 4]) key.createSpan({ cls: `a4t-heat-l${l}` });
+    key.createSpan({ text: 'more' });
+    /** @param {Event} e */
+    const point = (e) => { const d = e.target instanceof HTMLElement ? e.target.dataset.day : ''; if (d) line.setText(heatWords(d, counts[d] || 0, plugin.heatCount)); };
+    grid.addEventListener('mouseover', point);
+    grid.addEventListener('click', point); // a phone has no pointing
+  }
+
+  // News feeds (phase 4): the newest headlines across the feeds; a click opens the article in the browser.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderNews(body, el) {
+    el.addClass('a4t-card');
+    const feeds = this.plugin.feeds;
+    this.cardHead(body, 'News feeds', 'Headlines');
+    if (!feeds.length) { body.createDiv({ cls: 'a4t-empty', text: 'add feeds in settings' }); return; }
+    const results = newsResults(this.app);
+    const now = Date.now();
+    if (feedsStale(results, feeds, now)) refreshNews(this.app, feeds);
+    const card = newsCard(results, feeds, this.plugin.feedCount);
+    for (const n of card.headlines) {
+      const row = n.link ? body.createEl('button', { cls: 'a4t-news-row' }) : body.createDiv({ cls: 'a4t-news-row' });
+      row.createSpan({ cls: 'a4t-news-title', text: n.title });
+      const age = newsAge(n.at, now);
+      row.createSpan({ cls: 'a4t-news-src', text: age ? `${n.source} · ${age}` : n.source });
+      if (n.link) row.addEventListener('click', () => window.open(n.link));
+    }
+    for (const f of card.failed) {
+      const row = body.createDiv({ cls: 'a4t-news-row is-bad' });
+      row.createSpan({ cls: 'a4t-news-title', text: f.source });
+      row.createSpan({ cls: 'a4t-news-src', text: `Couldn't load: ${f.error}` });
+    }
+    if (!card.headlines.length && !card.failed.length) body.createDiv({ cls: 'a4t-empty', text: card.waiting ? 'reading your feeds' : 'no headlines yet' });
   }
 
   // Pinned shortcuts (launch section 4): picked in Settings; a note opens, a folder shows in the file list.

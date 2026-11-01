@@ -445,10 +445,10 @@ const def = L.defaultLayout();
 eq(def.zones.top, ['capture'], 'default top (starter set, decision 10)');
 eq(def.zones.c1, ['morning', 'afternoon', 'todaytasks', 'overdue'], 'default column 1');
 eq([def.zones.c2, def.zones.c3], [['calendar', 'recent', 'mood', 'habits'], ['projects']], 'default columns 2 and 3: the starter set');
-eq(def.hidden, ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox'], 'everything else starts off');
-eq(L.WIDGETS.map((w) => w.id).filter((id) => ['goals', 'health', 'reading', 'news', 'heatmap'].includes(id)), [], 'no placeholder, News feeds or Activity heatmap widget');
+eq(def.hidden, ['weather', 'plannerlink', 'clock', 'heatmap', 'journal', 'pinned', 'journalbox', 'news'], 'everything else starts off');
+eq(L.WIDGETS.map((w) => w.id).filter((id) => ['goals', 'health', 'reading'].includes(id)), [], 'no placeholder widget');
 const saved = L.normalizeLayout({ zones: { top: ['weather', 'capture'], c1: ['morning', 'afternoon', 'overdue', 'plannerlink'], c2: ['calendar', 'mood', 'habits'], c3: ['projects', 'journal'] }, hidden: [] });
-eq([saved.zones.top, saved.zones.c1, saved.zones.c2, saved.zones.c3, saved.hidden], [['weather', 'capture'], ['morning', 'afternoon', 'overdue', 'plannerlink', 'todaytasks'], ['calendar', 'mood', 'habits'], ['projects', 'journal'], ['recent', 'clock', 'pinned', 'journalbox']], 'a layout saved before launch: the same page; the new widgets start off');
+eq([saved.zones.top, saved.zones.c1, saved.zones.c2, saved.zones.c3, saved.hidden], [['weather', 'capture'], ['morning', 'afternoon', 'overdue', 'plannerlink', 'todaytasks'], ['calendar', 'mood', 'habits'], ['projects', 'journal'], ['recent', 'clock', 'heatmap', 'pinned', 'journalbox', 'news']], 'a layout saved before launch: the same page; the new widgets start off');
 eq(L.normalizeLayout(null), def, 'missing layout -> default');
 eq(L.normalizeLayout({ zones: 'x' }), def, 'garbage layout -> default');
 const odd = L.normalizeLayout({ zones: { top: ['capture', 'bogus', 'capture'], c1: ['journal'], c2: [], c3: [] }, hidden: ['mood', 'nope'] });
@@ -737,16 +737,23 @@ async function startupRun(saved) {
       revealLeaf: () => touched.push('revealLeaf'), setActiveLeaf: () => touched.push('setActiveLeaf'),
       updateOptions: () => cm.updated++,
     },
-    metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null },
+    metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null, on: () => ({}), getMarkdownFiles: () => [] },
+    loadLocalStorage: () => null, saveLocalStorage: () => {},
   };
-  Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop,
+  Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop, register: nop, registerInterval: nop,
     registerEditorExtension: (e) => cm.exts.push(e), registerView: nop, addRibbonIcon: nop, addCommand: nop, registerObsidianProtocolHandler: nop });
-  await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0));
+  global.window = { setInterval: () => 0 }; // the pop-up check's timer
+  try { await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0)); } finally { delete global.window; }
   return { p, touched, stored: () => stored, cm };
 }
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
+  eq([on.p.reminderPopups, 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
+  const newInstall = await startupRun({});
+  eq([newInstall.p.reminderPopups, newInstall.stored().reminderPopups], [true, true], 'pop-ups: a new install starts on, saved so the next start still knows');
+  const again = await startupRun(newInstall.stored());
+  eq(again.p.reminderPopups, true, 'pop-ups: still on at the next start');
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
   eq([on.cm.exts.length, on.cm.updated], [0, 0], 'startup: Today adds no editor extension (the marker hiding left with the companion add-on)');
   const off = await startupRun({ ...JSON.parse(JSON.stringify(keep)), openOnStartup: false });
@@ -869,6 +876,61 @@ function nop2() {}
   ok(css.length > 0 && !/#[0-9a-f]{3,8}\b|rgb\(/i.test(css) && /a4t-prow \{[^}]*overflow-wrap: anywhere/.test(css), 'project lines wrap and use theme colours only');
   ok(/a4t-prow \{[^}]*justify-content: flex-start/.test(css) && /a4t-prow \{[^}]*text-align: left/.test(css), 'project lines start at the left, not Obsidian\'s centred button default');
   ok(!/a4t-areah|setIcon\(b\.createSpan\(\{ cls: 'a4t-ic' \}\), 'square-kanban'\)/.test(require('fs').readFileSync(path.join(__dirname, '..', 'src', 'today', 'main.js'), 'utf8')), 'no area headings, no row icons');
+}
+
+// Reminder pop-ups (phase 4).
+{
+  const when = (d, hm) => new Date(`${d}T${hm}:00`).getTime();
+  const one = { path: 'T/a.md', title: 'a', status: 'open', due: '2026-11-02', plannedDay: '2026-11-02', time: '14:00', reminder: 15, recurrenceRaw: null, recurrence: null, completeInstances: [], skippedInstances: [] };
+  eq(L.ringsOf(one, '2026-11-02'), [{ key: 'T/a.md|2026-11-02|14:00|15', day: '2026-11-02', due: when('2026-11-02', '14:00'), at: when('2026-11-02', '13:45') }], 'pop-up: a one-off task rings its reminder before its time');
+  eq([L.ringsOf({ ...one, reminder: null }, '2026-11-02'), L.ringsOf({ ...one, time: null }, '2026-11-02'), L.ringsOf({ ...one, status: 'done' }, '2026-11-02'), L.ringsOf({ ...one, status: 'someday' }, '2026-11-02')], [[], [], [], []], 'pop-up: no reminder, no time, done or someday never rings');
+  const daily = { ...one, path: 'T/d.md', due: null, plannedDay: null, reminder: 1440, recurrenceRaw: 'FREQ=DAILY', recurrence: L.parseRRule('FREQ=DAILY', '2026-10-01') };
+  eq(L.ringsOf(daily, '2026-11-02').map((r) => r.day), ['2026-11-02', '2026-11-03'], 'pop-up: a repeating task rings for each day its reminder reaches');
+  eq(L.ringsOf({ ...daily, reminder: 0, completeInstances: ['2026-11-02'] }, '2026-11-02'), [], 'pop-up: a finished day of a repeating task does not ring');
+  eq(L.ringsOf({ ...daily, reminder: 0, skippedInstances: ['2026-11-02'] }, '2026-11-02'), [], 'pop-up: a skipped day does not ring');
+  const r = L.ringsOf(one, '2026-11-02').map((x) => ({ ...x, item: one }));
+  const before = when('2026-11-02', '13:44'), after = when('2026-11-02', '13:46');
+  eq([L.ringsDue(r, before, {}, '2026-11-02').length, L.ringsDue(r, after, {}, '2026-11-02').length], [0, 1], 'pop-up: rings at its time');
+  eq(L.ringsDue(r, after, { [r[0].key]: 0 }, '2026-11-02').length, 0, 'pop-up: never twice');
+  eq([L.ringsDue(r, after, { [r[0].key]: after + 1 }, '2026-11-02').length, L.ringsDue(r, after, { [r[0].key]: after }, '2026-11-02').length], [0, 1], 'pop-up: "In 10 minutes" brings it back then');
+  eq(L.ringsDue(r, when('2026-11-03', '09:00'), {}, '2026-11-03').length, 0, 'pop-up: missed on an earlier day is skipped');
+  eq(L.ringsDue(r, when('2026-11-02', '20:00'), {}, '2026-11-02').length, 1, 'pop-up: missed earlier today shows when Obsidian opens');
+  eq(Object.keys(L.pruneSeen({ 'a|2026-11-02|14:00|0': 0, 'b|2026-10-30|14:00|0': 0, 'c|2026-10-31|14:00|0': 0 }, '2026-11-02')).sort(), ['a|2026-11-02|14:00|0', 'c|2026-10-31|14:00|0'], 'pop-up: old records go');
+  eq(['2026-11-02T13:45', '2026-11-02T14:00:30', '2026-11-02T14:10', '2026-11-02T10:00', '2026-11-02T15:30'].map((s) => L.ringWhen(when('2026-11-02', '14:00'), new Date(s).getTime())), ['in 15 min', 'now', '10 min ago', 'in 4 h', '2 h ago'], 'pop-up: the time in words');
+}
+
+// Activity heatmap and News feeds (phase 4).
+{
+  eq([L.normalizeHeatCount('daily'), L.normalizeHeatCount('tasks'), L.normalizeHeatCount('x'), L.normalizeHeatCount()], ['daily', 'tasks', 'edited', 'edited'], 'heatmap: a damaged choice is Notes edited');
+  eq(L.normalizeActivity({ '2026-10-01': 3, '2026-10-02': 0, bad: 4, '2026-10-03': 1.5, '2026-10-04': 'x' }), { '2026-10-01': 3 }, 'heatmap: only whole counts on real days are kept');
+  eq(Object.keys(L.pruneActivity({ '2026-11-01': 1, '2025-09-27': 1, '2025-09-26': 1 }, '2026-11-01')).sort(), ['2025-09-27', '2026-11-01'], 'heatmap: kept days older than 400 days go');
+  const at = (d, h) => new Date(`${d}T${h}:00:00`).getTime();
+  eq(L.datesPerDay([{ stat: { ctime: at('2026-10-01', '09'), mtime: at('2026-10-01', '17') } }, { stat: { ctime: at('2026-10-01', '09'), mtime: at('2026-10-02', '09') } }, { stat: null }]), { '2026-10-01': 2, '2026-10-02': 1 }, 'heatmap: a note counts once a day, on the days it was created and last edited');
+  eq(L.mergeCounts({ a: 1, b: 5 }, { b: 2, c: 3 }), { a: 1, b: 5, c: 3 }, 'heatmap: each day takes the higher count');
+  eq(L.tasksDonePerDay([{ completedDate: '2026-10-01' }, { completedDate: '2026-10-01T10:00', complete_instances: ['2026-10-02'] }, { complete_instances: '2026-10-02' }, null, { completedDate: 'soon' }]), { '2026-10-01': 2, '2026-10-02': 2 }, 'heatmap: tasks done per day, repeating ones per finished day');
+  eq([0, 1, 2, 3, 5, 6, 10, 11].map(L.heatLevel), [0, 1, 1, 2, 2, 3, 3, 4], 'heatmap: five shades');
+  const hd = L.heatDays('2026-11-01'); // a Sunday
+  eq([hd[0], hd[hd.length - 1], hd.length], ['2025-11-02', '2026-11-01', 365], 'heatmap: from a Sunday 52 weeks back to today');
+  const hd2 = L.heatDays('2026-11-04'); // a Wednesday
+  eq([hd2[0], hd2.length % 7, new Date(`${hd2[0]}T12:00:00`).getDay()], ['2025-11-02', 4, 0], 'heatmap: a part week ends on today, the first day stays a Sunday');
+  const hm = L.heatMonths(hd);
+  eq([hm[0].label, hm.length, hm.every((m) => m.col > 0 && m.col < 53)], ['Dec', 12, true], 'heatmap: a label for each month that starts on the grid');
+  eq([L.heatWords('2026-03-03', 6, 'edited'), L.heatWords('2026-03-03', 1, 'edited'), L.heatWords('2026-03-03', 1, 'daily'), L.heatWords('2026-03-03', 0, 'daily'), L.heatWords('2026-03-03', 2, 'tasks')], ['Mar 3: 6 notes edited', 'Mar 3: 1 note edited', 'Mar 3: daily note written', 'Mar 3: no daily note', 'Mar 3: 2 tasks done'], 'heatmap: a day in words');
+  eq(L.propStreak((d) => ['2026-10-30', '2026-10-31'].includes(d), '2026-11-01'), 2, 'heatmap: a streak still runs before anything is done today');
+  const noOff = L.normalizeLayout({ zones: { top: ['capture'], c1: [], c2: [], c3: [] }, hidden: [] });
+  ok(noOff.hidden.includes('heatmap') && noOff.hidden.includes('news'), 'a layout saved before them keeps both off');
+  const fresh = L.normalizeLayout(null);
+  ok(fresh.hidden.includes('heatmap') && fresh.hidden.includes('news'), 'a new install starts with both off');
+
+  eq([L.cleanFeedUrl(' https://a.example/feed '), L.cleanFeedUrl('http://a.example/'), L.cleanFeedUrl('javascript:alert(1)'), L.cleanFeedUrl('file:///x'), L.cleanFeedUrl('a.example'), L.cleanFeedUrl(''), L.cleanFeedUrl('/rss', 'https://a.example/x')], ['https://a.example/feed', 'http://a.example/', '', '', '', '', 'https://a.example/rss'], 'feeds: only http and https links');
+  eq(L.normalizeFeeds([{ url: 'https://a.example/f', name: ' A ' }, { url: 'https://a.example/f' }, { url: 'ftp://x/' }, null, { url: 'https://b.example/f', name: 3 }]), [{ url: 'https://a.example/f', name: 'A' }, { url: 'https://b.example/f', name: '' }], 'feeds: saved list cleaned');
+  eq([5, 8, 12, 7, undefined].map(L.normalizeFeedCount), [5, 8, 12, 8, 8], 'feeds: headlines shown');
+  const f1 = { url: 'https://a.example/f', name: '' }, f2 = { url: 'https://b.example/f', name: 'B' }, f3 = { url: 'https://c.example/f', name: 'C' };
+  const res = { [f1.url]: { at: 100, title: 'Paper A', items: [{ title: 'old', link: '', at: 10 }, { title: 'new', link: '', at: 30 }], error: '' }, [f2.url]: { at: 100, title: '', items: [{ title: 'mid', link: '', at: 20 }], error: "the site didn't answer" } };
+  const card = L.newsCard(res, [f1, f2, f3], 2);
+  eq([card.headlines.map((h) => [h.title, h.source]), card.failed, card.waiting], [[['new', 'Paper A'], ['mid', 'B']], [{ source: 'B', error: "the site didn't answer" }], true], 'feeds: newest across feeds, a failed one named, its last headlines kept');
+  eq([L.feedsStale(res, [f1], 100 + 3599999), L.feedsStale(res, [f1], 100 + 3600000), L.feedsStale(res, [f3], 100), L.feedsStale({}, [], 100)], [false, true, true, false], 'feeds: read again after an hour; no feeds, nothing to read');
+  eq([L.newsAge(0, 1e9), L.newsAge(1e9 - 5 * 60000, 1e9), L.newsAge(1e9 - 3 * 3600000, 1e9), L.newsAge(1e9 - 2 * 86400000, 1e9)], ['', '5 min', '3 h', '2 d'], 'feeds: age');
 }
 
 startupChecks.then(writeBack).then(() => writeBackHabits()).then(() => {

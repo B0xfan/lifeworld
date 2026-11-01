@@ -165,3 +165,12 @@ html:not(#a4sb-guard) .a4sb { padding: 0; } /* outranks the view's own padding *
 .a4sb .a4sb-tools .clickable-icon.is-open, .a4sb-files-tools .clickable-icon.is-open { color: var(--ink-paper, var(--icon-color-hover)); background: var(--ink-hover-wash, var(--background-modifier-hover)); }
 /* An area under Work / Personal projects (0.1.5): the stack icon before its name. */
 .a4sb-file .a4sb-life-icon { flex: none; color: var(--a4sb-faint); }
+
+/* Settings › Sidebar › My groups (phase 4) */
+.a4sb-gr { padding: 9px 11px; margin-bottom: 9px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); }
+.a4sb-gr-head { display: flex; align-items: center; gap: 4px; }
+.a4sb-gr-head input { flex: 1; min-width: 0; }
+.a4sb-gr-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
+.a4sb-gr-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 7px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-small); }
+.a4sb-gr-chip .clickable-icon { padding: 2px; height: auto; }
+.a4sb-gr-foot { display: flex; justify-content: space-between; gap: 8px; }

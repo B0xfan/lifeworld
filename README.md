@@ -29,6 +29,8 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - World clock: your time and any places you add, on a 24-hour sun ring or a classic dial
 - Active projects, recent notes, pinned shortcuts
 - Latest journal entry, and a journal box that writes a line into today's daily note
+- Activity heatmap: a year of active days and your current streak
+- News feeds: the newest headlines from feeds you add, off until you turn it on
 - A Planner shortcut
 
 A new install starts with Quick capture, the task cards, Calendar, Recent notes, Mood, Habits and
@@ -113,6 +115,7 @@ LifeWorld connects to the internet only for features you switch on:
 | Tides (part of Weather) | Open-Meteo marine (`marine-api.open-meteo.com`), or [Stormglass](https://stormglass.io) (`api.stormglass.io`) with your own key, at most once a day | The same latitude and longitude |
 | Town search (Weather) and place search (World clock) | Open-Meteo geocoding (`geocoding-api.open-meteo.com`) | The letters you type, from 3 letters on |
 | Calendar | The calendar links you add (Google, Apple, Outlook or any ICS address) | A request to each link, every 30 minutes |
+| News feeds | The feed sites you add | A request to each feed, when the Today page opens and at most once an hour |
 | Todoist tasks | Todoist (`api.todoist.com`) with your token | Your token; reads your tasks and writes the changes you make |
 | ClickUp tasks | ClickUp (`api.clickup.com`) with your token | Your token; reads your tasks and writes the changes you make |
 

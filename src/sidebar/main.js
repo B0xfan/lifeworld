@@ -41,7 +41,7 @@
 'use strict';
 
 import { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normalizePath, setIcon, Platform, PluginSettingTab, Setting, FuzzySuggestModal } from 'obsidian';
-import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
+import { partOf, ADDON, HOST } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
 import { sidebarContent } from '../core/vault';
@@ -78,6 +78,9 @@ const VIRTUAL = {
 };
 /** @param {string} n */
 const itemFolder = (n) => (VIRTUAL[n] ? VIRTUAL[n].folder : n);
+// A group's folder in the vault: inside the base folder, or at the top when there is none (a new install).
+/** @param {string} n */
+const lifePath = (n) => (SBC.life ? `${SBC.life}/${itemFolder(n)}` : itemFolder(n));
 /** @param {Fm | null | undefined} fm */
 function sphereOf(fm) {
   const v = fm && typeof fm.sphere === 'string' ? fm.sphere.trim().toLowerCase() : '';
@@ -190,7 +193,8 @@ function buildLifeGroups(myLifeFolderNames) {
     return { id: g.id, label: g.label, items };
   });
   const rest = myLifeFolderNames.filter((n) => !used.has(n)).sort(collator.compare);
-  if (rest.length) groups.push({ id: 'more', label: 'More', items: rest });
+  // No base folder: the ungrouped ones stay under Folders.
+  if (SBC.life && rest.length) groups.push({ id: 'more', label: 'More', items: rest });
   return groups.filter((g) => g.items.length);
 }
 
@@ -413,7 +417,7 @@ function planRename(srcPath, newBase, exists) {
 function activeGroupFor(activePath, groups, classify) {
   if (!activePath) return null;
   for (const g of groups) for (const n of g.items) {
-    if (!activePath.startsWith(`${SBC.life}/${itemFolder(n)}/`)) continue;
+    if (!activePath.startsWith(`${lifePath(n)}/`)) continue;
     if (!VIRTUAL[n]) return g.id;
     if (classify && classify(activePath) === VIRTUAL[n].kind) return g.id;
   }
@@ -505,8 +509,8 @@ function hiddenUnderRooms(groups) {
   /** @type {Set<string>} */
   const out = new Set();
   if (!groups || !groups.length) return out;
-  out.add(SBC.life);
-  for (const g of groups) for (const n of g.items) out.add(`${SBC.life}/${itemFolder(n)}`);
+  if (SBC.life) out.add(SBC.life);
+  for (const g of groups) for (const n of g.items) out.add(lifePath(n));
   return out;
 }
 
@@ -762,9 +766,9 @@ class SidebarView extends ItemView {
     const vaultRoot = this.app.vault.getRoot();
     const rooms = findRoomFolders(vaultRoot.children.filter((c) => c instanceof TFolder).map((c) => c.path));
     const myLife = SBC.life ? this.folder(SBC.life) : null;
-    const groups = buildLifeGroups(myLife ? myLife.children.filter((c) => c instanceof TFolder).map((c) => c.name) : []);
+    const groups = buildLifeGroups((myLife || (SBC.life ? null : vaultRoot))?.children.filter((c) => c instanceof TFolder).map((c) => c.name) || []);
     this.groups = groups;
-    const countFolders = rooms.map((r) => r.path).concat(groups.flatMap((g) => g.items.map((n) => `${SBC.life}/${itemFolder(n)}`)));
+    const countFolders = rooms.map((r) => r.path).concat(groups.flatMap((g) => g.items.map((n) => lifePath(n))));
     this.hideInRooms = hiddenUnderRooms(groups);
     this.counts = Object.assign(
       countNotes(filePaths, countFolders),
@@ -831,7 +835,7 @@ class SidebarView extends ItemView {
 
     // My Life
     if (groups.length) {
-      const sec = this.section(scroll, 'mylife', nameOf(SBC.life));
+      const sec = this.section(scroll, 'mylife', SBC.life ? nameOf(SBC.life) : 'My groups');
       for (const g of groups) {
         const open = isGroupOpen(g.id, st.groups, activeGroup);
         const wrap = sec.createDiv({ cls: 'a4sb-group', attr: { 'data-group': g.id } });
@@ -853,6 +857,7 @@ class SidebarView extends ItemView {
     // Rooms; with none set, the top folders under "Folders" (as drawn in the step 0 mockup)
     const rs = this.section(scroll, 'rooms', SBC.rooms.length ? 'Rooms' : 'Folders');
     for (const r of rooms) {
+      if (!SBC.life && this.hideInRooms.has(r.path)) continue; // in a group above
       const f = this.folder(r.path);
       const box = rs.createDiv();
       this.folderRow(box, /** @type {TFolder} */ (f), {
@@ -965,7 +970,7 @@ class SidebarView extends ItemView {
       });
       return;
     }
-    const path = `${SBC.life}/${name}`;
+    const path = lifePath(name);
     const f = this.folder(path);
     if (!f) return;
     const box = parent.createDiv();
@@ -1600,6 +1605,69 @@ class FolderPickModal extends FuzzySuggestModal {
   onChooseItem(f) { this.onPick(f.path); }
 }
 
+// Settings › Sidebar › My groups (phase 4). Each change is saved and shows in the Sidebar at once; nothing
+// here moves or changes a folder. shortcut: folders directly in the base folder only; widen if people ask.
+class GroupsModal extends Modal {
+  /** @param {import('obsidian').App} app @param {() => void} onDone */
+  constructor(app, onDone) { super(app); this.onDone = onDone; }
+  onOpen() { this.titleEl.setText('My groups'); this.modalEl.addClass('a4sb-groups-modal'); this.draw(); }
+  // A change to the saved groups, read fresh each time: saving replaces them.
+  /** @param {(groups: { id: string, label: string, folders: string[] }[]) => { id: string, label: string, folders: string[] }[]} change @param {boolean} [noDraw] */
+  async save(change, noDraw) {
+    if (HOST.setSidebarGroups) await HOST.setSidebarGroups(change(SBC.groups));
+    if (!noDraw) this.draw();
+  }
+  // The folders a group can take: in the base folder, in no group yet.
+  addable() {
+    const base = SBC.life ? this.app.vault.getAbstractFileByPath(SBC.life) : this.app.vault.getRoot();
+    const used = new Set(SBC.groups.flatMap((g) => g.folders.map(itemFolder)));
+    return base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => c.path) : [];
+  }
+  draw() {
+    const { contentEl } = this;
+    contentEl.empty();
+    if (!SBC.groups.length) contentEl.createDiv({ cls: 'setting-item-description a4sb-sort-empty', text: 'No groups yet. A group gathers folders under one name in the Sidebar. Your folders and notes stay where they are.' });
+    SBC.groups.forEach((g, i, all) => {
+      const box = contentEl.createDiv({ cls: 'a4sb-gr' });
+      const head = box.createDiv({ cls: 'a4sb-gr-head' });
+      const name = head.createEl('input', { type: 'text', value: g.label, attr: { 'aria-label': 'Group name' } });
+      name.addEventListener('change', () => {
+        const label = name.value.trim();
+        if (!label) { new Notice('A group needs a name.'); name.value = g.label; return; }
+        // No redraw: the click that moved focus here would land on a button that is gone.
+        this.save((list) => list.map((x) => (x.id === g.id ? { ...x, label } : x)), true);
+      });
+      /** @param {string} ic @param {string} label @param {number} step */
+      const move = (ic, label, step) => {
+        const b = head.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': label } });
+        setIcon(b, ic);
+        b.disabled = !all[i + step];
+        b.addEventListener('click', () => this.save((list) => { const next = list.slice(); const at = next.findIndex((x) => x.id === g.id); next.splice(at + step, 0, next.splice(at, 1)[0]); return next; }));
+      };
+      move('arrow-up', `Move ${g.label} up`, -1);
+      move('arrow-down', `Move ${g.label} down`, 1);
+      head.createEl('button', { text: 'Delete', attr: { 'aria-label': `Delete group ${g.label}` } }).addEventListener('click', () => this.save((list) => list.filter((x) => x.id !== g.id)));
+      const chips = box.createDiv({ cls: 'a4sb-gr-chips' });
+      for (const n of g.folders) {
+        const chip = chips.createSpan({ cls: 'a4sb-gr-chip', text: itemLabel(n) });
+        const x = chip.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': `Remove ${itemLabel(n)} from ${g.label}` } });
+        setIcon(x, 'x');
+        x.addEventListener('click', () => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.filter((z) => z !== n) } : y))));
+      }
+      chips.createEl('button', { text: 'Add a folder' }).addEventListener('click', () => {
+        const ok = new Set(this.addable());
+        if (!ok.size) { new Notice('Every folder is already in a group.'); return; }
+        const skip = new Set(this.app.vault.getAllLoadedFiles().filter((f) => f instanceof TFolder && !ok.has(f.path)).map((f) => f.path));
+        new FolderPickModal(this.app, (/** @type {string} */ path) => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.concat(nameOf(path)) } : y))), skip).open();
+      });
+    });
+    const foot = contentEl.createDiv({ cls: 'a4sb-gr-foot' });
+    foot.createEl('button', { text: 'New group' }).addEventListener('click', () => this.save((list) => [...list, { id: `g-${Date.now().toString(36)}`, label: 'New group', folders: [] }]));
+    foot.createEl('button', { text: 'Done', cls: 'mod-cta' }).addEventListener('click', () => this.close());
+  }
+  onClose() { this.contentEl.empty(); this.onDone(); }
+}
+
 class NewestFirstListModal extends Modal {
   /** @param {import('obsidian').App} app @param {SidebarPlugin} plugin @param {() => void} [onDone] */
   constructor(app, plugin, onDone) { super(app); this.plugin = plugin; this.onDone = onDone; }
@@ -1636,6 +1704,8 @@ class SidebarSettingTab extends PluginSettingTab {
     const entries = Object.entries(sort().perFolder).sort((a, b) => collator.compare(a[0], b[0]));
     // No own heading: LifeWorld's page puts the first group under "Sidebar" (decided 2026-10-13).
     return [{ type: 'group', cls: 'a4sb-settings', items: [
+      { name: 'My groups', desc: SBC.groups.length ? SBC.groups.map((g) => g.label).join(', ') : 'Gather folders under your own names.',
+        render: (s) => s.addButton((b) => b.setButtonText('Edit').onClick(() => new GroupsModal(this.app, () => this.redraw()).open())) },
       { name: 'Dates', desc: 'Notes whose name starts with a date are sorted by the real date and time.',
         render: (s) => s.addDropdown((d) => d.addOption('last', 'Newest last').addOption('first', 'Newest first').setValue(sort().dates).onChange((v) => save({ dates: /** @type {'first' | 'last'} */ (v) }))) },
       { name: 'Always newest first in', desc: nf.length ? nf.map(folderDisplay).join(', ') : 'No folders.',
@@ -1672,6 +1742,6 @@ export default SidebarPlugin;
 SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
-  findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
+  lifePath, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

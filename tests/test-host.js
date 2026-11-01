@@ -796,6 +796,7 @@ const start = async (data) => {
   eq([VLT.brand, VLT.life, VLT.groups, VLT.rooms, VLT.basesSkip], ['LifeWorld', '', [], [], []], 'new install: no Sidebar groups, rooms or skipped bases; named LifeWorld');
   eq(SBL.findRoomFolders(['Notes', 'Attachments', 'daily', '03 Desk']), [['03 Desk', 'folder'], ['Attachments', 'folder'], ['daily', 'folder'], ['Notes', 'folder']].map(([name, icon]) => ({ name, icon, path: name })), 'new install: every top folder, A to Z, plain (no room colour)');
   eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
+  eq([SBL.lifePath('Clients'), SBL.buildLifeGroups(['Clients', 'Notes'])], ['Clients', []], 'new install: no groups, nothing grouped; top folders stay under Folders');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
@@ -915,7 +916,7 @@ const start = async (data) => {
       const row = (name) => wrows().find((r) => r.rec.name === name);
       eq(groups(), ['Top strip', 'Left', 'Middle', 'Right'], 'widget list grouped Top, Left, Middle, Right');
       eq(wrows().map((r) => [r.rec.name, r.rec.on]), [['Quick capture', true], ['Weather', false], ['Morning tasks', true], ['Afternoon tasks', true], ['Overdue', true], ['Planner shortcut', false],
-        ['Calendar', true], ['Recent notes', true], ['Mood', true], ['Habits', true], ['World clock', false], ['Active projects', false], ['Latest journal', false], ['Pinned shortcuts', false], ['Journal box', false]], 'every launch widget listed with its switch; the starter set on; the checkbox card left out for note tasks');
+        ['Calendar', true], ['Recent notes', true], ['Mood', true], ['Habits', true], ['World clock', false], ['Activity heatmap', false], ['Active projects', false], ['Latest journal', false], ['Pinned shortcuts', false], ['Journal box', false], ['News feeds', false]], 'every launch widget listed with its switch; the starter set on; the checkbox card left out for note tasks');
       const pj = row('Active projects');
       eq([pj.rec.desc, pj.rec.disabled, pj.settingEl.cls.includes('lw-dim')], ['Needs Projects (off under Parts)', true, true], 'a widget whose part is off: greyed, says which part, cannot be switched on');
       eq(row('Quick capture').rec.extras.map((b) => !!b.disabled), [true, true], 'Top strip: the only shown widget cannot move');

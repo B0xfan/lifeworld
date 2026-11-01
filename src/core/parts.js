@@ -18,4 +18,8 @@ function partOf(app, id) {
   return PARTS[id] || (app && app.plugins && app.plugins.plugins ? /** @type {PartTypes[K] | undefined} */ (app.plugins.plugins[id]) : null) || null;
 }
 
-export { PARTS, ADDON, partOf };
+// LifeWorld's own settings, for a part that changes them (the Sidebar's groups). Set by src/main.js.
+/** @type {{ setSidebarGroups: ((groups: { id: string, label: string, folders: string[] }[]) => Promise<void>) | null }} */
+const HOST = { setSidebarGroups: null };
+
+export { PARTS, ADDON, HOST, partOf };

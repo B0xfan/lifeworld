@@ -6,7 +6,7 @@
 'use strict';
 
 import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
-import { PARTS, ADDON } from './core/parts';
+import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
 import { linksOf } from './core/calendars';
@@ -112,6 +112,7 @@ class LifeWorldPlugin extends Plugin {
     this.ondisk = /** @type {LwStore} */ (copy(this.store)); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
     if (this.fileStale) this.writeStore().catch((e) => console.error('LifeWorld: settings merged by Sync could not be saved', e));
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
+    PART_HOST.setSidebarGroups = (groups) => this.setVaultSettings({ sidebarGroups: groups });
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
     /** @type {LifeWorldSettingTab | null} LifeWorld's settings page (it sets this itself) */
@@ -341,7 +342,7 @@ class LifeWorldPlugin extends Plugin {
   // Settings › Your vault (and Planning): change = { folders: {...} }, { feeds: {...} }, { names: {...} } or { placeOnDay }, merged into what
   // is saved (feeds: the note paths, set by an owner's companion add-on; no row, build plan section 2).
   // Every part reads the new folders and names from the next time it looks; open views redraw.
-  /** @param {{ folders?: Record<string, string>, feeds?: Record<string, string>, names?: Record<string, string>, placeOnDay?: string }} change */
+  /** @param {{ folders?: Record<string, string>, feeds?: Record<string, string>, names?: Record<string, string>, placeOnDay?: string, sidebarGroups?: { id: string, label: string, folders: string[] }[] }} change */
   async setVaultSettings(change) {
     const h = this.store[HOST] || {};
     const v = /** @type {Fm} */ (h.vault || {});
@@ -351,6 +352,7 @@ class LifeWorldPlugin extends Plugin {
     if (change.feeds) next.feeds = { .../** @type {Fm} */ (v.feeds || {}), ...change.feeds };
     if (change.names) next.names = change.names;
     if (change.placeOnDay) next.placeOnDay = change.placeOnDay;
+    if (change.sidebarGroups) next.sidebar = { .../** @type {Fm} */ (v.sidebar || {}), groups: change.sidebarGroups };
     this.store[HOST] = { ...h, vault: next };
     this.applyVault(next);
     await this.writeStore();
