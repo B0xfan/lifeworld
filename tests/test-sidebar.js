@@ -286,13 +286,8 @@ const OWNER_SORT = {
     open.close();
     await open.p.placeFirstTime();
     eq(open.placedCount(), 0, 'sidebar: closing it later on that device is respected');
-    // An update in a running app: the open tab is seen before the reload, and is being rebuilt by the time of the look.
-    const updating = device(0);
-    await updating.p.placeFirstTime(true);
-    eq(updating.placedCount(), 0, 'sidebar: an update in a running app adds no second tab');
-    await updating.p.placeFirstTime(false);
-    eq(updating.placedCount(), 0, 'sidebar: closed after that update, it stays closed at the next start');
-    ok(/const hadTab = this\.app\.workspace\.getLeavesOfType\(VIEW_TYPE\)\.length > 0;[\s\S]*?this\.registerView\(VIEW_TYPE/.test(fs.readFileSync(path.join(__dirname, '../src/sidebar/main.js'), 'utf8')), 'sidebar: the open tab is looked for before the view registers');
+    // An update in a running app: the open tab is noted before the view registers and starts its rebuild.
+    ok(/getLeavesOfType\(VIEW_TYPE\)\.length\) this\.app\.saveLocalStorage\(PLACED_KEY, true\);[\s\S]*?this\.registerView\(VIEW_TYPE/.test(src), 'sidebar: an open tab is noted before the view registers');
     console.log(`\n${n} checks, ${failed} failed`);
     process.exit(failed ? 1 : 0);
   })().catch((e) => { console.error(e); process.exit(1); });

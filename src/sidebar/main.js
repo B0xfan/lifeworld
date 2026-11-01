@@ -1433,8 +1433,9 @@ class SidebarPlugin extends Plugin {
     /** @type {SidebarState} */
     this.state = { groups: obj(sv.groups), sections: obj(sv.sections), open: obj(sv.open), sort: normalizeSort(sv.sort) };
     const sortIsNew = !sv.sort;
-    // An update in a running app: registerView starts rebuilding an open tab, and it cannot be seen until that ends.
-    const hadTab = this.app.workspace.getLeavesOfType(VIEW_TYPE).length > 0;
+    // An update in a running app: registerView starts rebuilding an open tab, and it cannot be seen until that
+    // ends. So an open tab counts as placed here, before the view registers.
+    if (this.app.workspace.getLeavesOfType(VIEW_TYPE).length) this.app.saveLocalStorage(PLACED_KEY, true);
     this.registerView(VIEW_TYPE, (leaf) => new SidebarView(leaf, this));
     this.addSettingTab(new SidebarSettingTab(this.app, this));
     // A folder renamed or moved keeps its sort setting (and its subfolders').
@@ -1455,7 +1456,7 @@ class SidebarPlugin extends Plugin {
     }
     this.chrome = new FilesChrome(this);
     this.app.workspace.onLayoutReady(async () => {
-      try { await this.placeFirstTime(hadTab); } catch (e) { console.error('LifeWorld: the Sidebar tab could not be added', e); }
+      try { await this.placeFirstTime(); } catch (e) { console.error('LifeWorld: the Sidebar tab could not be added', e); }
       // First run of 0.8.0: write the pre-filled sort settings, so the phone
       // and the settings page read the same list.
       if (sortIsNew) await this.saveState();
@@ -1467,10 +1468,9 @@ class SidebarPlugin extends Plugin {
 
   // First run on this device only: add the tab next to Files and show it. After that
   // Obsidian's own layout memory decides (closing it is respected).
-  /** @param {boolean} [hadTab] open before this start */
-  async placeFirstTime(hadTab) {
+  async placeFirstTime() {
     if (this.app.loadLocalStorage(PLACED_KEY)) return;
-    if (!hadTab && !this.app.workspace.getLeavesOfType(VIEW_TYPE).length) { if (IS_MOBILE) await this.placeInDrawer(); else await this.activate(); }
+    if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) { if (IS_MOBILE) await this.placeInDrawer(); else await this.activate(); }
     this.app.saveLocalStorage(PLACED_KEY, true);
   }
 
