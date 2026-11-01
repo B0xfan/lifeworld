@@ -54,17 +54,17 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   assert.deepStrictEqual(drawn, ['a', 'B'], 'every area, A to Z');
   assert.ok(!find(ap.act, 'List'), 'no List / Board on the Areas page');
   assert.strictEqual(find(ap.act, 'Areas').className, 'is-on', 'Areas is on');
-  // Opened as "Personal projects", then the Work / Personal buttons cleared: the Areas page follows
+  // The Areas page follows
   // the buttons, not how the tab was opened (owner bug report 2026-10-28), and shows the buttons itself.
   let buttons = 0;
   const pg = () => { const n = node(); n.act = node(); return n; };
-  const pv = { ...av, state: { focus: 'personal' }, area: null, areaButtons() { buttons++; } };
+  const pv = { ...av, area: null, areaButtons() { buttons++; } };
   let actions = null; let added;
   pv.head = (p, c, t, a) => { actions = a; };
   pv.plugin = { ...host2, addArea(side) { added = side; } };
   drawn = null;
   plugin.ProjectsView.prototype.renderOverview.call(pv, pg());
-  assert.deepStrictEqual(drawn, ['a', 'B'], 'buttons cleared: every area, even in a Personal tab');
+  assert.deepStrictEqual(drawn, ['a', 'B'], 'no button pressed: every area');
   assert.strictEqual(buttons, 1, 'the Areas page has the Work / Personal buttons');
   added = 'x'; actions.find((x) => x && x.label === '+ Add area').run();
   assert.strictEqual(added, null, 'buttons cleared: + Add area starts with no side chosen');
@@ -79,21 +79,21 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   // Projects > List follows the same buttons (owner task 2026-10-28): the areas, projects and tasks it lists,
   // whatever the tab was opened from. Same fixtures as above; a real areaList, overviewGroups and search.
   const lp = pg(); let listButtons = 0; let listed = null; let listHead = null;
-  const lv = { ...pv, areas: av.areas, projects: [], notes: [], tasks: [], filter: 'all', query: '', state: { focus: 'personal' }, area: null,
+  const lv = { ...pv, areas: av.areas, projects: [], notes: [], tasks: [], filter: 'all', query: '', state: {}, area: null,
     plugin: { ...host2, settings: normalizeSettings({ ui: { kind: 'projects', view: 'list' } }) },
     areaButtons() { listButtons++; }, areaSection(h, areas) { listed = areas.map((a) => a.name); return areas.length; },
     head(p, c, t) { listHead = [c.map((x) => x[0]), t]; } };
   lv.renderLists = plugin.ProjectsView.prototype.renderLists;
   plugin.ProjectsView.prototype.renderOverview.call(lv, lp);
   assert.strictEqual(listButtons, 1, 'List has the Work / Personal buttons');
-  assert.deepStrictEqual(listed, ['a', 'B'], 'List, buttons cleared in a Personal tab: every area');
-  assert.deepStrictEqual(listHead, [['/ Projects'], 'Projects'], 'List, buttons cleared in a Personal tab: the crumb and title say so');
+  assert.deepStrictEqual(listed, ['a', 'B'], 'List, no button pressed: every area');
+  assert.deepStrictEqual(listHead, [['/ Projects'], 'Projects'], 'List, no button pressed: crumb and title say so');
   plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'work' }, pg());
   assert.deepStrictEqual(listed, ['B'], 'List, Work pressed: work areas only');
   assert.deepStrictEqual(listHead, [['/ Projects', 'Work'], 'Work projects'], 'List, Work pressed: crumb and title say so');
   plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'personal' }, pg());
-  assert.deepStrictEqual(listHead, [['/ Projects', 'Personal'], 'Personal projects'], 'List opened as Personal, still Personal: crumb and title unchanged');
-  // The button is the only source. Back and a restart bring it back, because the tab's saved state holds it.
+  assert.deepStrictEqual(listHead, [['/ Projects', 'Personal'], 'Personal projects'], 'List, Personal pressed: crumb and title say so');
+  // The button is the only source. A restart brings it back, because the tab's saved state holds it.
   // "/ Projects" and Open projects mean all projects on every page; the Work or Personal crumb means that list.
   const nav = (area) => Object.assign(Object.create(plugin.ProjectsView.prototype), { state: { page: 'overview', project: null }, area, expanded: new Set(), query: 'typed', tab: 'ideas', render() {}, leaf: {} });
   const a = nav('work');
@@ -101,7 +101,7 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   await a.setState({ page: 'project', project: 'P.md' }, {});
   assert.strictEqual(a.area, 'work', 'opening a project keeps the button');
   await a.setState(before, {});
-  assert.strictEqual(a.area, 'work', 'Back to the list: the button is still on');
+  assert.strictEqual(a.area, 'work', 'its saved state still holds the button');
   const restored = nav(null);
   await restored.setState(before, {});
   assert.strictEqual(restored.area, 'work', 'a restart brings the pressed button back');
@@ -119,6 +119,10 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   const same = nav('work');
   await same.setState({ page: 'overview', focus: 'work' }, {});
   assert.deepStrictEqual([same.query, same.tab], ['typed', 'ideas'], 'the same page again: search and tab stay');
+  // A move is saved with the layout, so it survives a quit.
+  const moved2 = nav(null); const res = {};
+  await moved2.setState({ page: 'overview', focus: 'work' }, res);
+  assert.strictEqual(res.layout, true, 'a change of list asks Obsidian to save the layout');
   // go() acts on its own tab, not the first Projects tab.
   let moved = null; let elsewhere = false;
   const own = nav(null); own.leaf = { setViewState: async (v) => { moved = v.state; } }; own.plugin = { openProjects() { elsewhere = true; } };

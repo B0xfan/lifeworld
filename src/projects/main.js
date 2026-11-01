@@ -4131,8 +4131,8 @@ class ProjectsView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
-    /** @type {{ page: string, project: string | null, focus: string | null }} */
-    this.state = { page: 'overview', project: null, focus: null };
+    /** @type {{ page: string, project: string | null }} */
+    this.state = { page: 'overview', project: null };
     this.filter = 'all';
     this.query = '';
     /** @type {Set<string>} */
@@ -4161,8 +4161,8 @@ class ProjectsView extends ItemView {
     const s = /** @type {Fm} */ (state && typeof state === 'object' ? state : {});
     const page = typeof s.page === 'string' && ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
     const project = typeof s.project === 'string' ? s.project : null;
-    // this.area (the Work / Personal button) is the only source. A state that names a focus sets it, the
-    // saved tab and Back included; the plain overview means all projects; other pages leave it.
+    // this.area (the Work / Personal button) is the only source. A state that names a focus sets it, a
+    // saved tab included; the plain overview means all projects; other pages leave it.
     const area = 'focus' in s ? (s.focus === 'work' || s.focus === 'personal' ? s.focus : null) : page === 'overview' ? null : this.area;
     const changed = page !== this.state.page || project !== this.state.project || area !== this.area;
     this.area = area;
@@ -4171,6 +4171,7 @@ class ProjectsView extends ItemView {
     if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
     this.render(true, changed);
     await super.setState(state, result);
+    if (changed && result) result.layout = true; // saved over a quit, as a pressed button is
     this.refreshTitle();
   }
 

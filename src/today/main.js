@@ -3306,10 +3306,10 @@ class TodayView extends ItemView {
       const now = new Date();
       const here = clockAt(now, null);
       const hour = here.h + here.m / 60;
-      big.setText(hourLabel(hour));
       const key = `${here.date} ${here.h}:${here.m}`;
       if (key === drawn) return;
       drawn = key;
+      big.setText(hourLabel(hour));
       // As in the approved ring mockup: '10:47 AM TODAY'.
       for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(hourLabel(c.h + c.m / 60)); r.day.setText(c.date === here.date ? 'TODAY' : c.day); }
       const sun = sunHere(this.data && this.data.weather, now);

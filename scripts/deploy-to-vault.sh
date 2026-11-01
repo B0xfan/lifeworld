@@ -33,9 +33,11 @@ for f in "${FILES[@]}"; do cp -p "$DEST/$f" "$BACKUP/$f"; done
 [ ! -f "$DEST/data.json" ] || cp -p "$DEST/data.json" "$BACKUP/data.json"
 before="$(shasum "$DEST/data.json" 2>/dev/null || true)"
 # Every copy first, so a full disk stops here with the old files all in place.
-for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" || { rm -f "$DEST"/*.new; fail "could not copy $f; nothing changed"; }; done
-for f in "${FILES[@]}"; do mv "$DEST/$f.new" "$DEST/$f" || fail "could not install $f (backup: $BACKUP)"; done
-for f in "${FILES[@]}"; do cmp "$REPO/$f" "$DEST/$f" || fail "$f did not copy cleanly (backup: $BACKUP)"; done
+drop_new() { for f in "${FILES[@]}"; do rm -f "$DEST/$f.new"; done; }
+restore() { drop_new; for f in "${FILES[@]}"; do cp -p "$BACKUP/$f" "$DEST/$f"; done; fail "$1; the old version is back (backup: $BACKUP)"; }
+for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" || { drop_new; fail "could not copy $f; nothing changed"; }; done
+for f in "${FILES[@]}"; do mv "$DEST/$f.new" "$DEST/$f" || restore "could not install $f"; done
+for f in "${FILES[@]}"; do cmp "$REPO/$f" "$DEST/$f" || restore "$f did not copy cleanly"; done
 # This script never writes it, but a running Obsidian may: worth a look, not a failed install.
 [ "$before" = "$(shasum "$DEST/data.json" 2>/dev/null || true)" ] || echo "deploy: note: data.json changed during the install (Obsidian or Sync saved it); the earlier copy is in $BACKUP" >&2
 echo "Installed $(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version' "$DEST/manifest.json"); backup in $BACKUP"
