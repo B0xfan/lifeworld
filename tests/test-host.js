@@ -289,6 +289,8 @@ const start = async (data) => {
     eq(await old.parts['a4-planner'].loadData(), null, 'a removal in a part with no settings invents none');
     await old.parts['a4-planner'].saveData({ mode: 'x' });
     ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'those entries go at the next save');
+    await old.parts['a4-planner'].saveData({ mode: 'x', made: {} });
+    ok(Object.values(JSON.parse(disk[old.dir])).some((v) => v && Array.isArray(v.path) && v.path[1] === 'made'), 'a new empty map is logged too');
     // A merged-away change is saved at once, so it does not depend on the log.
     const held = await start({ 'a4-today': { look: 'old', layout: ['y'] }, '~change-m': { at: Date.now(), path: ['a4-today', 'look'], value: 'merged' } });
     await held.host.saving;

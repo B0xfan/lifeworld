@@ -25,7 +25,7 @@ function differences(a, b, path, all) {
     const at = [...path, k];
     if (!safe(k) || (!all && UNLOGGED.has(at.join('/')))) continue;
     if (!own(b, k)) out.push({ path: at, gone: true });
-    else if (isObj(b[k]) && (!own(a, k) || isObj(a[k]))) out.push(...differences(/** @type {Obj} */ (own(a, k) ? a[k] : {}), /** @type {Obj} */ (b[k]), at, all));
+    else if (isObj(b[k]) && (own(a, k) ? isObj(a[k]) : Object.keys(/** @type {Obj} */ (b[k])).length > 0)) out.push(...differences(/** @type {Obj} */ (own(a, k) ? a[k] : {}), /** @type {Obj} */ (b[k]), at, all));
     else if (!own(a, k) || JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push({ path: at, value: b[k] });
   }
   return out;

@@ -426,7 +426,7 @@ class LifeWorldPlugin extends Plugin {
     const before = this.ondisk;
     const d = await this.loadData();
     const during = this.writing || this.ondisk !== before; // a save under way, or ended during the read: not in what was read
-    if (d === null) { if (!during) this.changes = {}; return {}; } // no file: a reset, and it stays one
+    if (d === null) { if (!during) this.changes = {}; this.fileStale = false; return {}; } // no file: a reset, and it stays one
     if (d && typeof d === 'object' && !Array.isArray(d)) {
       const { store, changes, stale } = readFile(/** @type {Record<string, unknown>} */ (d), Date.now());
       this.changes = during ? { ...changes, ...this.changes } : changes;
@@ -478,9 +478,10 @@ class LifeWorldPlugin extends Plugin {
       try {
         this.changes = addChanges(this.changes, this.ondisk, snap, Date.now());
         await this.saveData({ ...snap, ...this.changes });
-        // A Sync change taken during this write: the merged settings are the record of what is on disk (the
-        // follow-up write puts them there), or that Sync change would look like one made here (review p2-s3).
-        this.ondisk = this.syncedDuring ? /** @type {LwStore} */ (copy(this.syncedDuring)) : snap;
+        // A Sync change taken during this write: it plus this write is the record of what is on disk (the
+        // follow-up write puts it there), or that Sync change would look like one made here (review p2-s3).
+        const s = this.syncedDuring;
+        this.ondisk = s ? /** @type {LwStore} */ (carryChanges(/** @type {LwStore} */ (copy(s.now)), s.was, snap)) : snap;
       } finally { this.writing = false; this.syncedDuring = null; }
     });
     return this.saving;
@@ -509,8 +510,8 @@ class LifeWorldPlugin extends Plugin {
     const merged = /** @type {LwStore} */ (carryChanges(/** @type {LwStore} */ (copy(now)), was, before));
     this.ondisk = now;
     this.store = merged;
-    /** @type {LwStore | null | undefined} */
-    if (this.writing) this.syncedDuring = /** @type {LwStore} */ (copy(merged));
+    /** @type {{ now: LwStore, was: LwStore } | null | undefined} */
+    if (this.writing) this.syncedDuring = { now: /** @type {LwStore} */ (copy(now)), was };
     // After a save that ended during the read, write only if the file does not already hold the
     // result (review p2-s4: no write when nothing changed).
     if (this.writing || this.fileStale || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
