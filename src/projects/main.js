@@ -2635,8 +2635,8 @@ class ProjectsPlugin extends Plugin {
     // is on, so only the task engine runs: no Projects tab, ribbon button or page commands.
     if (!this.pagesOff) {
       this.registerView(VIEW_TYPE, (leaf) => new ProjectsView(leaf, this));
-      this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview', focus: null }));
-      this.addCommand({ id: 'open', name: 'Open projects', callback: () => this.openProjects({ page: 'overview', focus: null }) });
+      this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview' }));
+      this.addCommand({ id: 'open', name: 'Open projects', callback: () => this.openProjects({ page: 'overview' }) });
       this.addCommand({ id: 'open-work', name: 'Open work projects', callback: () => this.openProjects({ page: 'overview', focus: 'work' }) });
       this.addCommand({ id: 'open-personal', name: 'Open personal projects', callback: () => this.openProjects({ page: 'overview', focus: 'personal' }) });
       this.addCommand({ id: 'open-inbox', name: 'Open the task inbox', callback: () => this.openProjects({ page: 'inbox' }) });
@@ -4155,17 +4155,18 @@ class ProjectsView extends ItemView {
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? /** @type {string} */ (s.project.split('/').pop()).replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects'; }
   getIcon() { return 'folder-kanban'; }
-  getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus, area: this.area }; }
+  getState() { return { page: this.state.page, project: this.state.project, focus: this.area }; }
   /** @param {unknown} state @param {import('obsidian').ViewStateResult} result */
   async setState(state, result) {
     const s = /** @type {Fm} */ (state && typeof state === 'object' ? state : {});
     const page = typeof s.page === 'string' && ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
-    const focus = s.focus === 'work' || s.focus === 'personal' ? s.focus : null;
-    const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
-    // The Work / Personal button stays across pages. A state that names a focus sets it; a saved tab brings its own.
-    if ('area' in s) this.area = s.area === 'work' || s.area === 'personal' ? s.area : null;
-    else if ('focus' in s) this.area = focus;
-    this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
+    const project = typeof s.project === 'string' ? s.project : null;
+    // this.area (the Work / Personal button) is the only source. A state that names a focus sets it, the
+    // saved tab and Back included; the plain overview means all projects; other pages leave it.
+    const area = 'focus' in s ? (s.focus === 'work' || s.focus === 'personal' ? s.focus : null) : page === 'overview' ? null : this.area;
+    const changed = page !== this.state.page || project !== this.state.project || area !== this.area;
+    this.area = area;
+    this.state = { page, project };
     this.focusAdd = !!s.focusAdd;
     if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
     this.render(true, changed);
@@ -4213,7 +4214,7 @@ class ProjectsView extends ItemView {
   scheduleRender() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.render(); }, 250); }
 
   /** @param {Record<string, unknown>} state */
-  go(state) { this.plugin.openProjects(state); }
+  go(state) { return this.leaf.setViewState({ type: VIEW_TYPE, active: true, state }); } // this tab, not the first Projects tab
 
   // Phone toolbar overlap (same check as the Planner).
   navbarOverlap() {
@@ -4287,9 +4288,7 @@ class ProjectsView extends ItemView {
     const cfg = this.cfg; const today = this.today;
     const inbox = this.tasks.filter((t) => isInboxTask(t, cfg));
     const overdueAll = this.tasks.filter((t) => isOverdueTask(t, today, cfg));
-    // Every page filters by this.area (its Work / Personal buttons). A tab opened from the sidebar's
-    // Work / Personal item starts with that button on; its crumb stays while the button does.
-    const sp = this.state.focus && this.area === this.state.focus ? this.state.focus : null;
+    const sp = this.area; // every page filters by the Work / Personal button
     const ui = this.plugin.settings.ui;
     const tasksKind = ui.kind === 'tasks'; // Tasks is always a board (spec 14)
     const areasKind = ui.kind === 'areas'; // its own page of area cards, never a board (Areas mockup, option 1)
@@ -4300,7 +4299,7 @@ class ProjectsView extends ItemView {
     const pick = async (key, k) => { const u = /** @type {Record<string, unknown>} */ (this.plugin.settings.ui); if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview', focus: null })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
+    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
       this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
     ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
@@ -4606,7 +4605,7 @@ class ProjectsView extends ItemView {
     for (const k of ['work', 'personal']) {
       const b = el(areas, 'button', this.area === k ? 'is-on' : '', SPHERE_LABEL[k]);
       b.setAttr('aria-pressed', String(this.area === k));
-      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); this.refreshTitle(); });
+      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); this.refreshTitle(); this.app.workspace.requestSaveLayout(); });
     }
   }
 

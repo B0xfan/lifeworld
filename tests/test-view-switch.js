@@ -90,31 +90,46 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   assert.deepStrictEqual(listHead, [['/ Projects'], 'Projects'], 'List, buttons cleared in a Personal tab: the crumb and title say so');
   plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'work' }, pg());
   assert.deepStrictEqual(listed, ['B'], 'List, Work pressed: work areas only');
-  assert.deepStrictEqual(listHead, [['/ Projects'], 'Work projects'], 'List, Work pressed: the title says so');
+  assert.deepStrictEqual(listHead, [['/ Projects', 'Work'], 'Work projects'], 'List, Work pressed: crumb and title say so');
   plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'personal' }, pg());
   assert.deepStrictEqual(listHead, [['/ Projects', 'Personal'], 'Personal projects'], 'List opened as Personal, still Personal: crumb and title unchanged');
-  // The buttons survive a trip to a project page and back; a tab opened as Personal goes back to Personal.
-  const nav = (state, area) => Object.assign(Object.create(plugin.ProjectsView.prototype), { state, area, expanded: new Set(), render() {} });
-  const plain = nav({ page: 'overview', project: null, focus: null }, 'work');
-  await plain.setState({ page: 'project', project: 'P.md' }, {});
-  await plain.setState({ page: 'overview' }, {});
-  assert.strictEqual(plain.area, 'work', 'plain tab: Work stays on after opening a project and coming back');
-  const toFocus = nav({ page: 'overview', project: null, focus: null }, 'work');
-  await toFocus.setState({ page: 'overview', focus: 'personal' }, {});
-  assert.strictEqual(toFocus.area, 'personal', 'the sidebar Personal item turns Personal on');
-  await toFocus.setState({ page: 'project', project: 'P.md' }, {});
-  await toFocus.setState({ page: 'overview' }, {});
-  assert.strictEqual(toFocus.area, 'personal', 'a tab opened as Personal keeps Personal after opening a project and coming back');
-  await toFocus.setState({ page: 'overview', focus: null }, {});
-  assert.strictEqual(toFocus.area, null, 'Open projects and the crumb out of the Personal list clear it');
-  // A restart brings the button back; a tab saved before 1.1.6 has only its focus.
-  toFocus.area = 'work';
-  const saved2 = JSON.parse(JSON.stringify(toFocus.getState()));
-  const restored = nav({ page: 'overview', project: null, focus: null }, null);
-  await restored.setState(saved2, {});
-  assert.strictEqual(restored.area, 'work', 'a restart keeps the pressed button');
-  const older = nav({ page: 'overview', project: null, focus: null }, null);
+  // The button is the only source. Back and a restart bring it back, because the tab's saved state holds it.
+  // "/ Projects" and Open projects mean all projects on every page; the Work or Personal crumb means that list.
+  const nav = (area) => Object.assign(Object.create(plugin.ProjectsView.prototype), { state: { page: 'overview', project: null }, area, expanded: new Set(), query: 'typed', tab: 'ideas', render() {}, leaf: {} });
+  const a = nav('work');
+  const before = JSON.parse(JSON.stringify(a.getState()));
+  await a.setState({ page: 'project', project: 'P.md' }, {});
+  assert.strictEqual(a.area, 'work', 'opening a project keeps the button');
+  await a.setState(before, {});
+  assert.strictEqual(a.area, 'work', 'Back to the list: the button is still on');
+  const restored = nav(null);
+  await restored.setState(before, {});
+  assert.strictEqual(restored.area, 'work', 'a restart brings the pressed button back');
+  await a.setState({ page: 'project', project: 'P.md' }, {});
+  await a.setState({ page: 'overview' }, {});
+  assert.strictEqual(a.area, null, '/ Projects from a project page: all projects');
+  await a.setState({ page: 'overview', focus: 'personal' }, {});
+  assert.strictEqual(a.area, 'personal', 'the sidebar Personal item, or a Personal crumb, turns Personal on');
+  await a.setState({ page: 'overview' }, {});
+  assert.strictEqual(a.area, null, 'Open projects, or / Projects on the list: all projects');
+  const older = nav(null);
   await older.setState({ page: 'overview', project: null, focus: 'personal' }, {});
   assert.strictEqual(older.area, 'personal', 'a tab saved before 1.1.6 starts with its focus on');
+  // Asking for the page already showing keeps the search and the tab.
+  const same = nav('work');
+  await same.setState({ page: 'overview', focus: 'work' }, {});
+  assert.deepStrictEqual([same.query, same.tab], ['typed', 'ideas'], 'the same page again: search and tab stay');
+  // go() acts on its own tab, not the first Projects tab.
+  let moved = null; let elsewhere = false;
+  const own = nav(null); own.leaf = { setViewState: async (v) => { moved = v.state; } }; own.plugin = { openProjects() { elsewhere = true; } };
+  await own.go({ page: 'overview', focus: 'work' });
+  assert.deepStrictEqual([moved, elsewhere], [{ page: 'overview', focus: 'work' }, false], 'a click moves its own tab');
+  // A pressed button is saved with the layout.
+  let layoutSaves = 0;
+  const pressed = nav(null); pressed.app = { workspace: { requestSaveLayout() { layoutSaves++; } } }; pressed.refreshTitle = () => {};
+  const bar = node(); bar.setAttr = () => {};
+  pressed.areaButtons(bar);
+  find(bar, 'Work').listeners.click();
+  assert.deepStrictEqual([pressed.area, layoutSaves], ['work', 1], 'pressing a button asks Obsidian to save the layout');
   console.log('view switch self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

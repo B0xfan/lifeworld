@@ -32,7 +32,9 @@ mkdir -p "$BACKUP"
 for f in "${FILES[@]}"; do cp -p "$DEST/$f" "$BACKUP/$f"; done
 [ ! -f "$DEST/data.json" ] || cp -p "$DEST/data.json" "$BACKUP/data.json"
 before="$(shasum "$DEST/data.json" 2>/dev/null || true)"
-for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" && mv "$DEST/$f.new" "$DEST/$f"; done
+# Every copy first, so a full disk stops here with the old files all in place.
+for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" || { rm -f "$DEST"/*.new; fail "could not copy $f; nothing changed"; }; done
+for f in "${FILES[@]}"; do mv "$DEST/$f.new" "$DEST/$f" || fail "could not install $f (backup: $BACKUP)"; done
 for f in "${FILES[@]}"; do cmp "$REPO/$f" "$DEST/$f" || fail "$f did not copy cleanly (backup: $BACKUP)"; done
 # This script never writes it, but a running Obsidian may: worth a look, not a failed install.
 [ "$before" = "$(shasum "$DEST/data.json" 2>/dev/null || true)" ] || echo "deploy: note: data.json changed during the install (Obsidian or Sync saved it); the earlier copy is in $BACKUP" >&2

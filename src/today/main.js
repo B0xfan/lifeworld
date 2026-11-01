@@ -769,9 +769,10 @@ function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s
 // One line per place in the World clock card, for either clock look; no list with no places.
 /** @param {HTMLElement} body @param {{ name: string, tz: string }[]} places */
 function placeRows(body, places) {
-  const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
+  if (!places.length) return [];
+  const list = body.createEl('ul', { cls: 'a4t-clk-places' });
   return places.map((p) => {
-    const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
+    const li = list.createEl('li', { cls: 'a4t-clk-place' });
     li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
     return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
   });
@@ -3306,11 +3307,11 @@ class TodayView extends ItemView {
       const here = clockAt(now, null);
       const hour = here.h + here.m / 60;
       big.setText(hourLabel(hour));
-      // As in the approved ring mockup: '10:47 AM TODAY'.
-      for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(hourLabel(c.h + c.m / 60)); r.day.setText(c.date === here.date ? 'TODAY' : c.day); }
       const key = `${here.date} ${here.h}:${here.m}`;
       if (key === drawn) return;
       drawn = key;
+      // As in the approved ring mockup: '10:47 AM TODAY'.
+      for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(hourLabel(c.h + c.m / 60)); r.day.setText(c.date === here.date ? 'TODAY' : c.day); }
       const sun = sunHere(this.data && this.data.weather, now);
       date.setText(here.date);
       sunLine.setText(sun ? `☀︎ ${hourLabel(sun.rise)} – ${hourLabel(sun.set)}` : '');
