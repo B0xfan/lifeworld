@@ -766,6 +766,15 @@ function ringColour(h, sun) {
 // The classic dial's hand angles in degrees.
 /** @param {{ h: number, m: number, s: number }} c */
 function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
+// One line per place in the World clock card, for either clock look.
+/** @param {HTMLElement | null} list @param {{ name: string, tz: string }[]} places */
+function placeRows(list, places) {
+  return places.map((p) => {
+    const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
+    li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
+    return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
+  });
+}
 // A local hour (fractions for minutes) as '5:31 AM'.
 /** @param {number} h */
 function hourLabel(h) { const mins = Math.round(h * 60) % 1440; return timeText(`${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`); }
@@ -3290,7 +3299,7 @@ class TodayView extends ItemView {
     const date = mid.createDiv({ cls: 'a4t-clk-date' });
     const sunLine = mid.createDiv({ cls: 'a4t-clk-sunline' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = this.placeRows(list, places);
+    const rows = placeRows(list, places);
     let drawn = '';
     const paint = () => {
       const now = new Date();
@@ -3318,15 +3327,6 @@ class TodayView extends ItemView {
     this.clockPaint = () => (body.isConnected ? paint() : null);
   }
 
-  /** @param {HTMLElement | null} list @param {{ name: string, tz: string }[]} places */
-  placeRows(list, places) {
-    return places.map((p) => {
-      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
-      li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
-      return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
-    });
-  }
-
   // The classic dial (launch section 4, mockup v6), kept as a choice in Settings beside the sun ring.
   /** @param {HTMLElement} body */
   renderDialClock(body) {
@@ -3346,7 +3346,7 @@ class TodayView extends ItemView {
     const big = txt.createDiv({ cls: 'a4t-clk-big' });
     const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = this.placeRows(list, places);
+    const rows = placeRows(list, places);
     const paint = () => {
       const now = new Date();
       const here = clockAt(now, null);

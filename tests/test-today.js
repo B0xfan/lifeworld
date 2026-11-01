@@ -520,10 +520,10 @@ eq(L.normalizePlaces([{ name: 'X', tz: 'Nope/Zone' }, { name: ' London ', tz: 'E
   eq([L.sunFrom(null), L.sunFrom({ sunrise: '5:33 AM' }), L.sunFrom({ sunrise: '?', sunset: '5:20 PM' }), L.sunFrom({ sunrise: '6:00 PM', sunset: '6:00 AM' })], [null, null, null, null], 'ring: no or broken sun times give no day and night colours');
   eq([L.ringColour(2, sun), L.ringColour(5.14, sun), L.ringColour(5.55, sun), L.ringColour(12, sun), L.ringColour(17 + 20 / 60, sun), L.ringColour(17.74, sun), L.ringColour(23, sun), L.ringColour(3, null)],
     ['rgb(91,74,138)', 'rgb(255,213,168)', 'rgb(255,140,26)', 'rgb(90,200,250)', 'rgb(255,140,26)', 'rgb(255,212,167)', 'rgb(91,74,138)', 'rgb(90,200,250)'], 'ring: night purple, light orange at first light, bright orange at sunrise and sunset, day blue, blue all round with no weather');
-  const at = new Date('2026-11-01T18:00:00Z'), hereTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz }, at), sun, 'ring: weather in this device\'s zone uses its sun times');
-  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM' }, at), sun, 'ring: a weather note with no zone uses its sun times');
-  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz === 'Asia/Tokyo' ? 'Europe/Paris' : 'Asia/Tokyo' }, at), null, 'ring: weather from another zone draws no day and night');
+  const sunNow = new Date('2026-11-01T18:00:00Z'), hereTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz }, sunNow), sun, 'ring: weather in this device\'s zone uses its sun times');
+  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM' }, sunNow), sun, 'ring: a weather note with no zone uses its sun times');
+  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz === 'Asia/Tokyo' ? 'Europe/Paris' : 'Asia/Tokyo' }, sunNow), null, 'ring: weather from another zone draws no day and night');
   eq([L.hourLabel(0), L.hourLabel(11 + 47 / 60), L.hourLabel(12), L.hourLabel(23.999)], ['12:00 AM', '11:47 AM', '12:00 PM', '12:00 AM'], 'ring: hour labels');
   const ut = { name: 'Windsor, Colorado, United States', short: 'Windsor, Colorado', tz: 'America/Denver' }; const on = { name: 'Windsor, Ontario, Canada', short: 'Windsor, Ontario', tz: 'America/Toronto' };
   eq([L.placeFromMatch(ut), L.placeFromMatch(on)], [{ name: 'Windsor, Colorado', tz: 'America/Denver' }, { name: 'Windsor, Ontario', tz: 'America/Toronto' }], 'add a place: the time zone comes from the search match; same-name towns stay apart');

@@ -916,7 +916,7 @@ const start = async (data) => {
       const at = TL.clockAt(new Date(), 'America/Denver');
       eq([two.heads, find(two.body, 'a4t-clk-city').length, lines.length, lines.map((l) => l.kids.map((k) => k.cls[0])), lines.map((l) => [l.kids[0].text, l.kids[0].attr.title])],
         [['Today'], 0, 2, [['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day'], ['a4t-clk-name', 'a4t-clk-time', 'a4t-clk-day']], [['Fresno, CA', 'Fresno, CA'], ['Windsor, CO', 'Windsor, CO']]], 'World clock card: no Here tile, one line per place in saved order, full name on hover');
-      eq([lines[1].kids[2].text, /^\d\d:\d\d [ap]m$/.test(lines[1].kids[1].text)], [at.day, true], 'each line: that zone\'s time and day');
+      eq([lines[1].kids[2].text, /^\d{1,2}:\d\d [AP]M$/.test(lines[1].kids[1].text)], [at.date === TL.clockAt(new Date(), null).date ? 'TODAY' : at.day, true], 'each line: that zone\'s time and day, as in the ring mockup');
       const none = drawClock([]);
       eq([none.heads, find(none.body, 'a4t-clk-places').length], [['Today'], 0], 'no places: only the big clock, no empty list');
       // Clock look = Classic dial (2026-10-29): the dial from before the ring, same place lines.
