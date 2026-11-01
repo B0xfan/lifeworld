@@ -1,5 +1,7 @@
 # LifeWorld
 
+<img src="docs/icon.png" alt="LifeWorld icon" width="96" align="right">
+
 LifeWorld turns your vault into a planner: a Today page for the day ahead, a Planner for the day, week
 and month, a page for every project and area, and a sidebar that keeps it all one click away. Every
 part can be switched on or off, so you can run only the Today page, only the Planner, or all of it.
