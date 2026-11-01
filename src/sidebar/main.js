@@ -1474,6 +1474,9 @@ class SidebarPlugin extends Plugin {
     this.app.saveLocalStorage(PLACED_KEY, true);
   }
 
+  // The Sidebar switch went off and closed the tab: switching it on adds the tab again.
+  forgetPlaced() { this.app.saveLocalStorage(PLACED_KEY, null); }
+
   async activate() {
     const ws = this.app.workspace;
     let leaf = ws.getLeavesOfType(VIEW_TYPE)[0];

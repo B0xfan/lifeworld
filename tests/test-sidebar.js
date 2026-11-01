@@ -286,6 +286,12 @@ const OWNER_SORT = {
     open.close();
     await open.p.placeFirstTime();
     eq(open.placedCount(), 0, 'sidebar: closing it later on that device is respected');
+    // Switched off in Settings: the tab closes, so switching on adds it again.
+    const again = device();
+    await again.p.placeFirstTime();
+    again.p.forgetPlaced();
+    await again.p.placeFirstTime();
+    eq(again.placedCount(), 2, 'sidebar: switched off and on, the tab is added again');
     // An update in a running app: the open tab is noted before the view registers and starts its rebuild.
     ok(/getLeavesOfType\(VIEW_TYPE\)\.length\) this\.app\.saveLocalStorage\(PLACED_KEY, true\);[\s\S]*?this\.registerView\(VIEW_TYPE/.test(src), 'sidebar: an open tab is noted before the view registers');
     console.log(`\n${n} checks, ${failed} failed`);

@@ -307,6 +307,7 @@ class LifeWorldPlugin extends Plugin {
         const modeChanged = part && m.id === 'a4-projects' && !!part.pagesOff !== !this.isOn('a4-projects');
         if (!part || (this.wanted(m.id) && !modeChanged)) continue;
         for (const type of this.views[m.id]) this.app.workspace.detachLeavesOfType(type);
+        if (m.id === 'a4-sidebar') /** @type {Sidebar} */ (part).forgetPlaced();
         delete this.running[m.id]; delete PARTS[m.id]; this.removeChild(part);
         // Sidebar off: Obsidian's file list comes forward in its place, as the mockup says.
         const files = m.id === 'a4-sidebar' && this.app.workspace.getLeavesOfType('file-explorer')[0];
