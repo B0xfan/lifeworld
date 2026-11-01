@@ -1433,6 +1433,9 @@ class SidebarPlugin extends Plugin {
     /** @type {SidebarState} */
     this.state = { groups: obj(sv.groups), sections: obj(sv.sections), open: obj(sv.open), sort: normalizeSort(sv.sort) };
     const sortIsNew = !sv.sort;
+    // Reloading in a running app (an update): an open tab is being rebuilt and cannot be seen, so a look now
+    // would add a second one. Only an app start or a first-ever start looks.
+    const mayPlace = sortIsNew || !this.app.workspace.layoutReady;
     this.registerView(VIEW_TYPE, (leaf) => new SidebarView(leaf, this));
     this.addSettingTab(new SidebarSettingTab(this.app, this));
     // A folder renamed or moved keeps its sort setting (and its subfolders').
@@ -1453,7 +1456,7 @@ class SidebarPlugin extends Plugin {
     }
     this.chrome = new FilesChrome(this);
     this.app.workspace.onLayoutReady(async () => {
-      await this.placeFirstTime();
+      if (mayPlace) await this.placeFirstTime();
       // First run of 0.8.0: write the pre-filled sort settings, so the phone
       // and the settings page read the same list.
       if (sortIsNew) await this.saveState();
