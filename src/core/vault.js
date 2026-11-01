@@ -189,20 +189,35 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
+// A path after a rename or move of oldPath: the same, or the new one if it is at or under oldPath.
+/** @param {string} p @param {string} oldPath @param {string} newPath */
+function movePath(p, oldPath, newPath) { return p === oldPath ? newPath : p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p; }
+
 // A folder or note renamed or moved: every saved path at or under it follows, as a change for the saved settings,
 // or null. Obsidian announces each folder and note inside too; once followed, those match nothing.
 /** @param {string} oldPath @param {string} newPath */
 function pathsAfterRename(oldPath, newPath) {
   /** @param {string} p */
-  const moved = (p) => (p === oldPath ? newPath : p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p);
+  const moved = (p) => movePath(p, oldPath, newPath);
   /** @param {Record<string, string>} m */
   const changed = (m) => Object.fromEntries(Object.entries(m).filter(([, p]) => moved(p) !== p).map(([k, p]) => [k, moved(p)]));
-  const fd = changed(folders), nt = changed(feeds);
+  const fd = changed(folders);
+  // A note no longer ending in .md would not be read as one: the old path stays, so renaming it back still works.
+  const nt = Object.fromEntries(Object.entries(changed(feeds)).filter(([, p]) => p.endsWith('.md')));
+  /** @type {Record<string, unknown>} */
+  const sb = {};
+  if (sidebar.life && moved(sidebar.life) !== sidebar.life) sb.life = moved(sidebar.life);
+  const skip = sidebar.basesSkip.map(moved);
+  if (skip.some((p, i) => p !== sidebar.basesSkip[i])) sb.basesSkip = skip;
+  // A top folder that no longer starts with its room's beginning keeps its room under the new name.
+  const top = !oldPath.includes('/') && !newPath.includes('/');
+  const rooms = sidebar.rooms.map((r) => (top && oldPath.startsWith(r.prefix) && !newPath.startsWith(r.prefix) ? { ...r, prefix: newPath } : r));
+  if (rooms.some((r, i) => r !== sidebar.rooms[i])) sb.rooms = rooms;
   const change = /** @type {{ folders?: Record<string, string>, feeds?: Record<string, string>, sidebar?: Record<string, unknown> }} */ ({});
   if (Object.keys(fd).length) change.folders = fd;
   if (Object.keys(nt).length) change.feeds = nt;
-  if (sidebar.life && moved(sidebar.life) !== sidebar.life) change.sidebar = { life: moved(sidebar.life) };
+  if (Object.keys(sb).length) change.sidebar = sb;
   return Object.keys(change).length ? change : null;
 }
 
-export { pathsAfterRename, BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+export { movePath, pathsAfterRename, BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

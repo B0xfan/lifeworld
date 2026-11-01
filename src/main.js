@@ -5,7 +5,7 @@
 // part's own settings under its heading. A part switched off is not started at all.
 'use strict';
 
-import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder } from 'obsidian';
 import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
@@ -113,11 +113,6 @@ class LifeWorldPlugin extends Plugin {
     if (this.fileStale) this.writeStore().catch((e) => console.error('LifeWorld: settings merged by Sync could not be saved', e));
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
     PART_HOST.setSidebar = (patch) => this.setVaultSettings({ sidebar: patch });
-    // Your folders and notes keep their settings when they are renamed or moved, even with every part off.
-    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
-      const change = vault.pathsAfterRename(oldPath, f.path);
-      if (change) this.setVaultSettings(change).catch((e) => console.error('LifeWorld: its settings could not follow a renamed folder', e));
-    }));
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
     /** @type {LifeWorldSettingTab | null} LifeWorld's settings page (it sets this itself) */
@@ -141,6 +136,15 @@ class LifeWorldPlugin extends Plugin {
     /** @type {Promise<void>} */
     this.applying = Promise.resolve();
     for (const entry of PART_LIST) if (this.wanted(entry[0].id)) await this.startPart(entry);
+    // Your folders and notes keep their settings when they are renamed or moved, with any part off. One change, one save.
+    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
+      const sb = vault.sidebarContent;
+      const named = f instanceof TFolder ? /** @type {typeof Sidebar} */ (Sidebar).__logic.renameInSidebar(sb, oldPath, f.path, !sb.life || !!this.app.vault.getAbstractFileByPath(sb.life)) : null;
+      const paths = vault.pathsAfterRename(oldPath, f.path);
+      if (!named && !paths) return;
+      const change = { ...paths, ...(named || (paths && paths.sidebar) ? { sidebar: { ...(paths && paths.sidebar), ...named } } : {}) };
+      this.setVaultSettings(change).catch((e) => console.error('LifeWorld: its settings could not follow a renamed folder', e));
+    }));
     this.addSettingTab(new LifeWorldSettingTab(this.app, this));
     this.addCommand({ id: 'open-manual', name: 'Open the manual', callback: () => window.open(MANUAL_URL) });
     // A tab open before the later parts started (Today before the Planner) drew them as off: all open

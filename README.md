@@ -65,7 +65,8 @@ projects and one-off tasks that belong to it. An Inbox collects tasks with no pr
 A panel on the left with search, Today and the Planner at the top, then your folders with a note count
 on each. Drag a note onto a folder to move it, and pick how each folder sorts. Turn the Sidebar off and
 Obsidian's normal file list comes back. Under **Settings → LifeWorld → Sidebar**, **My groups** gathers your
-folders under names you choose. Your folders and notes stay where they are.
+folders under names you choose. Your folders and notes stay where they are. Rename or move a folder LifeWorld
+uses, inside Obsidian, and its settings follow it.
 
 ![The Sidebar](screenshots/sidebar-dark.png)
 

@@ -22,7 +22,7 @@ const EXPORTS = {
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['ADDON', 'HOST', 'PARTS', 'partOf'],
-  vault: ['pathsAfterRename', 'BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'planning', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
+  vault: ['movePath', 'pathsAfterRename', 'BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'planning', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
   calendars: ['isHttp', 'normalizeLinks', 'linksOf', 'saveLinks', 'fetchUrl', 'eventsFromIcs', 'calendarEvents', 'refreshCalendars', 'calendarErrors', 'resetCalendars'],
   weather: ['SG_KEY', 'normalizeWeather', 'wmoWords', 'fromOpenMeteo', 'tidesFromSeaLevel', 'tidesFromStormglass', 'findPlaces', 'weatherFor', 'weatherError', 'refreshWeather'],
   daily: ['formatDateTokens', 'momentFormat', 'scratchNameFor', 'scratchPathFor', 'renderTemplate', 'insertUnderHeading', 'newDailyContent', 'writeDailyNote'],
@@ -103,6 +103,10 @@ check(() => {
   assert.deepStrictEqual(V.pathsAfterRename('W/Life', 'W/L'), { folders: { projects: 'W/L/Projects', goals: 'W/L/Goals', habits: 'W/L/Habits' }, sidebar: { life: 'W/L' } }, 'the base folder itself');
   assert.deepStrictEqual(V.pathsAfterRename('P/Cal.md', 'P/Calendar.md'), { feeds: { calendar: 'P/Calendar.md' } }, 'a note');
   assert.strictEqual(V.pathsAfterRename('Other', 'Else'), null, 'nothing saved under it');
+  assert.strictEqual(V.pathsAfterRename('P/Cal.md', 'P/Cal.txt'), null, 'a note no longer .md: the old path stays');
+  V.setVault({ sidebar: { life: 'L', basesSkip: ['02 Plan/Views/'], rooms: [{ prefix: '02 ', name: 'Planner', icon: 'x' }, { prefix: '03 ', name: 'Work', icon: 'y' }] } });
+  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', '02 Planner').sidebar, { basesSkip: ['02 Planner/Views/'] }, 'bases left out follow; the room still fits');
+  assert.deepStrictEqual(V.pathsAfterRename('02 Plan', 'Plans').sidebar.rooms[0].prefix, 'Plans', 'a room keeps its folder under a new start');
   V.setVault(null);
 });
 console.log(`core self-check: OK (${n} checks)`);

@@ -44,7 +44,7 @@ import { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normaliz
 import { partOf, ADDON, HOST } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
-import { sidebarContent } from '../core/vault';
+import { sidebarContent, vaultFolders, movePath } from '../core/vault';
 import { errField } from '../core/sources';
 import { drawRows, blockRow } from '../core/settings';
 const SBC = sidebarContent;
@@ -77,7 +77,7 @@ const VIRTUAL = {
   'Unsorted projects': { folder: 'Projects', kind: 'unsorted', hideEmpty: true },
 };
 /** @param {string} n */
-const itemFolder = (n) => (VIRTUAL[n] ? VIRTUAL[n].folder : n);
+const itemFolder = (n) => (VIRTUAL[n] ? nameOf(vaultFolders.projects) : n);
 // A group's folder in the vault: inside the base folder, or at the top when there is none (a new install).
 /** @param {string} n */
 const lifePath = (n) => (SBC.life ? `${SBC.life}/${itemFolder(n)}` : itemFolder(n));
@@ -365,7 +365,7 @@ function setFolderSort(sort, path, mode) {
 /** @param {SortSettings} sort @param {string} oldPath @param {string} newPath */
 function renameSortPaths(sort, oldPath, newPath) {
   /** @param {string} p */
-  const move = (p) => (p === oldPath ? newPath : p.startsWith(oldPath + '/') ? newPath + p.slice(oldPath.length) : p);
+  const move = (p) => movePath(p, oldPath, newPath);
   /** @type {Record<string, string>} */
   const perFolder = {};
   for (const [p, m] of Object.entries(sort.perFolder)) perFolder[move(p)] = m;
@@ -515,9 +515,9 @@ function hiddenUnderRooms(groups) {
 }
 
 // A folder in the base folder renamed where it stands: its group, icon, label and no-count mark follow it, as a
-// patch for the saved Sidebar settings, or null. Moved out of the base folder, it leaves its group. A rename further
-// up (lifeThere false: the base folder's old path is gone) changes nothing: the names are relative to the base folder.
-// shortcut: with the Sidebar part off a rename is missed; the old name stays in the editor to remove.
+// patch for the saved Sidebar settings, or null (src/main.js saves it). Moved out of the base folder, it leaves its
+// group. A rename further up (lifeThere false: the base folder's old path is gone) changes nothing here: the names
+// are relative to the base folder, and vault.pathsAfterRename moves the base folder itself.
 /** @param {{ groups: { id: string, label: string, folders: string[] }[], icons: Record<string, string>, labels: Record<string, string>, noCount: string[], life: string }} sb @param {string} oldPath @param {string} newPath @param {boolean} lifeThere */
 function renameInSidebar(sb, oldPath, newPath, lifeThere) {
   if (parentOf(oldPath) !== sb.life) return null;
@@ -748,7 +748,7 @@ class SidebarView extends ItemView {
     this.registerEvent(this.app.vault.on('delete', later));
     this.registerEvent(this.app.vault.on('rename', later));
     // a project gaining a client or Career moves between the two lists
-    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (SBC.life && file && file.path.startsWith(`${SBC.life}/Projects/`)) later(); }));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (SBC.life && file && file.path.startsWith(`${vaultFolders.projects}/`)) later(); }));
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.markActive()));
     this.registerEvent(this.app.workspace.on('file-open', () => this.markActive()));
   }
@@ -756,7 +756,7 @@ class SidebarView extends ItemView {
   // 'work' / 'personal' for a project note directly in My Life/Projects, else null.
   /** @param {string} path @returns {string | null} */
   classifyPath(path) {
-    const dir = `${SBC.life}/Projects/`;
+    const dir = `${vaultFolders.projects}/`;
     if (!SBC.life || !path || !path.startsWith(dir) || path.slice(dir.length).includes('/')) return null;
     const f = this.app.vault.getAbstractFileByPath(path);
     const fm = /** @type {Fm | null | undefined} */ (f && (this.app.metadataCache.getFileCache(/** @type {TFile} */ (f)) || {}).frontmatter);
@@ -878,6 +878,8 @@ class SidebarView extends ItemView {
       }
     }
 
+    if (SBC.life && !myLife && SBC.groups.length) scroll.createDiv({ cls: 'setting-item-description a4sb-sort-empty', text: `Your groups need the folder "${SBC.life}", which is not in the vault.` });
+
     // Rooms; with none set, the top folders under "Folders" (as drawn in the step 0 mockup)
     const rs = this.section(scroll, 'rooms', SBC.rooms.length ? 'Rooms' : 'Folders');
     for (const r of rooms) {
@@ -931,7 +933,7 @@ class SidebarView extends ItemView {
   // Areas of one kind (LifeWorld 0.1.5, areas mockup screen 6), A to Z: listed first, never counted.
   /** @param {string} kind @returns {TFile[]} */
   areasOf(kind) {
-    const f = SBC.life ? this.folder(`${SBC.life}/Projects`) : null;
+    const f = SBC.life ? this.folder(vaultFolders.projects) : null;
     if (!f) return [];
     return /** @type {TFile[]} */ (f.children.filter((c) => c instanceof TFile && c.extension === 'md'))
       .filter((c) => { const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(c) || {}).frontmatter); return fm && fm.type === 'area' && sphereOf(fm) === kind; })
@@ -941,7 +943,7 @@ class SidebarView extends ItemView {
   // Projects folder notes of one kind ('work' / 'personal'), active first.
   /** @param {string} kind */
   projectsOf(kind) {
-    const f = SBC.life ? this.folder(`${SBC.life}/Projects`) : null;
+    const f = SBC.life ? this.folder(vaultFolders.projects) : null;
     if (!f) return [];
     /** @type {{ file: TFile, name: string, status: string, open: boolean }[]} */
     const list = [];
@@ -960,7 +962,7 @@ class SidebarView extends ItemView {
   lifeItem(parent, name, filePaths) {
     if (VIRTUAL[name]) {
       const v = VIRTUAL[name];
-      const f = this.folder(`${SBC.life}/${v.folder}`);
+      const f = this.folder(vaultFolders.projects);
       if (!f) return;
       const box = parent.createDiv();
       const members = openProjects(this.projectsOf(v.kind));
@@ -1470,8 +1472,6 @@ class SidebarPlugin extends Plugin {
     // A folder renamed or moved keeps its sort setting (and its subfolders').
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!(f instanceof TFolder)) return;
-      const patch = renameInSidebar(SBC, oldPath, f.path, !SBC.life || !!this.app.vault.getAbstractFileByPath(SBC.life));
-      if (patch && HOST.setSidebar) HOST.setSidebar(patch).catch((e) => console.error('LifeWorld: the Sidebar groups could not follow a renamed folder', e));
       const next = renameSortPaths(this.state.sort, oldPath, f.path);
       if (JSON.stringify(next) === JSON.stringify(this.state.sort)) return;
       this.state.sort = next;
@@ -1661,7 +1661,7 @@ class GroupsModal extends Modal {
     const used = new Set(held.map(itemFolder));
     const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !Object.keys(VIRTUAL).includes(c.name)).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
     // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
-    const lists = SBC.life && !held.includes('Projects') && this.app.vault.getAbstractFileByPath(`${SBC.life}/Projects`) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
+    const lists = SBC.life && !held.includes(nameOf(vaultFolders.projects)) && this.app.vault.getAbstractFileByPath(vaultFolders.projects) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
     return folders.concat(lists);
   }
   draw() {
