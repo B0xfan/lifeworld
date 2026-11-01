@@ -48,7 +48,8 @@ function textOf(el, names) { const c = childOf(el, names); return c && c.textCon
 function linkOf(item, base) {
   const links = Array.from(item.children).filter((c) => c.localName === 'link');
   const atom = links.find((l) => l.getAttribute('href') && (l.getAttribute('rel') || 'alternate') === 'alternate');
-  const written = atom ? atom.getAttribute('href') : links[0] && links[0].textContent;
+  const rss = links.map((l) => (l.getAttribute('href') ? '' : (l.textContent || '').trim())).find(Boolean);
+  const written = atom ? atom.getAttribute('href') : rss;
   // A guid or id is only a link when it is a whole address; many are just a code.
   return written ? cleanFeedUrl(written, base) : cleanFeedUrl(textOf(item, ['guid', 'id']));
 }

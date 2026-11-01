@@ -797,8 +797,11 @@ const start = async (data) => {
   eq(SBL.findRoomFolders(['Notes', 'Attachments', 'daily', '03 Desk']), [['03 Desk', 'folder'], ['Attachments', 'folder'], ['daily', 'folder'], ['Notes', 'folder']].map(([name, icon]) => ({ name, icon, path: name })), 'new install: every top folder, A to Z, plain (no room colour)');
   eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
   eq([SBL.lifePath('Clients'), SBL.buildLifeGroups(['Clients', 'Notes'])], ['Clients', []], 'new install: no groups, nothing grouped; top folders stay under Folders');
-  const gr = [{ id: 'w', label: 'Work', folders: ['Clients', 'Work projects'] }];
-  eq([SBL.renameInGroups(gr, 'Clients', 'Customers', '')[0].folders, SBL.renameInGroups(gr, 'L/Clients', 'L/Customers', 'L')[0].folders, SBL.renameInGroups(gr, 'Clients', 'Old/Clients', '')[0].folders, SBL.renameInGroups(gr, 'Old/Clients', 'Old/C', ''), SBL.renameInGroups(gr, 'Other', 'New', '')], [['Customers', 'Work projects'], ['Customers', 'Work projects'], ['Work projects'], null, null], 'groups follow a renamed folder; one moved elsewhere leaves its group; others change nothing');
+  const sbx = { life: 'My Life', groups: [{ id: 'w', label: 'Work', folders: ['Clients', 'Work projects', 'Gone'] }], icons: { Clients: 'chart', Other: 'x' }, labels: { Clients: 'My clients' }, noCount: ['Clients'] };
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Customers'), { groups: [{ id: 'w', label: 'Work', folders: ['Customers', 'Work projects', 'Gone'] }], icons: { Other: 'x', Customers: 'chart' }, labels: { Customers: 'My clients' }, noCount: ['Customers'] }, 'a renamed folder keeps its group, icon, label and no-count mark');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Gone').groups[0].folders, ['Work projects', 'Gone'], 'renamed onto a name already listed: listed once');
+  eq([SBL.renameInSidebar(sbx, 'My Life/Clients', 'Life/Clients'), SBL.renameInSidebar(sbx, 'My Life/Clients', 'Old/Clients'), SBL.renameInSidebar(sbx, 'Z/Clients', 'Z/C'), SBL.renameInSidebar(sbx, 'My Life/Other', 'My Life/New')], [null, null, null, null], 'renaming the base folder or a parent, or a move, leaves the groups alone');
+  eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers').groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
@@ -1310,7 +1313,7 @@ const start = async (data) => {
     neu.host.setup.close();
     await tick();
     ok(plainFile(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
-    ok(plainFile(disk[neu.dir])['a4-today'].reminderPopups === true, 'closed: a new install gets reminder pop-ups on');
+    ok(!(plainFile(disk[neu.dir])['a4-today'] || {}).reminderPopups, 'closed: nothing about pop-ups goes in the settings file');
     const again = await startIn(disk[neu.dir]);
     ok(!again.host.setup, 'after it was closed: never opens by itself again');
     const old = await startIn({ 'a4-today': { layout: [] } });

@@ -749,10 +749,30 @@ async function startupRun(saved) {
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
-  eq([on.p.reminderPopups, 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
+  eq([on.p.popupsOn(), 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
   const empty = await startupRun({});
-  eq([empty.p.reminderPopups, empty.stored()], [false, {}], 'pop-ups: Today writes nothing at start; an install with no Today settings stays off');
-  eq((await startupRun({ reminderPopups: true })).p.reminderPopups, true, 'pop-ups: on when saved on');
+  eq([empty.p.popupsOn(), empty.stored()], [false, {}], 'pop-ups: Today writes nothing at start; an install with no Today settings stays off');
+  eq((await startupRun({ reminderPopups: true })).p.popupsOn(), true, 'pop-ups: on when saved on');
+  empty.p.app.loadLocalStorage = (k) => k === 'lifeworld-new-install';
+  eq(empty.p.popupsOn(), true, 'pop-ups: on where LifeWorld started as a new install');
+  empty.p.reminderPopups = false;
+  eq(empty.p.popupsOn(), false, 'pop-ups: the person turning them off wins');
+  // Activity kept: today and yesterday when grown, a lower count never replaces a higher one, nothing while the widget is off.
+  {
+    const dayStr = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const now = Date.now(), y = now - 86400000, T = dayStr(now), Y = dayStr(y);
+    const off = await startupRun({});
+    off.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }];
+    await off.p.keepActivity();
+    ok(!('activity' in off.stored()), 'activity: nothing kept while the widget is off');
+    const hm = await startupRun({ layout: { zones: { top: [], c1: [], c2: ['heatmap'], c3: [] }, hidden: [] } });
+    hm.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }, { stat: { mtime: now, ctime: now } }, { stat: { mtime: y, ctime: y } }];
+    await hm.p.keepActivity();
+    eq(hm.stored().activity, { [T]: 2, [Y]: 1 }, 'activity: today and yesterday kept');
+    hm.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }];
+    await hm.p.keepActivity();
+    eq(hm.stored().activity, { [T]: 2, [Y]: 1 }, 'activity: a lower count does not replace a higher one');
+  }
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
   eq([on.cm.exts.length, on.cm.updated], [0, 0], 'startup: Today adds no editor extension (the marker hiding left with the companion add-on)');
   const off = await startupRun({ ...JSON.parse(JSON.stringify(keep)), openOnStartup: false });

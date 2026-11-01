@@ -6,7 +6,7 @@
 'use strict';
 
 import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
-import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
+import { PARTS, ADDON, HOST as PART_HOST, NEW_INSTALL_KEY } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
 import { linksOf } from './core/calendars';
@@ -104,6 +104,8 @@ class LifeWorldPlugin extends Plugin {
     // A brand-new install: no settings file yet (or an empty one), nothing carried over below. Only then
     // does the setup window open by itself (spec criteria 1, 3, 4); an existing setup never sees it.
     this.firstRun = !!found && Object.keys(found).length === 0;
+    // Kept on this device, never in the settings file, so it cannot reach a device that already has settings.
+    if (this.firstRun) this.app.saveLocalStorage(NEW_INSTALL_KEY, true);
     // A damaged file starts on defaults with carry-over marked done, so a part that saves nothing
     // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
     /** @type {LwStore} */
@@ -112,7 +114,7 @@ class LifeWorldPlugin extends Plugin {
     this.ondisk = /** @type {LwStore} */ (copy(this.store)); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
     if (this.fileStale) this.writeStore().catch((e) => console.error('LifeWorld: settings merged by Sync could not be saved', e));
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
-    PART_HOST.setSidebarGroups = (groups) => this.setVaultSettings({ sidebarGroups: groups });
+    PART_HOST.setSidebar = (patch) => this.setVaultSettings({ sidebar: patch });
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
     /** @type {LifeWorldSettingTab | null} LifeWorld's settings page (it sets this itself) */
@@ -124,7 +126,7 @@ class LifeWorldPlugin extends Plugin {
     let carried = false;
     if (!(this.store[HOST] && this.store[HOST].carriedOver)) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
     // A failed save here must not stop LifeWorld: it runs on what was carried, the next save retries.
-    if (carried) this.firstRun = false;
+    if (carried) { this.firstRun = false; this.app.saveLocalStorage(NEW_INSTALL_KEY, null); }
     if (carried) await this.writeStore().catch((e) => {
       console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
       new Notice('LifeWorld: your old settings were taken over but could not be saved yet. LifeWorld will try again at the next change.', 0);
@@ -342,7 +344,7 @@ class LifeWorldPlugin extends Plugin {
   // Settings › Your vault (and Planning): change = { folders: {...} }, { feeds: {...} }, { names: {...} } or { placeOnDay }, merged into what
   // is saved (feeds: the note paths, set by an owner's companion add-on; no row, build plan section 2).
   // Every part reads the new folders and names from the next time it looks; open views redraw.
-  /** @param {{ folders?: Record<string, string>, feeds?: Record<string, string>, names?: Record<string, string>, placeOnDay?: string, sidebarGroups?: { id: string, label: string, folders: string[] }[] }} change */
+  /** @param {{ folders?: Record<string, string>, feeds?: Record<string, string>, names?: Record<string, string>, placeOnDay?: string, sidebar?: Record<string, unknown> }} change */
   async setVaultSettings(change) {
     const h = this.store[HOST] || {};
     const v = /** @type {Fm} */ (h.vault || {});
@@ -352,7 +354,7 @@ class LifeWorldPlugin extends Plugin {
     if (change.feeds) next.feeds = { .../** @type {Fm} */ (v.feeds || {}), ...change.feeds };
     if (change.names) next.names = change.names;
     if (change.placeOnDay) next.placeOnDay = change.placeOnDay;
-    if (change.sidebarGroups) next.sidebar = { .../** @type {Fm} */ (v.sidebar || {}), groups: change.sidebarGroups };
+    if (change.sidebar) next.sidebar = { .../** @type {Fm} */ (v.sidebar || {}), ...change.sidebar };
     this.store[HOST] = { ...h, vault: next };
     this.applyVault(next);
     await this.writeStore();
@@ -388,8 +390,8 @@ class LifeWorldPlugin extends Plugin {
   openSetup(first) {
     if (first) this.firstRun = false;
     let found;
-    const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
     try {
+      const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
       // Weather shows on Today (its note or a town); calendars on Today and the Planner (their note or links).
       const weather = !!td && (!!vault.feedNotes.weather || !!(td.weatherCfg && td.weatherCfg.place));
       const calendars = !!(td || this.running['a4-planner']) && (!!vault.feedNotes.calendar || linksOf(this.app).length > 0);
@@ -398,11 +400,7 @@ class LifeWorldPlugin extends Plugin {
     this.setup = new SetupModal(this.app, found, {
       onStart: (f) => this.applySetup(f),
       onChange: () => { const s = this.app.setting; s.open(); if (typeof s.openTabById === 'function') s.openTabById(this.manifest.id); },
-      onSeen: first ? () => {
-        // A new install, and not one that got its settings from Sync: reminder pop-ups start on.
-        this.store['a4-today'] = { ...(this.store['a4-today'] || {}), reminderPopups: true };
-        if (td) td.reminderPopups = true;
-        this.store[HOST] = { ...(this.store[HOST] || {}), setupSeen: true }; this.writeStore().catch((e) => console.error('LifeWorld: could not save that setup was seen', e)); } : null,
+      onSeen: first ? () => { this.store[HOST] = { ...(this.store[HOST] || {}), setupSeen: true }; this.writeStore().catch((e) => console.error('LifeWorld: could not save that setup was seen', e)); } : null,
     });
     this.setup.open();
   }
@@ -499,6 +497,7 @@ class LifeWorldPlugin extends Plugin {
     // Settings arrived from another device (Sync): this is not a new install after all. The setup window
     // closes without saving anything, so the synced settings stay as they arrived (spec criterion 5).
     this.firstRun = false;
+    this.app.saveLocalStorage(NEW_INSTALL_KEY, null);
     if (this.setup) this.setup.closeQuietly();
     const before = this.store;
     const was = this.ondisk;

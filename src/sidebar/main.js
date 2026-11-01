@@ -514,16 +514,22 @@ function hiddenUnderRooms(groups) {
   return out;
 }
 
-// A folder renamed where it stands: the groups follow it. Moved elsewhere, it leaves its group.
-/** @param {{ id: string, label: string, folders: string[] }[]} groups @param {string} oldPath @param {string} newPath @param {string} life */
-function renameInGroups(groups, oldPath, newPath, life) {
-  const base = life ? `${life}/` : '';
-  /** @param {string} p */
-  const direct = (p) => p.startsWith(base) && !p.slice(base.length).includes('/');
-  if (!direct(oldPath)) return null;
-  const was = oldPath.slice(base.length);
-  if (!groups.some((g) => g.folders.includes(was))) return null;
-  return groups.map((g) => ({ ...g, folders: direct(newPath) ? g.folders.map((n) => (n === was ? newPath.slice(base.length) : n)) : g.folders.filter((n) => n !== was) }));
+// A folder in the base folder renamed where it stands: its groups, icon, label and no-count mark follow it, as a
+// patch for the saved Sidebar settings, or null. A move, or a rename further up, changes nothing here: the names
+// are relative to the base folder. shortcut: with the Sidebar part off a rename is missed; the old name stays in
+// the editor to remove.
+/** @param {{ groups: { id: string, label: string, folders: string[] }[], icons: Record<string, string>, labels: Record<string, string>, noCount: string[], life: string }} sb @param {string} oldPath @param {string} newPath */
+function renameInSidebar(sb, oldPath, newPath) {
+  if (parentOf(oldPath) !== sb.life || parentOf(newPath) !== sb.life) return null;
+  const was = nameOf(oldPath), now = nameOf(newPath);
+  if (!sb.groups.some((g) => g.folders.includes(was))) return null;
+  const taken = sb.groups.some((g) => g.folders.includes(now)); // an old entry of that name stays the only one
+  /** @param {Record<string, string>} m */
+  const moved = (m) => { const out = { ...m }; if (was in out) { out[now] = out[was]; delete out[was]; } return out; };
+  return {
+    groups: sb.groups.map((g) => ({ ...g, folders: taken ? g.folders.filter((n) => n !== was) : g.folders.map((n) => (n === was ? now : n)) })),
+    icons: moved(sb.icons), labels: moved(sb.labels), noCount: sb.noCount.map((n) => (n === was ? now : n)),
+  };
 }
 
 // Markdown count under a folder, leaving out notes inside hidden folders.
@@ -1458,8 +1464,8 @@ class SidebarPlugin extends Plugin {
     // A folder renamed or moved keeps its sort setting (and its subfolders').
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!(f instanceof TFolder)) return;
-      const groups = renameInGroups(SBC.groups, oldPath, f.path, SBC.life);
-      if (groups && HOST.setSidebarGroups) HOST.setSidebarGroups(groups).catch((e) => console.error('LifeWorld: the Sidebar groups could not follow a renamed folder', e));
+      const patch = renameInSidebar(SBC, oldPath, f.path);
+      if (patch && HOST.setSidebar) HOST.setSidebar(patch).catch((e) => console.error('LifeWorld: the Sidebar groups could not follow a renamed folder', e));
       const next = renameSortPaths(this.state.sort, oldPath, f.path);
       if (JSON.stringify(next) === JSON.stringify(this.state.sort)) return;
       this.state.sort = next;
@@ -1619,6 +1625,17 @@ class FolderPickModal extends FuzzySuggestModal {
   onChooseItem(f) { this.onPick(f.path); }
 }
 
+/** @extends {FuzzySuggestModal<string>} */
+class GroupItemPick extends FuzzySuggestModal {
+  /** @param {import('obsidian').App} app @param {string[]} names @param {(name: string) => unknown} onPick */
+  constructor(app, names, onPick) { super(app); this.names = names; this.onPick = onPick; this.setPlaceholder('Pick a folder'); }
+  getItems() { return this.names; }
+  /** @param {string} n */
+  getItemText(n) { return itemLabel(n); }
+  /** @param {string} n */
+  onChooseItem(n) { this.onPick(n); }
+}
+
 // Settings › Sidebar › My groups (phase 4). Each change is saved and shows in the Sidebar at once; nothing
 // here moves or changes a folder. shortcut: folders directly in the base folder only; widen if people ask.
 class GroupsModal extends Modal {
@@ -1628,14 +1645,16 @@ class GroupsModal extends Modal {
   // A change to the saved groups, read fresh each time: saving replaces them.
   /** @param {(groups: { id: string, label: string, folders: string[] }[]) => { id: string, label: string, folders: string[] }[]} change @param {boolean} [noDraw] */
   async save(change, noDraw) {
-    if (HOST.setSidebarGroups) await HOST.setSidebarGroups(change(SBC.groups));
+    if (HOST.setSidebar) await HOST.setSidebar({ groups: change(SBC.groups) });
     if (!noDraw) this.draw();
   }
-  // The folders a group can take: in the base folder, in no group yet.
+  // What a group can take: folders in the base folder in no group yet, and the built-in lists (Work projects...).
   addable() {
     const base = SBC.life ? this.app.vault.getAbstractFileByPath(SBC.life) : this.app.vault.getRoot();
-    const used = new Set(SBC.groups.flatMap((g) => g.folders.map(itemFolder)));
-    return base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => c.path) : [];
+    const held = SBC.groups.flatMap((g) => g.folders);
+    const used = new Set(held.map(itemFolder));
+    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => c.name) : [];
+    return folders.concat(SBC.life ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : []);
   }
   draw() {
     const { contentEl } = this;
@@ -1660,23 +1679,18 @@ class GroupsModal extends Modal {
       };
       move('arrow-up', `Move ${g.label} up`, -1);
       move('arrow-down', `Move ${g.label} down`, 1);
-      // A built-in list (Work projects...) could not be picked again, so what holds one stays.
-      const del = head.createEl('button', { text: 'Delete', attr: { 'aria-label': `Delete group ${g.label}` } });
-      del.disabled = g.folders.some((n) => VIRTUAL[n]);
-      del.addEventListener('click', () => this.save((list) => list.filter((x) => x.id !== g.id)));
+      head.createEl('button', { text: 'Delete', attr: { 'aria-label': `Delete group ${g.label}` } }).addEventListener('click', () => this.save((list) => list.filter((x) => x.id !== g.id)));
       const chips = box.createDiv({ cls: 'a4sb-gr-chips' });
       for (const n of g.folders) {
         const chip = chips.createSpan({ cls: 'a4sb-gr-chip', text: itemLabel(n) });
-        if (VIRTUAL[n]) continue;
         const x = chip.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': `Remove ${itemLabel(n)} from ${g.label}` } });
         setIcon(x, 'x');
         x.addEventListener('click', () => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.filter((z) => z !== n) } : y))));
       }
       chips.createEl('button', { text: 'Add a folder' }).addEventListener('click', () => {
-        const ok = new Set(this.addable());
-        if (!ok.size) { new Notice('Every folder is already in a group.'); return; }
-        const skip = new Set(this.app.vault.getAllLoadedFiles().filter((f) => f instanceof TFolder && !ok.has(f.path)).map((f) => f.path));
-        new FolderPickModal(this.app, (/** @type {string} */ path) => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.concat(nameOf(path)) } : y))), skip).open();
+        const names = this.addable();
+        if (!names.length) { new Notice('Every folder is already in a group.'); return; }
+        new GroupItemPick(this.app, names, (n) => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.concat(n) } : y)))).open();
       });
     });
     const foot = contentEl.createDiv({ cls: 'a4sb-gr-foot' });
@@ -1760,6 +1774,6 @@ export default SidebarPlugin;
 SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
-  lifePath, renameInGroups, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
+  lifePath, renameInSidebar, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

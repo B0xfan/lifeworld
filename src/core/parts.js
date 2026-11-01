@@ -19,7 +19,10 @@ function partOf(app, id) {
 }
 
 // LifeWorld's own settings, for a part that changes them (the Sidebar's groups). Set by src/main.js.
-/** @type {{ setSidebarGroups: ((groups: { id: string, label: string, folders: string[] }[]) => Promise<void>) | null }} */
-const HOST = { setSidebarGroups: null };
+/** @type {{ setSidebar: ((patch: Record<string, unknown>) => Promise<void>) | null }} */
+const HOST = { setSidebar: null };
 
-export { PARTS, ADDON, HOST, partOf };
+// Set on a device that started LifeWorld with no settings at all: reminder pop-ups start on there.
+const NEW_INSTALL_KEY = 'lifeworld-new-install';
+
+export { PARTS, ADDON, HOST, NEW_INSTALL_KEY, partOf };
