@@ -197,4 +197,8 @@ function timeText(t, short) {
   return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-export { pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };
+// A span of minutes in short words: '5 min', '3 h', '2 d'.
+/** @param {number} min */
+function minutesWords(min) { return min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`; }
+
+export { minutesWords, pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };

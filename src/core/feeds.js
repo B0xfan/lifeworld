@@ -3,6 +3,7 @@
 'use strict';
 
 import { requestUrl } from 'obsidian';
+import { minutesWords } from './dates';
 
 const CACHE_KEY = 'lifeworld-news';
 const HOUR = 3600000;
@@ -42,7 +43,11 @@ function normalizeFeeds(raw) {
 function normalizeFeedCount(v) { return SHOW_CHOICES.includes(/** @type {number} */ (v)) ? /** @type {number} */ (v) : 8; }
 
 /** @param {Element} el @param {string[]} names */
-function childOf(el, names) { return Array.from(el.children).find((c) => names.includes(c.localName)) || null; }
+function childOf(el, names) {
+  const kids = Array.from(el.children);
+  // The plain element first: a podcast's itunes:title or a media:title may come before the real title.
+  return kids.find((c) => names.includes(c.nodeName)) || kids.find((c) => names.includes(c.localName)) || null;
+}
 /** @param {Element} el @param {string[]} names */
 function textOf(el, names) { const c = childOf(el, names); return c && c.textContent ? c.textContent.trim() : ''; }
 
@@ -67,7 +72,10 @@ function plainTitle(s) {
 // RSS, RDF and Atom text -> { title, items }, newest first. Throws Error('not-feed').
 /** @param {string} text @param {string} base the feed's own address, for links written relative to it */
 function parseFeed(text, base) {
-  const doc = new DOMParser().parseFromString(text.trimStart(), 'text/xml');
+  const reader = new DOMParser();
+  let doc = reader.parseFromString(text.trimStart(), 'text/xml');
+  // One &nbsp; or bare & fails strict reading, though most readers accept the feed: try again with those escaped.
+  if (doc.querySelector('parsererror')) doc = reader.parseFromString(text.trimStart().replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;'), 'text/xml');
   const root = doc.documentElement;
   if (doc.querySelector('parsererror') || !root || !['rss', 'feed', 'RDF'].includes(root.localName)) throw new Error('not-feed');
   const items = Array.from(doc.querySelectorAll('item, entry')).map((el) => {
@@ -157,7 +165,7 @@ function newsCard(results, feeds, show) {
 function newsAge(at, now) {
   if (!at) return '';
   const min = Math.max(0, Math.round((now - at) / 60000));
-  return min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
+  return minutesWords(min);
 }
 
-export { SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, feedError, newsResults, feedsStale, refreshNews, newsCard, newsAge };
+export { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge };

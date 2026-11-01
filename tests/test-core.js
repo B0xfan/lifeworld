@@ -12,11 +12,11 @@ const { coreUse, fromCore } = require('./lib/core-use');
 
 const CORE = path.join(__dirname, '..', 'src', 'core');
 const EXPORTS = {
-  dates: ['pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
+  dates: ['minutesWords', 'pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
   lists: ['asList'],
   activity: ['HEAT_MODES', 'normalizeHeatCount', 'normalizeActivity', 'pruneActivity', 'datesPerDay', 'mergeCounts', 'tasksDonePerDay', 'heatLevel', 'heatDays', 'heatMonths', 'heatWords'],
-  feeds: ['SHOW_CHOICES', 'cleanFeedUrl', 'normalizeFeeds', 'normalizeFeedCount', 'parseFeed', 'feedError', 'newsResults', 'feedsStale', 'refreshNews', 'newsCard', 'newsAge'],
-  popups: ['ringsOf', 'ringsDue', 'pruneSeen', 'ringWhen'],
+  feeds: ['MAX_FEEDS', 'SHOW_CHOICES', 'cleanFeedUrl', 'normalizeFeeds', 'normalizeFeedCount', 'parseFeed', 'newsResults', 'feedsStale', 'refreshNews', 'newsCard', 'newsAge'],
+  popups: ['ringsOf', 'ringsDue', 'pruneSeen', 'ringWhen', 'renameSeen'],
   'settings-log': ['readFile', 'addChanges', 'carryChanges'],
   settings: ['drawRows', 'blockRow', 'noCleanup'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],

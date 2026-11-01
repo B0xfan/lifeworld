@@ -527,7 +527,8 @@ function renameInSidebar(sb, oldPath, newPath, lifeThere) {
     return { groups: sb.groups.map((g) => ({ ...g, folders: g.folders.filter((n) => n !== was) })) };
   }
   if (!sb.groups.some((g) => g.folders.includes(was)) && !(was in sb.icons) && !(was in sb.labels) && !sb.noCount.includes(was)) return null;
-  const taken = sb.groups.some((g) => g.folders.includes(now)); // an old entry of that name stays the only one
+  // An old entry of that name stays the only one; a built-in list's name would be read as that list, so it leaves.
+  const taken = sb.groups.some((g) => g.folders.includes(now)) || Object.keys(VIRTUAL).includes(now);
   /** @param {Record<string, string>} m */
   const moved = (m) => { const out = { ...m }; if (was in out) { out[now] = out[was]; delete out[was]; } return out; };
   return {
@@ -1704,7 +1705,12 @@ class GroupsModal extends Modal {
     foot.createEl('button', { text: 'New group' }).addEventListener('click', () => this.save((list) => [...list, { id: `g-${Date.now().toString(36)}`, label: 'New group', folders: [] }]));
     foot.createEl('button', { text: 'Done', cls: 'mod-cta' }).addEventListener('click', () => this.close());
   }
-  onClose() { this.contentEl.empty(); this.onDone(); }
+  onClose() {
+    // A name still being typed is saved by leaving its box.
+    const typing = this.contentEl.querySelector('input:focus');
+    if (typing instanceof HTMLElement) typing.blur();
+    this.contentEl.empty(); this.onDone();
+  }
 }
 
 class NewestFirstListModal extends Modal {

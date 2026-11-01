@@ -803,6 +803,7 @@ const start = async (data) => {
   eq(SBL.renameInSidebar(sbx, 'My Life/Other', 'My Life/New', true).icons, { Clients: 'chart', New: 'x' }, 'a folder in no group keeps its icon too');
   eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'Old/Clients', true), { groups: [{ id: 'w', label: 'Work', folders: ['Work projects', 'Gone'] }] }, 'moved out of the base folder: it leaves its group');
   eq([SBL.renameInSidebar(sbx, 'My Life/Clients', 'Life/Clients', false), SBL.renameInSidebar(sbx, 'Z/Clients', 'Z/C', true), SBL.renameInSidebar(sbx, 'My Life/Plain', 'My Life/P2', true)], [null, null, null], 'a rename further up, or of a folder with nothing saved, changes nothing');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Personal projects', true).groups[0].folders, ['Work projects', 'Gone'], 'renamed to a built-in list name: it leaves its group');
   eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers', true).groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts

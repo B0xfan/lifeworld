@@ -913,6 +913,9 @@ function nop2() {}
   eq(L.ringsDue(r, after, { [r[0].key]: 0 }, '2026-11-02').length, 0, 'pop-up: never twice');
   eq([L.ringsDue(r, after, { [r[0].key]: after + 1 }, '2026-11-02').length, L.ringsDue(r, after, { [r[0].key]: after }, '2026-11-02').length], [0, 1], 'pop-up: "In 10 minutes" brings it back then');
   eq(L.ringsDue(r, when('2026-11-03', '09:00'), {}, '2026-11-03').length, 0, 'pop-up: missed on an earlier day is skipped');
+  eq(L.ringsDue(r, when('2026-11-05', '09:00'), { [r[0].key]: when('2026-11-02', '13:56') }, '2026-11-05').length, 0, 'pop-up: an old snooze is skipped');
+  eq(L.renameSeen({ 'T/a.md|2026-11-02|14:00|15': 0, 'T/b.md|2026-11-02|14:00|15': 0 }, 'T/a.md', 'T/z.md'), { 'T/z.md|2026-11-02|14:00|15': 0, 'T/b.md|2026-11-02|14:00|15': 0 }, 'pop-up: a renamed task stays rung');
+  eq(L.ringsOf({ ...daily, reminder: 0, status: 'done' }, '2026-11-02'), [], 'pop-up: a repeating task finished for good does not ring');
   eq(L.ringsDue(r, when('2026-11-02', '20:00'), {}, '2026-11-02').length, 1, 'pop-up: missed earlier today shows when Obsidian opens');
   eq(Object.keys(L.pruneSeen({ 'a|2026-11-02|14:00|0': 0, 'b|2026-10-01|14:00|0': 0, 'c|2026-10-02|14:00|-4320': 0 }, '2026-11-02')).sort(), ['a|2026-11-02|14:00|0', 'c|2026-10-02|14:00|-4320'], 'pop-up: old records go; one for a reminder days after its task stays');
   eq(['2026-11-02T13:45', '2026-11-02T14:00:30', '2026-11-02T14:10', '2026-11-02T10:00', '2026-11-02T15:30'].map((s) => L.ringWhen(when('2026-11-02', '14:00'), new Date(s).getTime())), ['in 15 min', 'now', '10 min ago', 'in 4 h', '2 h ago'], 'pop-up: the time in words');

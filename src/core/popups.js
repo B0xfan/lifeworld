@@ -2,8 +2,8 @@
 // What has rung is kept per device: Obsidian can only pop up where it is open.
 'use strict';
 
-import { dayOf, addDays } from './dates';
-import { isTaskDone, taskOnDay, isSomeday } from './tasks';
+import { dayOf, addDays, minutesWords } from './dates';
+import { DEFAULT_COMPLETED_STATUSES, isTaskDone, taskOnDay, isSomeday } from './tasks';
 
 /** @typedef {{ key: string, day: string, due: number, at: number }} Ring */
 
@@ -19,6 +19,7 @@ function msOf(day, time) {
 function ringsOf(item, today, completed) {
   const before = item.reminder;
   if (before == null || !item.time || isSomeday(item)) return [];
+  if (item.recurrenceRaw && (completed || DEFAULT_COMPLETED_STATUSES).includes(item.status)) return []; // finished for good
   /** @type {string[]} */
   let days = [];
   if (!item.recurrenceRaw) days = item.due ? [item.due] : [];
@@ -41,7 +42,7 @@ function ringsOf(item, today, completed) {
 /** @template {Ring} R @param {R[]} rings @param {number} now @param {Record<string, number>} seen @param {string} today @returns {R[]} */
 function ringsDue(rings, now, seen, today) {
   return rings.filter((r) => {
-    if (r.key in seen) return seen[r.key] > 0 && seen[r.key] <= now;
+    if (r.key in seen) return seen[r.key] > 0 && seen[r.key] <= now && dayOf(new Date(seen[r.key])) === today; // an old snooze is skipped
     return r.at <= now && dayOf(new Date(r.at)) === today;
   }).sort((a, b) => a.at - b.at);
 }
@@ -59,8 +60,13 @@ function ringWhen(due, now) {
   const min = Math.round((due - now) / 60000);
   const n = Math.abs(min);
   if (n < 1) return 'now';
-  const size = n < 60 ? `${n} min` : n < 1440 ? `${Math.round(n / 60)} h` : `${Math.round(n / 1440)} d`;
-  return min > 0 ? `in ${size}` : `${size} ago`;
+  return min > 0 ? `in ${minutesWords(n)}` : `${minutesWords(n)} ago`;
 }
 
-export { ringsOf, ringsDue, pruneSeen, ringWhen };
+// A task note renamed or moved: what has rung stays rung.
+/** @param {Record<string, number>} seen @param {string} oldPath @param {string} newPath @returns {Record<string, number>} */
+function renameSeen(seen, oldPath, newPath) {
+  return Object.fromEntries(Object.entries(seen).map(([k, v]) => [k.startsWith(`${oldPath}|`) ? newPath + k.slice(oldPath.length) : k, v]));
+}
+
+export { ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen };
