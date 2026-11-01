@@ -1279,8 +1279,9 @@ class TodayPlugin extends Plugin {
         // As the note is now: it may have been ticked since the card went up.
         const f = this.app.vault.getAbstractFileByPath(item.path);
         const c = f instanceof TFile ? this.app.metadataCache.getFileCache(f) : null;
-        const now = c && c.frontmatter && f instanceof TFile ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : null;
-        if (now && !isTaskDone(now, day, this.completedStatuses())) await this.toggleTask(now, day); // no longer a task: nothing to finish
+        // Not read by Obsidian yet (just made or synced): the card's copy. Read, and no longer a task: nothing to finish.
+        const now = c && c.frontmatter && f instanceof TFile ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : item;
+        if (now && !isTaskDone(now, day, this.completedStatuses())) await this.toggleTask(now, day);
         this.closeReminder(key); this.checkReminders();
       }
       catch (e) { working = false; new Notice(e instanceof Error && e.message ? e.message : 'That task could not be finished.'); }

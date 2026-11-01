@@ -55,10 +55,14 @@ function linkOf(item, base) {
   return cleanFeedUrl(atom ? atom.getAttribute('href') : rss, base) || cleanFeedUrl(textOf(item, ['guid', 'id']));
 }
 
-// A title as text: feeds often escape it twice, so an entity left over is decoded. Only then: a real "<" stays.
-// An inert page: nothing in it runs or loads.
+// A title as text: feeds often escape it twice, so an entity left over is decoded. Inside a textarea only entities
+// are read, so a real "<" stays. An inert page: nothing in it runs or loads.
 /** @param {string} s */
-function plainTitle(s) { return /&(#\d+|#x[0-9a-f]+|[a-z]+);/i.test(s) ? (new DOMParser().parseFromString(s, 'text/html').documentElement.textContent || s).trim() : s; }
+function plainTitle(s) {
+  if (!/&(#\d+|#x[0-9a-f]+|[a-z]+);/i.test(s)) return s;
+  const box = new DOMParser().parseFromString(`<textarea>${s.replace(/<\/textarea/gi, '&lt;/textarea')}</textarea>`, 'text/html').querySelector('textarea');
+  return box ? box.value.trim() : s;
+}
 
 // RSS, RDF and Atom text -> { title, items }, newest first. Throws Error('not-feed').
 /** @param {string} text @param {string} base the feed's own address, for links written relative to it */
@@ -73,7 +77,7 @@ function parseFeed(text, base) {
   }).filter((x) => x.title);
   return {
     title: plainTitle(textOf(childOf(root, ['channel']) || root, ['title'])).slice(0, 80),
-    items: items.sort((a, b) => b.at - a.at).slice(0, KEEP_ITEMS).map((x) => ({ ...x, title: plainTitle(x.title).slice(0, 300) })),
+    items: items.sort((a, b) => b.at - a.at).slice(0, KEEP_ITEMS).map((x) => ({ ...x, title: plainTitle(x.title).slice(0, 300) })).filter((x) => x.title),
   };
 }
 
