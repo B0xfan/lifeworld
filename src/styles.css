@@ -29,7 +29,7 @@
 .is-phone .lw-setup .modal-button-container button { width: 100%; }
 
 /* Reminder pop-ups (phase 4) */
-.lw-reminders { position: fixed; right: 16px; bottom: 16px; z-index: var(--layer-notice); display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 16px)); }
+.lw-reminders { position: fixed; right: 16px; bottom: 40px; z-index: var(--layer-notice); display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 16px)); }
 .lw-rem { padding: 12px 14px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: var(--shadow-l); color: var(--text-normal); }
 .lw-rem-top { display: flex; align-items: center; gap: 6px; font-family: var(--font-monospace); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-accent); }
 .lw-rem-top svg { width: 13px; height: 13px; }

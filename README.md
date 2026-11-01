@@ -36,6 +36,10 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 A new install starts with Quick capture, the task cards, Calendar, Recent notes, Mood, Habits and
 Active projects. The rest are one click away under **Settings → LifeWorld → Today page**.
 
+A task with a reminder and a clock time pops up inside Obsidian while it is open, with Done, In 10 minutes,
+Open and Dismiss. Turn this off or on with **Reminder pop-ups** in the same settings. It works with task notes,
+and stays off with the TaskNotes plugin, which has its own alerts. A new install starts with it on.
+
 ![The Today page in dark mode](screenshots/today-dark.png)
 
 ### Planner
@@ -60,7 +64,8 @@ projects and one-off tasks that belong to it. An Inbox collects tasks with no pr
 
 A panel on the left with search, Today and the Planner at the top, then your folders with a note count
 on each. Drag a note onto a folder to move it, and pick how each folder sorts. Turn the Sidebar off and
-Obsidian's normal file list comes back.
+Obsidian's normal file list comes back. Under **Settings → LifeWorld → Sidebar**, **My groups** gathers your
+folders under names you choose. Your folders and notes stay where they are.
 
 ![The Sidebar](screenshots/sidebar-dark.png)
 

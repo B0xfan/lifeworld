@@ -87,4 +87,12 @@ check(() => assert.ok(D.occursOn(D.parseRRule('DTSTART:20260905;FREQ=DAILY;INTER
 check(() => assert.ok(!D.occursOn(D.parseRRule('DTSTART:20260905;FREQ=DAILY;INTERVAL=2'), '2026-09-06')));
 check(() => assert.deepStrictEqual(Q.quickAddChips(Q.understand('call Max friday 3pm', '2026-10-05'), '2026-10-05', null, 'normal'), ['Call Max', 'Due Fri, Oct 9, 3:00 PM']));
 check(() => assert.strictEqual(R.reminderOf({ due: '2026-10-08T16:30', reminders: { type: 'relative', relatedTo: 'due', offset: '-PT15M' } }), 15));
+// Heatmap days kept on two devices: a Sync merge (the newest file's top-level keys over the other's) loses neither day.
+check(() => {
+  const S = core['settings-log'];
+  const base = { 'a4-today': { activity: { '2026-10-30': 2 } } };
+  const write = (day, at) => { const after = { 'a4-today': { activity: { '2026-10-30': 2, [day]: 3 } } }; return { ...after, ...S.addChanges({}, base, after, at) }; };
+  const merged = { ...write('2026-10-31', 1000), ...write('2026-11-01', 2000) };
+  assert.deepStrictEqual(S.readFile(merged, 3000).store['a4-today'].activity, { '2026-10-30': 2, '2026-10-31': 3, '2026-11-01': 3 }, 'heatmap: both devices keep their days');
+});
 console.log(`core self-check: OK (${n} checks)`);
