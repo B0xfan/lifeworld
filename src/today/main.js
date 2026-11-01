@@ -739,6 +739,13 @@ function sunFrom(w) {
   const rise = hrs(w && w.sunrise), set = hrs(w && w.sunset);
   return rise === null || set === null || set <= rise ? null : { dawn: rise - 25 / 60, rise, set, dusk: set + 25 / 60 };
 }
+// The sun times the ring can draw now. A town's times are that town's clock and the ring is this device's.
+// shortcut: another zone gets a plain ring and no sun line, convert the times if someone asks.
+/** @param {{ sunrise?: unknown, sunset?: unknown, timezone?: unknown } | null | undefined} w @param {Date} now */
+function sunHere(w, now) {
+  const tz = w && typeof w.timezone === 'string' ? w.timezone : null;
+  return tz && clockAt(now, tz).time !== clockAt(now, null).time ? null : sunFrom(w);
+}
 // The ring colour at local hour `h` (the 24-hour World clock, 2026-10-29): night purple, light orange at
 // first light growing to bright orange at sunrise, easing to day blue over 80 minutes; the evening mirrors it.
 // No sun times (no weather): day blue all round. -> 'rgb(r,g,b)'
@@ -761,7 +768,7 @@ function ringColour(h, sun) {
 function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
 // A local hour (fractions for minutes) as '5:31 AM'.
 /** @param {number} h */
-function hourLabel(h) { const mins = Math.round(h * 60) % 1440, H = Math.floor(mins / 60); return `${H % 12 || 12}:${String(mins % 60).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; }
+function hourLabel(h) { const mins = Math.round(h * 60) % 1440; return timeText(`${pad2(Math.floor(mins / 60))}:${pad2(mins % 60)}`); }
 
 /* ---- widgets and layout ---------------------------------------------------- */
 
@@ -1038,7 +1045,7 @@ function projectLines(projects, ix) {
 }
 
 const logic = {
-  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, ringColour, hourLabel,
+  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, sunHere, ringColour, hourLabel,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
@@ -3283,22 +3290,19 @@ class TodayView extends ItemView {
     const date = mid.createDiv({ cls: 'a4t-clk-date' });
     const sunLine = mid.createDiv({ cls: 'a4t-clk-sunline' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = places.map((p) => {
-      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
-      li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
-      return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
-    });
+    const rows = this.placeRows(list, places);
     let drawn = '';
     const paint = () => {
       const now = new Date();
       const here = clockAt(now, null);
       const hour = here.h + here.m / 60;
       big.setText(hourLabel(hour));
-      for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(c.time); r.day.setText(c.day); }
+      // As in the approved ring mockup: '10:47 AM TODAY'.
+      for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(hourLabel(c.h + c.m / 60)); r.day.setText(c.date === here.date ? 'TODAY' : c.day); }
       const key = `${here.date} ${here.h}:${here.m}`;
       if (key === drawn) return;
       drawn = key;
-      const sun = sunFrom(this.data && this.data.weather);
+      const sun = sunHere(this.data && this.data.weather, now);
       date.setText(here.date);
       sunLine.setText(sun ? `☀︎ ${hourLabel(sun.rise)} – ${hourLabel(sun.set)}` : '');
       past.empty(); later.empty();
@@ -3312,6 +3316,15 @@ class TodayView extends ItemView {
     };
     paint();
     this.clockPaint = () => (body.isConnected ? paint() : null);
+  }
+
+  /** @param {HTMLElement | null} list @param {{ name: string, tz: string }[]} places */
+  placeRows(list, places) {
+    return places.map((p) => {
+      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
+      li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
+      return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
+    });
   }
 
   // The classic dial (launch section 4, mockup v6), kept as a choice in Settings beside the sun ring.
@@ -3333,11 +3346,7 @@ class TodayView extends ItemView {
     const big = txt.createDiv({ cls: 'a4t-clk-big' });
     const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
     const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = places.map((p) => {
-      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
-      li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
-      return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
-    });
+    const rows = this.placeRows(list, places);
     const paint = () => {
       const now = new Date();
       const here = clockAt(now, null);

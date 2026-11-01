@@ -4162,9 +4162,11 @@ class ProjectsView extends ItemView {
     const page = typeof s.page === 'string' && ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
     const focus = s.focus === 'work' || s.focus === 'personal' ? s.focus : null;
     const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
+    // A plain tab keeps its Work / Personal button across pages; a move to or from a Work or Personal list sets it.
+    if (changed && (focus || focus !== this.state.focus)) this.area = focus;
     this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
     this.focusAdd = !!s.focusAdd;
-    if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
+    if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
     this.render(true, changed);
     await super.setState(state, result);
     this.refreshTitle();
@@ -4988,7 +4990,7 @@ class ProjectsView extends ItemView {
     // page's other links; links the reading-view post-processor owns are skipped the same way it does.
     /** @param {MouseEvent} e */
     const onBodyLinkClick = (e) => {
-      if (e.type === 'auxclick' && e.button !== 1) return;
+      if (e.defaultPrevented || (e.type === 'auxclick' && e.button !== 1)) return;
       const t = /** @type {HTMLElement | null} */ (e.target);
       const a = t && t.closest ? t.closest('a.internal-link') : null;
       if (!a || a.closest('.a4pj-tl, .a4pj-card, .tasknotes-inline-widget, .markdown-embed-title') || a.hasClass('a4pj-tl-hidden')) return;

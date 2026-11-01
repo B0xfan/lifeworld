@@ -9,7 +9,7 @@ const path = require('path');
 const Module = require('module');
 const { part } = require('./lib/paths');
 const assert = require('assert');
-const fake = { Plugin: class {}, ItemView: class {}, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
+const fake = { Plugin: class {}, ItemView: class { async setState() {} }, MarkdownView: class {}, Modal: class {}, SuggestModal: class {}, PluginSettingTab: class {}, Setting: class {}, TFile: class {}, TFolder: class {}, Notice: class {}, setIcon() {}, Platform: {}, Component: class {} };
 const load = Module._load;
 Module._load = function (req, ...a) { return req === 'obsidian' ? fake : load.call(this, req, ...a); };
 const plugin = part('a4-projects');
@@ -93,5 +93,16 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   assert.deepStrictEqual(listHead, [['/ Projects'], 'Work projects'], 'List, Work pressed: the title says so');
   plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'personal' }, pg());
   assert.deepStrictEqual(listHead, [['/ Projects', 'Personal'], 'Personal projects'], 'List opened as Personal, still Personal: crumb and title unchanged');
+  // The buttons survive a trip to a project page and back; a tab opened as Personal goes back to Personal.
+  const nav = (state, area) => Object.assign(Object.create(plugin.ProjectsView.prototype), { state, area, expanded: new Set(), render() {} });
+  const plain = nav({ page: 'overview', project: null, focus: null }, 'work');
+  await plain.setState({ page: 'project', project: 'P.md' }, {});
+  await plain.setState({ page: 'overview' }, {});
+  assert.strictEqual(plain.area, 'work', 'plain tab: Work stays on after opening a project and coming back');
+  const toFocus = nav({ page: 'overview', project: null, focus: null }, 'work');
+  await toFocus.setState({ page: 'overview', focus: 'personal' }, {});
+  assert.strictEqual(toFocus.area, 'personal', 'the sidebar Personal item turns Personal on');
+  await toFocus.setState({ page: 'overview' }, {});
+  assert.strictEqual(toFocus.area, null, 'leaving the Personal list clears it');
   console.log('view switch self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

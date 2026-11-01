@@ -47,6 +47,7 @@ const { part } = require('./lib/paths');
   click(idea, { button: 2 }, 'auxclick');
   assert.strictEqual(click(ext), false, 'an external link is left to Obsidian (criterion 4)');
   assert.strictEqual(click(task), false, 'a link hidden behind a task row is left alone (criterion 3)');
+  click(idea, { defaultPrevented: true }); // Obsidian's embed already opened it: a second open would be a second tab
   assert.deepStrictEqual(opened, [
     ['Business Ideas.base', 'Projects/Business Ideas.md', 'tab'],
     ['Article Vault', 'Projects/Business Ideas.md', 'tab'],
