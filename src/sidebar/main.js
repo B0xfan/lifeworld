@@ -1474,9 +1474,6 @@ class SidebarPlugin extends Plugin {
     this.app.saveLocalStorage(PLACED_KEY, true);
   }
 
-  // The Sidebar switch went off and closed the tab: switching it on adds the tab again.
-  forgetPlaced() { this.app.saveLocalStorage(PLACED_KEY, null); }
-
   async activate() {
     const ws = this.app.workspace;
     let leaf = ws.getLeavesOfType(VIEW_TYPE)[0];
@@ -1676,5 +1673,5 @@ SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 sect
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
-  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
+  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

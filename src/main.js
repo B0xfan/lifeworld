@@ -307,13 +307,17 @@ class LifeWorldPlugin extends Plugin {
         const modeChanged = part && m.id === 'a4-projects' && !!part.pagesOff !== !this.isOn('a4-projects');
         if (!part || (this.wanted(m.id) && !modeChanged)) continue;
         for (const type of this.views[m.id]) this.app.workspace.detachLeavesOfType(type);
-        if (m.id === 'a4-sidebar') /** @type {Sidebar} */ (part).forgetPlaced();
         delete this.running[m.id]; delete PARTS[m.id]; this.removeChild(part);
         // Sidebar off: Obsidian's file list comes forward in its place, as the mockup says.
         const files = m.id === 'a4-sidebar' && this.app.workspace.getLeavesOfType('file-explorer')[0];
         if (files) await this.app.workspace.revealLeaf(files);
       }
-      for (const entry of PART_LIST) if (this.wanted(entry[0].id) && !this.running[entry[0].id]) await this.startPart(entry);
+      for (const entry of PART_LIST) {
+        if (!this.wanted(entry[0].id) || this.running[entry[0].id]) continue;
+        // The Sidebar switched on while running: its tab comes back, also when it was already off at this start.
+        if (entry[0].id === 'a4-sidebar') this.app.saveLocalStorage(Sidebar.__logic.PLACED_KEY, null);
+        await this.startPart(entry);
+      }
       // The tabs still open draw again: a part switched off hides its buttons and links in the
       // others (phase 2 section 6, as drawn), one switched on shows them.
       this.redrawViews();
