@@ -2635,8 +2635,8 @@ class ProjectsPlugin extends Plugin {
     // is on, so only the task engine runs: no Projects tab, ribbon button or page commands.
     if (!this.pagesOff) {
       this.registerView(VIEW_TYPE, (leaf) => new ProjectsView(leaf, this));
-      this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview' }));
-      this.addCommand({ id: 'open', name: 'Open projects', callback: () => this.openProjects({ page: 'overview' }) });
+      this.addRibbonIcon('folder-kanban', 'Open Projects', () => this.openProjects({ page: 'overview', focus: null }));
+      this.addCommand({ id: 'open', name: 'Open projects', callback: () => this.openProjects({ page: 'overview', focus: null }) });
       this.addCommand({ id: 'open-work', name: 'Open work projects', callback: () => this.openProjects({ page: 'overview', focus: 'work' }) });
       this.addCommand({ id: 'open-personal', name: 'Open personal projects', callback: () => this.openProjects({ page: 'overview', focus: 'personal' }) });
       this.addCommand({ id: 'open-inbox', name: 'Open the task inbox', callback: () => this.openProjects({ page: 'inbox' }) });
@@ -4155,15 +4155,16 @@ class ProjectsView extends ItemView {
   getViewType() { return VIEW_TYPE; }
   getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? /** @type {string} */ (s.project.split('/').pop()).replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects'; }
   getIcon() { return 'folder-kanban'; }
-  getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus }; }
+  getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus, area: this.area }; }
   /** @param {unknown} state @param {import('obsidian').ViewStateResult} result */
   async setState(state, result) {
     const s = /** @type {Fm} */ (state && typeof state === 'object' ? state : {});
     const page = typeof s.page === 'string' && ['overview', 'project', 'inbox'].includes(s.page) ? s.page : 'overview';
     const focus = s.focus === 'work' || s.focus === 'personal' ? s.focus : null;
     const changed = page !== this.state.page || s.project !== this.state.project || focus !== this.state.focus;
-    // A plain tab keeps its Work / Personal button across pages; a move to or from a Work or Personal list sets it.
-    if (changed && (focus || focus !== this.state.focus)) this.area = focus;
+    // The Work / Personal button stays across pages. A state that names a focus sets it; a saved tab brings its own.
+    if ('area' in s) this.area = s.area === 'work' || s.area === 'personal' ? s.area : null;
+    else if ('focus' in s) this.area = focus;
     this.state = { page, project: typeof s.project === 'string' ? s.project : null, focus };
     this.focusAdd = !!s.focusAdd;
     if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
@@ -4299,7 +4300,7 @@ class ProjectsView extends ItemView {
     const pick = async (key, k) => { const u = /** @type {Record<string, unknown>} */ (this.plugin.settings.ui); if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
+    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview', focus: null })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
       this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
     ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,

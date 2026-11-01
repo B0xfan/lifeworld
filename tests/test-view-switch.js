@@ -102,7 +102,19 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   const toFocus = nav({ page: 'overview', project: null, focus: null }, 'work');
   await toFocus.setState({ page: 'overview', focus: 'personal' }, {});
   assert.strictEqual(toFocus.area, 'personal', 'the sidebar Personal item turns Personal on');
+  await toFocus.setState({ page: 'project', project: 'P.md' }, {});
   await toFocus.setState({ page: 'overview' }, {});
-  assert.strictEqual(toFocus.area, null, 'leaving the Personal list clears it');
+  assert.strictEqual(toFocus.area, 'personal', 'a tab opened as Personal keeps Personal after opening a project and coming back');
+  await toFocus.setState({ page: 'overview', focus: null }, {});
+  assert.strictEqual(toFocus.area, null, 'Open projects and the crumb out of the Personal list clear it');
+  // A restart brings the button back; a tab saved before 1.1.6 has only its focus.
+  toFocus.area = 'work';
+  const saved2 = JSON.parse(JSON.stringify(toFocus.getState()));
+  const restored = nav({ page: 'overview', project: null, focus: null }, null);
+  await restored.setState(saved2, {});
+  assert.strictEqual(restored.area, 'work', 'a restart keeps the pressed button');
+  const older = nav({ page: 'overview', project: null, focus: null }, null);
+  await older.setState({ page: 'overview', project: null, focus: 'personal' }, {});
+  assert.strictEqual(older.area, 'personal', 'a tab saved before 1.1.6 starts with its focus on');
   console.log('view switch self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

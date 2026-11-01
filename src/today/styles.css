@@ -375,6 +375,7 @@ html:not(#a4t-guard) .a4t-root .a4t-clk-place + .a4t-clk-place { border-top: 1px
 html:not(#a4t-guard) .a4t-root .a4t-clk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--a4t-paper); }
 html:not(#a4t-guard) .a4t-root .a4t-clk-time { flex: none; font-family: var(--a4t-f-mono); font-weight: 500; font-size: 12px; color: var(--a4t-paper); white-space: nowrap; }
 html:not(#a4t-guard) .a4t-root .a4t-clk-day { flex: none; width: 3.2em; text-align: right; font-family: var(--a4t-f-mono); font-size: 10px; letter-spacing: .08em; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-clk-ring ~ .a4t-clk-places .a4t-clk-day { width: 4em; } /* room for TODAY */
 /* Settings › World clock › Add a place: each match on one line, name cut with … before its time zone */
 /* a narrow window: Obsidian's 500 px list would run off the left edge (phones get this from Obsidian already) */
 html:not(#a4t-guard) .suggestion-container.a4t-place-suggest { max-width: min(500px, calc(100vw - 20px)); }

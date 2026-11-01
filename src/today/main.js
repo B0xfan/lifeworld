@@ -744,7 +744,7 @@ function sunFrom(w) {
 /** @param {{ sunrise?: unknown, sunset?: unknown, timezone?: unknown } | null | undefined} w @param {Date} now */
 function sunHere(w, now) {
   const tz = w && typeof w.timezone === 'string' ? w.timezone : null;
-  return tz && clockAt(now, tz).time !== clockAt(now, null).time ? null : sunFrom(w);
+  try { return tz && clockAt(now, tz).time !== clockAt(now, null).time ? null : sunFrom(w); } catch { return null; } // a zone this device cannot read
 }
 // The ring colour at local hour `h` (the 24-hour World clock, 2026-10-29): night purple, light orange at
 // first light growing to bright orange at sunrise, easing to day blue over 80 minutes; the evening mirrors it.
@@ -766,9 +766,10 @@ function ringColour(h, sun) {
 // The classic dial's hand angles in degrees.
 /** @param {{ h: number, m: number, s: number }} c */
 function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
-// One line per place in the World clock card, for either clock look.
-/** @param {HTMLElement | null} list @param {{ name: string, tz: string }[]} places */
-function placeRows(list, places) {
+// One line per place in the World clock card, for either clock look; no list with no places.
+/** @param {HTMLElement} body @param {{ name: string, tz: string }[]} places */
+function placeRows(body, places) {
+  const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
   return places.map((p) => {
     const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
     li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
@@ -3298,8 +3299,7 @@ class TodayView extends ItemView {
     const big = mid.createDiv({ cls: 'a4t-clk-big' });
     const date = mid.createDiv({ cls: 'a4t-clk-date' });
     const sunLine = mid.createDiv({ cls: 'a4t-clk-sunline' });
-    const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = placeRows(list, places);
+    const rows = placeRows(body, places);
     let drawn = '';
     const paint = () => {
       const now = new Date();
@@ -3345,8 +3345,7 @@ class TodayView extends ItemView {
     const txt = top.createDiv();
     const big = txt.createDiv({ cls: 'a4t-clk-big' });
     const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
-    const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
-    const rows = placeRows(list, places);
+    const rows = placeRows(body, places);
     const paint = () => {
       const now = new Date();
       const here = clockAt(now, null);

@@ -524,6 +524,7 @@ eq(L.normalizePlaces([{ name: 'X', tz: 'Nope/Zone' }, { name: ' London ', tz: 'E
   eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz }, sunNow), sun, 'ring: weather in this device\'s zone uses its sun times');
   eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM' }, sunNow), sun, 'ring: a weather note with no zone uses its sun times');
   eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: hereTz === 'Asia/Tokyo' ? 'Europe/Paris' : 'Asia/Tokyo' }, sunNow), null, 'ring: weather from another zone draws no day and night');
+  eq(L.sunHere({ sunrise: '5:33 AM', sunset: '5:20 PM', timezone: 'CST-6-nope' }, sunNow), null, 'ring: a zone this device cannot read does not break the card');
   eq([L.hourLabel(0), L.hourLabel(11 + 47 / 60), L.hourLabel(12), L.hourLabel(23.999)], ['12:00 AM', '11:47 AM', '12:00 PM', '12:00 AM'], 'ring: hour labels');
   const ut = { name: 'Windsor, Colorado, United States', short: 'Windsor, Colorado', tz: 'America/Denver' }; const on = { name: 'Windsor, Ontario, Canada', short: 'Windsor, Ontario', tz: 'America/Toronto' };
   eq([L.placeFromMatch(ut), L.placeFromMatch(on)], [{ name: 'Windsor, Colorado', tz: 'America/Denver' }, { name: 'Windsor, Ontario', tz: 'America/Toronto' }], 'add a place: the time zone comes from the search match; same-name towns stay apart');
