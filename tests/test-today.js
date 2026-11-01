@@ -914,7 +914,7 @@ function nop2() {}
   const hd2 = L.heatDays('2026-11-04'); // a Wednesday
   eq([hd2[0], hd2.length % 7, new Date(`${hd2[0]}T12:00:00`).getDay()], ['2025-11-02', 4, 0], 'heatmap: a part week ends on today, the first day stays a Sunday');
   const hm = L.heatMonths(hd);
-  eq([hm[0].label, hm.length, hm.every((m) => m.col > 0 && m.col < 53)], ['Dec', 12, true], 'heatmap: a label for each month that starts on the grid');
+  eq([hm[0].label, hm[hm.length - 1].label, hm.every((m) => m.col > 0 && m.col < 50)], ['Dec', 'Oct', true], 'heatmap: a label for each month that starts on the grid, none too near the end to fit');
   eq([L.heatWords('2026-03-03', 6, 'edited'), L.heatWords('2026-03-03', 1, 'edited'), L.heatWords('2026-03-03', 1, 'daily'), L.heatWords('2026-03-03', 0, 'daily'), L.heatWords('2026-03-03', 2, 'tasks')], ['Mar 3: 6 notes edited', 'Mar 3: 1 note edited', 'Mar 3: daily note written', 'Mar 3: no daily note', 'Mar 3: 2 tasks done'], 'heatmap: a day in words');
   eq(L.propStreak((d) => ['2026-10-30', '2026-10-31'].includes(d), '2026-11-01'), 2, 'heatmap: a streak still runs before anything is done today');
   const noOff = L.normalizeLayout({ zones: { top: ['capture'], c1: [], c2: [], c3: [] }, hidden: [] });

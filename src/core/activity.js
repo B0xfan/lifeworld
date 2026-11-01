@@ -81,7 +81,7 @@ function heatDays(today) {
 function heatMonths(days) {
   /** @type {{ col: number, label: string }[]} */
   const out = [];
-  for (let c = 1; c * 7 < days.length; c++) {
+  for (let c = 1; (c + 3) * 7 < days.length; c++) { // the last weeks are too narrow for a name
     const m = days[c * 7].slice(5, 7);
     if (m !== days[(c - 1) * 7].slice(5, 7)) out.push({ col: c, label: MONTHS_SHORT[Number(m) - 1] });
   }
