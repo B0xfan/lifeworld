@@ -750,10 +750,9 @@ const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
   eq([on.p.reminderPopups, 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
-  const newInstall = await startupRun({});
-  eq([newInstall.p.reminderPopups, newInstall.stored().reminderPopups], [true, true], 'pop-ups: a new install starts on, saved so the next start still knows');
-  const again = await startupRun(newInstall.stored());
-  eq(again.p.reminderPopups, true, 'pop-ups: still on at the next start');
+  const empty = await startupRun({});
+  eq([empty.p.reminderPopups, empty.stored()], [false, {}], 'pop-ups: Today writes nothing at start; an install with no Today settings stays off');
+  eq((await startupRun({ reminderPopups: true })).p.reminderPopups, true, 'pop-ups: on when saved on');
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
   eq([on.cm.exts.length, on.cm.updated], [0, 0], 'startup: Today adds no editor extension (the marker hiding left with the companion add-on)');
   const off = await startupRun({ ...JSON.parse(JSON.stringify(keep)), openOnStartup: false });
@@ -885,9 +884,13 @@ function nop2() {}
   eq(L.ringsOf(one, '2026-11-02'), [{ key: 'T/a.md|2026-11-02|14:00|15', day: '2026-11-02', due: when('2026-11-02', '14:00'), at: when('2026-11-02', '13:45') }], 'pop-up: a one-off task rings its reminder before its time');
   eq([L.ringsOf({ ...one, reminder: null }, '2026-11-02'), L.ringsOf({ ...one, time: null }, '2026-11-02'), L.ringsOf({ ...one, status: 'done' }, '2026-11-02'), L.ringsOf({ ...one, status: 'someday' }, '2026-11-02')], [[], [], [], []], 'pop-up: no reminder, no time, done or someday never rings');
   const daily = { ...one, path: 'T/d.md', due: null, plannedDay: null, reminder: 1440, recurrenceRaw: 'FREQ=DAILY', recurrence: L.parseRRule('FREQ=DAILY', '2026-10-01') };
-  eq(L.ringsOf(daily, '2026-11-02').map((r) => r.day), ['2026-11-02', '2026-11-03'], 'pop-up: a repeating task rings for each day its reminder reaches');
-  eq(L.ringsOf({ ...daily, reminder: 0, completeInstances: ['2026-11-02'] }, '2026-11-02'), [], 'pop-up: a finished day of a repeating task does not ring');
-  eq(L.ringsOf({ ...daily, reminder: 0, skippedInstances: ['2026-11-02'] }, '2026-11-02'), [], 'pop-up: a skipped day does not ring');
+  eq(L.ringsOf(daily, '2026-11-02').map((r) => r.day), ['2026-11-01', '2026-11-02', '2026-11-03'], 'pop-up: a repeating task rings for each day its reminder reaches, and yesterday for a snooze past midnight');
+  const late = { ...daily, reminder: 0, time: '23:55' };
+  const lastNight = L.ringsOf(late, '2026-11-02').map((x) => ({ ...x, item: late })).filter((x) => x.day === '2026-11-01');
+  eq(L.ringsDue(lastNight, when('2026-11-02', '00:07'), { [lastNight[0].key]: when('2026-11-02', '00:07') }, '2026-11-02').length, 1, 'pop-up: In 10 minutes comes back after midnight');
+  eq(L.ringsDue(lastNight, when('2026-11-02', '00:07'), {}, '2026-11-02').length, 0, 'pop-up: a day missed yesterday does not ring today');
+  eq(L.ringsOf({ ...daily, reminder: 0, completeInstances: ['2026-11-01', '2026-11-02'] }, '2026-11-02'), [], 'pop-up: a finished day of a repeating task does not ring');
+  eq(L.ringsOf({ ...daily, reminder: 0, skippedInstances: ['2026-11-01', '2026-11-02'] }, '2026-11-02'), [], 'pop-up: a skipped day does not ring');
   const r = L.ringsOf(one, '2026-11-02').map((x) => ({ ...x, item: one }));
   const before = when('2026-11-02', '13:44'), after = when('2026-11-02', '13:46');
   eq([L.ringsDue(r, before, {}, '2026-11-02').length, L.ringsDue(r, after, {}, '2026-11-02').length], [0, 1], 'pop-up: rings at its time');
@@ -895,7 +898,7 @@ function nop2() {}
   eq([L.ringsDue(r, after, { [r[0].key]: after + 1 }, '2026-11-02').length, L.ringsDue(r, after, { [r[0].key]: after }, '2026-11-02').length], [0, 1], 'pop-up: "In 10 minutes" brings it back then');
   eq(L.ringsDue(r, when('2026-11-03', '09:00'), {}, '2026-11-03').length, 0, 'pop-up: missed on an earlier day is skipped');
   eq(L.ringsDue(r, when('2026-11-02', '20:00'), {}, '2026-11-02').length, 1, 'pop-up: missed earlier today shows when Obsidian opens');
-  eq(Object.keys(L.pruneSeen({ 'a|2026-11-02|14:00|0': 0, 'b|2026-10-30|14:00|0': 0, 'c|2026-10-31|14:00|0': 0 }, '2026-11-02')).sort(), ['a|2026-11-02|14:00|0', 'c|2026-10-31|14:00|0'], 'pop-up: old records go');
+  eq(Object.keys(L.pruneSeen({ 'a|2026-11-02|14:00|0': 0, 'b|2026-10-01|14:00|0': 0, 'c|2026-10-02|14:00|-4320': 0 }, '2026-11-02')).sort(), ['a|2026-11-02|14:00|0', 'c|2026-10-02|14:00|-4320'], 'pop-up: old records go; one for a reminder days after its task stays');
   eq(['2026-11-02T13:45', '2026-11-02T14:00:30', '2026-11-02T14:10', '2026-11-02T10:00', '2026-11-02T15:30'].map((s) => L.ringWhen(when('2026-11-02', '14:00'), new Date(s).getTime())), ['in 15 min', 'now', '10 min ago', 'in 4 h', '2 h ago'], 'pop-up: the time in words');
 }
 

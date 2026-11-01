@@ -388,8 +388,8 @@ class LifeWorldPlugin extends Plugin {
   openSetup(first) {
     if (first) this.firstRun = false;
     let found;
+    const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
     try {
-      const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
       // Weather shows on Today (its note or a town); calendars on Today and the Planner (their note or links).
       const weather = !!td && (!!vault.feedNotes.weather || !!(td.weatherCfg && td.weatherCfg.place));
       const calendars = !!(td || this.running['a4-planner']) && (!!vault.feedNotes.calendar || linksOf(this.app).length > 0);
@@ -398,7 +398,11 @@ class LifeWorldPlugin extends Plugin {
     this.setup = new SetupModal(this.app, found, {
       onStart: (f) => this.applySetup(f),
       onChange: () => { const s = this.app.setting; s.open(); if (typeof s.openTabById === 'function') s.openTabById(this.manifest.id); },
-      onSeen: first ? () => { this.store[HOST] = { ...(this.store[HOST] || {}), setupSeen: true }; this.writeStore().catch((e) => console.error('LifeWorld: could not save that setup was seen', e)); } : null,
+      onSeen: first ? () => {
+        // A new install, and not one that got its settings from Sync: reminder pop-ups start on.
+        this.store['a4-today'] = { ...(this.store['a4-today'] || {}), reminderPopups: true };
+        if (td) td.reminderPopups = true;
+        this.store[HOST] = { ...(this.store[HOST] || {}), setupSeen: true }; this.writeStore().catch((e) => console.error('LifeWorld: could not save that setup was seen', e)); } : null,
     });
     this.setup.open();
   }

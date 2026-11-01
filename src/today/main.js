@@ -1093,9 +1093,8 @@ class TodayPlugin extends Plugin {
     this.reminderCards = new Map();
     const saved = /** @type {Fm} */ ((await this.loadData()) || {});
 
-    // Reminder pop-ups: on for a new install, off for one that already has settings, so nobody who gets
-    // their reminders elsewhere has them twice. Saved at once, or the next start could not tell.
-    if (!Object.keys(saved).length) { saved.reminderPopups = true; await this.saveData(saved); }
+    // Reminder pop-ups: off unless saved on, so nobody who gets their reminders elsewhere has them twice.
+    // LifeWorld switches them on for a new install when its setup window has been seen (src/main.js).
     this.reminderPopups = saved.reminderPopups === true;
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
@@ -1118,7 +1117,8 @@ class TodayPlugin extends Plugin {
     // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
     this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
     this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity()));
-    this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
+    // Quitting within the minute still keeps the count.
+    this.register(() => { if (this._activityTimer) { window.clearTimeout(this._activityTimer); this.keepActivity().catch(() => {}); } });
     this.registerInterval(window.setInterval(() => this.checkReminders(), 30000));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
@@ -1242,7 +1242,7 @@ class TodayPlugin extends Plugin {
     const due = ringsDue(rings, now, seen, today).filter((r) => !cards.has(r.key));
     const show = due.slice(0, Math.max(0, MAX_REMINDER_CARDS - cards.size));
     for (const r of show) { this.showReminder(r, now); seen[r.key] = 0; }
-    this.app.saveLocalStorage(REMINDERS_SEEN, seen);
+    if (JSON.stringify(seen) !== JSON.stringify(stored)) this.app.saveLocalStorage(REMINDERS_SEEN, seen);
     const more = due.length - show.length;
     if (this.reminderMore) this.reminderMore.setText(more ? `and ${more} more` : '');
   }
@@ -1296,15 +1296,17 @@ class TodayPlugin extends Plugin {
     }, 60000);
   }
 
-  // Saves today's count of notes when it has grown: the only record of a day once its notes are edited again.
+  // Saves today's and yesterday's counts of notes when they have grown: the only record of a day once its
+  // notes are edited again. Yesterday too: an edit just before midnight is counted just after it.
   async keepActivity() {
     if (!zoneOf(this.layout, 'heatmap')) return;
     const today = dayOf(new Date());
-    const n = datesPerDay(this.app.vault.getMarkdownFiles())[today] || 0;
-    if (n <= (this.activity[today] || 0)) return;
+    const counts = datesPerDay(this.app.vault.getMarkdownFiles());
     /** @type {Record<string, number>} */
     const was = this.activity;
-    this.activity = pruneActivity({ ...was, [today]: n }, today);
+    const grown = [today, addDays(today, -1)].filter((d) => (counts[d] || 0) > (was[d] || 0));
+    if (!grown.length) return;
+    this.activity = pruneActivity({ ...was, ...Object.fromEntries(grown.map((d) => [d, counts[d]])) }, today);
     const data = /** @type {Fm} */ ((await this.loadData()) || {});
     data.activity = this.activity;
     await this.saveData(data);
@@ -2136,7 +2138,7 @@ class TodaySettingTab extends PluginSettingTab {
           .addButton((b) => b.setButtonText('Remove').onClick(async () => { await plugin.saveFeeds(plugin.feeds.filter((x) => x !== f)); this.renderSetup(); }));
       }
       let url = ''; let name = '';
-      const add = new Setting(host).setName('Add a feed').setDesc('LifeWorld contacts only the sites you add here.');
+      const add = new Setting(host).setName('Add a feed').setDesc('LifeWorld contacts only the sites you add here. Feed links sync with your settings, so leave out a private link.');
       add.addText((t) => { t.setPlaceholder('Feed link'); t.inputEl.setAttr('aria-label', 'Feed link'); t.onChange((v) => { url = v; }); });
       add.addText((t) => { t.setPlaceholder('Name (optional)'); t.inputEl.setAttr('aria-label', 'Feed name'); t.onChange((v) => { name = v; }); });
       add.addButton((b) => b.setButtonText('Add').onClick(async () => {

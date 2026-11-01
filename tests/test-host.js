@@ -797,6 +797,8 @@ const start = async (data) => {
   eq(SBL.findRoomFolders(['Notes', 'Attachments', 'daily', '03 Desk']), [['03 Desk', 'folder'], ['Attachments', 'folder'], ['daily', 'folder'], ['Notes', 'folder']].map(([name, icon]) => ({ name, icon, path: name })), 'new install: every top folder, A to Z, plain (no room colour)');
   eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
   eq([SBL.lifePath('Clients'), SBL.buildLifeGroups(['Clients', 'Notes'])], ['Clients', []], 'new install: no groups, nothing grouped; top folders stay under Folders');
+  const gr = [{ id: 'w', label: 'Work', folders: ['Clients', 'Work projects'] }];
+  eq([SBL.renameInGroups(gr, 'Clients', 'Customers', '')[0].folders, SBL.renameInGroups(gr, 'L/Clients', 'L/Customers', 'L')[0].folders, SBL.renameInGroups(gr, 'Clients', 'Old/Clients', '')[0].folders, SBL.renameInGroups(gr, 'Old/Clients', 'Old/C', ''), SBL.renameInGroups(gr, 'Other', 'New', '')], [['Customers', 'Work projects'], ['Customers', 'Work projects'], ['Work projects'], null, null], 'groups follow a renamed folder; one moved elsewhere leaves its group; others change nothing');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
@@ -1308,6 +1310,7 @@ const start = async (data) => {
     neu.host.setup.close();
     await tick();
     ok(plainFile(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
+    ok(plainFile(disk[neu.dir])['a4-today'].reminderPopups === true, 'closed: a new install gets reminder pop-ups on');
     const again = await startIn(disk[neu.dir]);
     ok(!again.host.setup, 'after it was closed: never opens by itself again');
     const old = await startIn({ 'a4-today': { layout: [] } });

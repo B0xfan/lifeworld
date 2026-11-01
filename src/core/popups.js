@@ -24,8 +24,9 @@ function ringsOf(item, today, completed) {
   if (!item.recurrenceRaw) days = item.due ? [item.due] : [];
   else {
     // A reminder a day before a repeating task rings for tomorrow's; one after it, for an earlier day's.
+    // A day further back too: "In 10 minutes" can run past midnight.
     const far = Math.ceil(Math.abs(before) / 1440);
-    for (let k = 0; k <= far; k++) days.push(addDays(today, before >= 0 ? k : -k));
+    for (let k = before >= 0 ? -1 : -far - 1; k <= (before >= 0 ? far : 0); k++) days.push(addDays(today, k));
     days = days.filter((d) => taskOnDay(item, d));
   }
   const time = item.time;
@@ -45,10 +46,10 @@ function ringsDue(rings, now, seen, today) {
   }).sort((a, b) => a.at - b.at);
 }
 
-// Records from before yesterday go; nothing can ring for those days.
+// Old records go. shortcut: a reminder set over a month after its task would ring again; none of the choices is.
 /** @param {Record<string, number>} seen @param {string} today @returns {Record<string, number>} */
 function pruneSeen(seen, today) {
-  const from = addDays(today, -2);
+  const from = addDays(today, -31);
   return Object.fromEntries(Object.entries(seen).filter(([k]) => (k.split('|').slice(-3)[0] || '') >= from));
 }
 

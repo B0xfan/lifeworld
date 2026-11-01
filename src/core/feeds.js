@@ -48,13 +48,15 @@ function textOf(el, names) { const c = childOf(el, names); return c && c.textCon
 function linkOf(item, base) {
   const links = Array.from(item.children).filter((c) => c.localName === 'link');
   const atom = links.find((l) => l.getAttribute('href') && (l.getAttribute('rel') || 'alternate') === 'alternate');
-  return cleanFeedUrl(atom ? atom.getAttribute('href') : (links[0] && links[0].textContent) || textOf(item, ['guid', 'id']), base);
+  const written = atom ? atom.getAttribute('href') : links[0] && links[0].textContent;
+  // A guid or id is only a link when it is a whole address; many are just a code.
+  return written ? cleanFeedUrl(written, base) : cleanFeedUrl(textOf(item, ['guid', 'id']));
 }
 
 // RSS, RDF and Atom text -> { title, items }, newest first. Throws Error('not-feed').
 /** @param {string} text @param {string} base the feed's own address, for links written relative to it */
 function parseFeed(text, base) {
-  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  const doc = new DOMParser().parseFromString(text.trimStart(), 'text/xml');
   const root = doc.documentElement;
   if (doc.querySelector('parsererror') || !root || !['rss', 'feed', 'RDF'].includes(root.localName)) throw new Error('not-feed');
   const items = Array.from(doc.querySelectorAll('item, entry')).map((el) => {

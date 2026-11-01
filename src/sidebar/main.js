@@ -514,6 +514,18 @@ function hiddenUnderRooms(groups) {
   return out;
 }
 
+// A folder renamed where it stands: the groups follow it. Moved elsewhere, it leaves its group.
+/** @param {{ id: string, label: string, folders: string[] }[]} groups @param {string} oldPath @param {string} newPath @param {string} life */
+function renameInGroups(groups, oldPath, newPath, life) {
+  const base = life ? `${life}/` : '';
+  /** @param {string} p */
+  const direct = (p) => p.startsWith(base) && !p.slice(base.length).includes('/');
+  if (!direct(oldPath)) return null;
+  const was = oldPath.slice(base.length);
+  if (!groups.some((g) => g.folders.includes(was))) return null;
+  return groups.map((g) => ({ ...g, folders: direct(newPath) ? g.folders.map((n) => (n === was ? newPath.slice(base.length) : n)) : g.folders.filter((n) => n !== was) }));
+}
+
 // Markdown count under a folder, leaving out notes inside hidden folders.
 /** @param {string[]} allFilePaths @param {string[]} folderPaths @param {Iterable<string>} hidden */
 function countNotesExcluding(allFilePaths, folderPaths, hidden) {
@@ -1446,6 +1458,8 @@ class SidebarPlugin extends Plugin {
     // A folder renamed or moved keeps its sort setting (and its subfolders').
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!(f instanceof TFolder)) return;
+      const groups = renameInGroups(SBC.groups, oldPath, f.path, SBC.life);
+      if (groups && HOST.setSidebarGroups) HOST.setSidebarGroups(groups).catch((e) => console.error('LifeWorld: the Sidebar groups could not follow a renamed folder', e));
       const next = renameSortPaths(this.state.sort, oldPath, f.path);
       if (JSON.stringify(next) === JSON.stringify(this.state.sort)) return;
       this.state.sort = next;
@@ -1646,10 +1660,14 @@ class GroupsModal extends Modal {
       };
       move('arrow-up', `Move ${g.label} up`, -1);
       move('arrow-down', `Move ${g.label} down`, 1);
-      head.createEl('button', { text: 'Delete', attr: { 'aria-label': `Delete group ${g.label}` } }).addEventListener('click', () => this.save((list) => list.filter((x) => x.id !== g.id)));
+      // A built-in list (Work projects...) could not be picked again, so what holds one stays.
+      const del = head.createEl('button', { text: 'Delete', attr: { 'aria-label': `Delete group ${g.label}` } });
+      del.disabled = g.folders.some((n) => VIRTUAL[n]);
+      del.addEventListener('click', () => this.save((list) => list.filter((x) => x.id !== g.id)));
       const chips = box.createDiv({ cls: 'a4sb-gr-chips' });
       for (const n of g.folders) {
         const chip = chips.createSpan({ cls: 'a4sb-gr-chip', text: itemLabel(n) });
+        if (VIRTUAL[n]) continue;
         const x = chip.createEl('button', { cls: 'clickable-icon', attr: { 'aria-label': `Remove ${itemLabel(n)} from ${g.label}` } });
         setIcon(x, 'x');
         x.addEventListener('click', () => this.save((list) => list.map((y) => (y.id === g.id ? { ...y, folders: y.folders.filter((z) => z !== n) } : y))));
@@ -1742,6 +1760,6 @@ export default SidebarPlugin;
 SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
-  lifePath, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
+  lifePath, renameInGroups, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };
