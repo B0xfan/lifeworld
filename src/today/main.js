@@ -1126,7 +1126,11 @@ class TodayPlugin extends Plugin {
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!this.reminderPopups || f instanceof TFolder) return;
       const stored = /** @type {unknown} */ (this.app.loadLocalStorage(REMINDERS_SEEN));
-      if (stored && typeof stored === 'object') this.app.saveLocalStorage(REMINDERS_SEEN, renameSeen(/** @type {Record<string, number>} */ (stored), oldPath, f.path));
+      if (!stored || typeof stored !== 'object') return;
+      const seen = renameSeen(/** @type {Record<string, number>} */ (stored), oldPath, f.path);
+      // A card still up goes with the old name, and rings again under the new one.
+      for (const k of [...this.reminderCards.keys()]) if (k.startsWith(`${oldPath}|`)) { this.closeReminder(k); delete seen[f.path + k.slice(oldPath.length)]; }
+      this.app.saveLocalStorage(REMINDERS_SEEN, seen);
     }));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
