@@ -6,7 +6,7 @@
 'use strict';
 
 import { Plugin, PluginSettingTab, Setting, Notice, Modal } from 'obsidian';
-import { PARTS, ADDON, HOST as PART_HOST, NEW_INSTALL_KEY } from './core/parts';
+import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
 import { linksOf } from './core/calendars';
@@ -104,8 +104,6 @@ class LifeWorldPlugin extends Plugin {
     // A brand-new install: no settings file yet (or an empty one), nothing carried over below. Only then
     // does the setup window open by itself (spec criteria 1, 3, 4); an existing setup never sees it.
     this.firstRun = !!found && Object.keys(found).length === 0;
-    // Kept on this device, never in the settings file, so it cannot reach a device that already has settings.
-    if (this.firstRun) this.app.saveLocalStorage(NEW_INSTALL_KEY, true);
     // A damaged file starts on defaults with carry-over marked done, so a part that saves nothing
     // now cannot pick up its old plugin's (older) settings at a later start (review p2-s3).
     /** @type {LwStore} */
@@ -126,7 +124,7 @@ class LifeWorldPlugin extends Plugin {
     let carried = false;
     if (!(this.store[HOST] && this.store[HOST].carriedOver)) for (const [m] of PART_LIST) if (this.store[m.id] == null) carried = (await this.carryOver(m.id)) || carried;
     // A failed save here must not stop LifeWorld: it runs on what was carried, the next save retries.
-    if (carried) { this.firstRun = false; this.app.saveLocalStorage(NEW_INSTALL_KEY, null); }
+    if (carried) this.firstRun = false;
     if (carried) await this.writeStore().catch((e) => {
       console.error('LifeWorld: the settings carried over from the old plugins could not be saved', e);
       new Notice('LifeWorld: your old settings were taken over but could not be saved yet. LifeWorld will try again at the next change.', 0);
@@ -497,7 +495,6 @@ class LifeWorldPlugin extends Plugin {
     // Settings arrived from another device (Sync): this is not a new install after all. The setup window
     // closes without saving anything, so the synced settings stay as they arrived (spec criterion 5).
     this.firstRun = false;
-    this.app.saveLocalStorage(NEW_INSTALL_KEY, null);
     if (this.setup) this.setup.closeQuietly();
     const before = this.store;
     const was = this.ondisk;

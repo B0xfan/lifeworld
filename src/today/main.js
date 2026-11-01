@@ -107,7 +107,7 @@ import { asList } from '../core/lists';
 import { parseClock } from '../core/quickadd';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
-import { partOf, ADDON, NEW_INSTALL_KEY } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
+import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
@@ -1093,8 +1093,8 @@ class TodayPlugin extends Plugin {
     this.reminderCards = new Map();
     const saved = /** @type {Fm} */ ((await this.loadData()) || {});
 
-    /** @type {unknown} Reminder pop-ups as saved; nothing saved: see popupsOn */
-    this.reminderPopups = saved.reminderPopups;
+    // Reminder pop-ups start off for everyone (John, 2026-11-01); the person turns them on in Settings.
+    this.reminderPopups = saved.reminderPopups === true;
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
     this.calSel = normalizeCalSel(saved.calendars);
@@ -1116,6 +1116,7 @@ class TodayPlugin extends Plugin {
     // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
     this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
     this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity()));
+    // shortcut: switching Today off or updating within the minute skips this save (a late write could land on the next start's settings); the note's own date still counts unless it is edited again.
     this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
     // Quitting within the minute still keeps the count.
     this.registerEvent(this.app.workspace.on('quit', (tasks) => { if (this._activityTimer) tasks.add(() => this.keepActivity()); }));
@@ -1157,7 +1158,7 @@ class TodayPlugin extends Plugin {
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
-    this.reminderPopups = saved.reminderPopups;
+    this.reminderPopups = saved.reminderPopups === true;
     this.heatCount = normalizeHeatCount(saved.heatCount);
     this.activity = normalizeActivity(saved.activity);
     this.feeds = normalizeFeeds(saved.feeds);
@@ -1215,16 +1216,13 @@ class TodayPlugin extends Plugin {
     if (pj && pj.settings && pj.settings.source === 'tasknotes') return 'tasknotes';
     return this.extSource() ? 'other' : 'notes';
   }
-  // Off unless the person chose otherwise, except where LifeWorld started as a new install; so nobody who gets
-  // their reminders elsewhere has them twice.
-  popupsOn() { return typeof this.reminderPopups === 'boolean' ? this.reminderPopups : this.app.loadLocalStorage(NEW_INSTALL_KEY) === true; }
   /** @param {boolean} on */
   async saveReminderPopups(on) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.reminderPopups = !!on; await this.saveData(data); this.reminderPopups = !!on; this.checkReminders(); }
 
   // Every half minute: shows what has come due, takes down cards of tasks finished or moved elsewhere.
   // shortcut: lives in the Today part, so with Today off there are no pop-ups; move it if people run the Planner alone.
   checkReminders() {
-    const on = this.popupsOn() && this.reminderSource() === 'notes';
+    const on = this.reminderPopups && this.reminderSource() === 'notes';
     /** @type {Map<string, HTMLElement>} */
     const cards = this.reminderCards;
     if (!on) { for (const k of [...cards.keys()]) this.closeReminder(k); return; }
@@ -1991,7 +1989,7 @@ class TodaySettingTab extends PluginSettingTab {
         this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
       } },
       { name: 'Reminder pop-ups', desc: this.plugin.reminderSource() === 'tasknotes' ? 'Stays off while TaskNotes is your task source: TaskNotes has its own alerts.' : this.plugin.reminderSource() === 'other' ? 'Only task notes have reminders, so this stays off with your current task source.' : "Shows task reminders while Obsidian is open. Nothing can pop up while it's closed; a reminder missed today shows when you next open it.", render: (s) => {
-        s.addToggle((t) => { t.setValue(this.plugin.popupsOn() && this.plugin.reminderSource() === 'notes'); t.setDisabled(this.plugin.reminderSource() !== 'notes'); t.onChange((v) => this.plugin.saveReminderPopups(v)); });
+        s.addToggle((t) => { t.setValue(this.plugin.reminderPopups && this.plugin.reminderSource() === 'notes'); t.setDisabled(this.plugin.reminderSource() !== 'notes'); t.onChange((v) => this.plugin.saveReminderPopups(v)); });
       } },
       { name: 'Widget setup', aliases: ['World clock', 'Clock look', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder', 'Activity heatmap', 'A day counts when', 'News feeds', 'Add a feed', 'Headlines shown'],
         render: (s) => { this.setupHost = blockRow(s, 'a4t-setup', true); this.renderSetup(); } },

@@ -749,14 +749,10 @@ async function startupRun(saved) {
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
   const on = await startupRun(JSON.parse(JSON.stringify(keep)));
-  eq([on.p.popupsOn(), 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
+  eq([on.p.reminderPopups, 'reminderPopups' in on.stored()], [false, false], 'pop-ups: an existing install stays off and its settings are not touched');
   const empty = await startupRun({});
-  eq([empty.p.popupsOn(), empty.stored()], [false, {}], 'pop-ups: Today writes nothing at start; an install with no Today settings stays off');
-  eq((await startupRun({ reminderPopups: true })).p.popupsOn(), true, 'pop-ups: on when saved on');
-  empty.p.app.loadLocalStorage = (k) => k === 'lifeworld-new-install';
-  eq(empty.p.popupsOn(), true, 'pop-ups: on where LifeWorld started as a new install');
-  empty.p.reminderPopups = false;
-  eq(empty.p.popupsOn(), false, 'pop-ups: the person turning them off wins');
+  eq([empty.p.reminderPopups, empty.stored()], [false, {}], 'pop-ups: off for everyone until turned on; Today writes nothing at start');
+  eq((await startupRun({ reminderPopups: true })).p.reminderPopups, true, 'pop-ups: on when saved on');
   // Activity kept: today and yesterday when grown, a lower count never replaces a higher one, nothing while the widget is off.
   {
     const dayStr = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -936,6 +932,7 @@ function nop2() {}
   eq([hd[0], hd[hd.length - 1], hd.length], ['2025-11-02', '2026-11-01', 365], 'heatmap: from a Sunday 52 weeks back to today');
   const hd2 = L.heatDays('2026-11-04'); // a Wednesday
   eq([hd2[0], hd2.length % 7, new Date(`${hd2[0]}T12:00:00`).getDay()], ['2025-11-02', 4, 0], 'heatmap: a part week ends on today, the first day stays a Sunday');
+  eq([L.cleanFeedUrl(' ', 'https://a.example/f'), L.cleanFeedUrl('', 'https://a.example/f')], ['', ''], 'feeds: a blank link is no link, not the feed itself');
   const hm = L.heatMonths(hd);
   eq([hm[0].label, hm[hm.length - 1].label, hm.every((m) => m.col > 0 && m.col < 50)], ['Dec', 'Oct', true], 'heatmap: a label for each month that starts on the grid, none too near the end to fit');
   eq([L.heatWords('2026-03-03', 6, 'edited'), L.heatWords('2026-03-03', 1, 'edited'), L.heatWords('2026-03-03', 1, 'daily'), L.heatWords('2026-03-03', 0, 'daily'), L.heatWords('2026-03-03', 2, 'tasks')], ['Mar 3: 6 notes edited', 'Mar 3: 1 note edited', 'Mar 3: daily note written', 'Mar 3: no daily note', 'Mar 3: 2 tasks done'], 'heatmap: a day in words');

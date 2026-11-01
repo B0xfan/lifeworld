@@ -19,8 +19,10 @@ const SHOW_CHOICES = [5, 8, 12];
 // An http or https address in its full form, or ''.
 /** @param {unknown} raw @param {string} [base] */
 function cleanFeedUrl(raw, base) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return ''; // blank would come back as the feed's own address
   try {
-    const u = new URL(String(raw == null ? '' : raw).trim(), base);
+    const u = new URL(text, base);
     return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : '';
   } catch { return ''; }
 }
@@ -47,11 +49,10 @@ function textOf(el, names) { const c = childOf(el, names); return c && c.textCon
 /** @param {Element} item @param {string} base */
 function linkOf(item, base) {
   const links = Array.from(item.children).filter((c) => c.localName === 'link');
-  const atom = links.find((l) => l.getAttribute('href') && (l.getAttribute('rel') || 'alternate') === 'alternate');
+  const atom = links.find((l) => (l.getAttribute('href') || '').trim() && (l.getAttribute('rel') || 'alternate') === 'alternate');
   const rss = links.map((l) => (l.getAttribute('href') ? '' : (l.textContent || '').trim())).find(Boolean);
-  const written = atom ? atom.getAttribute('href') : rss;
   // A guid or id is only a link when it is a whole address; many are just a code.
-  return written ? cleanFeedUrl(written, base) : cleanFeedUrl(textOf(item, ['guid', 'id']));
+  return cleanFeedUrl(atom ? atom.getAttribute('href') : rss, base) || cleanFeedUrl(textOf(item, ['guid', 'id']));
 }
 
 // RSS, RDF and Atom text -> { title, items }, newest first. Throws Error('not-feed').

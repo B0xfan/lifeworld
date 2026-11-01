@@ -22,7 +22,4 @@ function partOf(app, id) {
 /** @type {{ setSidebar: ((patch: Record<string, unknown>) => Promise<void>) | null }} */
 const HOST = { setSidebar: null };
 
-// Set on a device that started LifeWorld with no settings at all: reminder pop-ups start on there.
-const NEW_INSTALL_KEY = 'lifeworld-new-install';
-
-export { PARTS, ADDON, HOST, NEW_INSTALL_KEY, partOf };
+export { PARTS, ADDON, HOST, partOf };

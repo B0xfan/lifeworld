@@ -37,8 +37,8 @@ A new install starts with Quick capture, the task cards, Calendar, Recent notes,
 Active projects. The rest are one click away under **Settings → LifeWorld → Today page**.
 
 A task with a reminder and a clock time pops up inside Obsidian while it is open, with Done, In 10 minutes,
-Open and Dismiss. Turn this off or on with **Reminder pop-ups** in the same settings. It works with task notes,
-and stays off with the TaskNotes plugin, which has its own alerts. A new install starts with it on.
+Open and Dismiss. It starts off: turn it on with **Reminder pop-ups** in the same settings. It works with task
+notes, and stays off with the TaskNotes plugin, which has its own alerts.
 
 ![The Today page in dark mode](screenshots/today-dark.png)
 

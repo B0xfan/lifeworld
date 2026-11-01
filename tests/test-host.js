@@ -798,10 +798,12 @@ const start = async (data) => {
   eq(SBL.listBases(['02 Planner/TaskNotes/Views/a.base']).length, 1, 'new install: no base left out of the Bases list');
   eq([SBL.lifePath('Clients'), SBL.buildLifeGroups(['Clients', 'Notes'])], ['Clients', []], 'new install: no groups, nothing grouped; top folders stay under Folders');
   const sbx = { life: 'My Life', groups: [{ id: 'w', label: 'Work', folders: ['Clients', 'Work projects', 'Gone'] }], icons: { Clients: 'chart', Other: 'x' }, labels: { Clients: 'My clients' }, noCount: ['Clients'] };
-  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Customers'), { groups: [{ id: 'w', label: 'Work', folders: ['Customers', 'Work projects', 'Gone'] }], icons: { Other: 'x', Customers: 'chart' }, labels: { Customers: 'My clients' }, noCount: ['Customers'] }, 'a renamed folder keeps its group, icon, label and no-count mark');
-  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Gone').groups[0].folders, ['Work projects', 'Gone'], 'renamed onto a name already listed: listed once');
-  eq([SBL.renameInSidebar(sbx, 'My Life/Clients', 'Life/Clients'), SBL.renameInSidebar(sbx, 'My Life/Clients', 'Old/Clients'), SBL.renameInSidebar(sbx, 'Z/Clients', 'Z/C'), SBL.renameInSidebar(sbx, 'My Life/Other', 'My Life/New')], [null, null, null, null], 'renaming the base folder or a parent, or a move, leaves the groups alone');
-  eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers').groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Customers', true), { groups: [{ id: 'w', label: 'Work', folders: ['Customers', 'Work projects', 'Gone'] }], icons: { Other: 'x', Customers: 'chart' }, labels: { Customers: 'My clients' }, noCount: ['Customers'] }, 'a renamed folder keeps its group, icon, label and no-count mark');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Gone', true).groups[0].folders, ['Work projects', 'Gone'], 'renamed onto a name already listed: listed once');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Other', 'My Life/New', true).icons, { Clients: 'chart', New: 'x' }, 'a folder in no group keeps its icon too');
+  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'Old/Clients', true), { groups: [{ id: 'w', label: 'Work', folders: ['Work projects', 'Gone'] }] }, 'moved out of the base folder: it leaves its group');
+  eq([SBL.renameInSidebar(sbx, 'My Life/Clients', 'Life/Clients', false), SBL.renameInSidebar(sbx, 'Z/Clients', 'Z/C', true), SBL.renameInSidebar(sbx, 'My Life/Plain', 'My Life/P2', true)], [null, null, null], 'a rename further up, or of a folder with nothing saved, changes nothing');
+  eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers', true).groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
   sb0.host.unload();
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
@@ -1313,7 +1315,6 @@ const start = async (data) => {
     neu.host.setup.close();
     await tick();
     ok(plainFile(disk[neu.dir]).lifeworld.setupSeen === true && before === undefined, 'closed: only that it was seen is saved');
-    ok(!(plainFile(disk[neu.dir])['a4-today'] || {}).reminderPopups, 'closed: nothing about pop-ups goes in the settings file');
     const again = await startIn(disk[neu.dir]);
     ok(!again.host.setup, 'after it was closed: never opens by itself again');
     const old = await startIn({ 'a4-today': { layout: [] } });

@@ -514,15 +514,19 @@ function hiddenUnderRooms(groups) {
   return out;
 }
 
-// A folder in the base folder renamed where it stands: its groups, icon, label and no-count mark follow it, as a
-// patch for the saved Sidebar settings, or null. A move, or a rename further up, changes nothing here: the names
-// are relative to the base folder. shortcut: with the Sidebar part off a rename is missed; the old name stays in
-// the editor to remove.
-/** @param {{ groups: { id: string, label: string, folders: string[] }[], icons: Record<string, string>, labels: Record<string, string>, noCount: string[], life: string }} sb @param {string} oldPath @param {string} newPath */
-function renameInSidebar(sb, oldPath, newPath) {
-  if (parentOf(oldPath) !== sb.life || parentOf(newPath) !== sb.life) return null;
-  const was = nameOf(oldPath), now = nameOf(newPath);
-  if (!sb.groups.some((g) => g.folders.includes(was))) return null;
+// A folder in the base folder renamed where it stands: its group, icon, label and no-count mark follow it, as a
+// patch for the saved Sidebar settings, or null. Moved out of the base folder, it leaves its group. A rename further
+// up (lifeThere false: the base folder's old path is gone) changes nothing: the names are relative to the base folder.
+// shortcut: with the Sidebar part off a rename is missed; the old name stays in the editor to remove.
+/** @param {{ groups: { id: string, label: string, folders: string[] }[], icons: Record<string, string>, labels: Record<string, string>, noCount: string[], life: string }} sb @param {string} oldPath @param {string} newPath @param {boolean} lifeThere */
+function renameInSidebar(sb, oldPath, newPath, lifeThere) {
+  if (parentOf(oldPath) !== sb.life) return null;
+  const was = nameOf(oldPath), stays = parentOf(newPath) === sb.life, now = nameOf(newPath);
+  if (!stays) {
+    if (!lifeThere || !sb.groups.some((g) => g.folders.includes(was))) return null;
+    return { groups: sb.groups.map((g) => ({ ...g, folders: g.folders.filter((n) => n !== was) })) };
+  }
+  if (!sb.groups.some((g) => g.folders.includes(was)) && !(was in sb.icons) && !(was in sb.labels) && !sb.noCount.includes(was)) return null;
   const taken = sb.groups.some((g) => g.folders.includes(now)); // an old entry of that name stays the only one
   /** @param {Record<string, string>} m */
   const moved = (m) => { const out = { ...m }; if (was in out) { out[now] = out[was]; delete out[was]; } return out; };
@@ -1464,7 +1468,7 @@ class SidebarPlugin extends Plugin {
     // A folder renamed or moved keeps its sort setting (and its subfolders').
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!(f instanceof TFolder)) return;
-      const patch = renameInSidebar(SBC, oldPath, f.path);
+      const patch = renameInSidebar(SBC, oldPath, f.path, !SBC.life || !!this.app.vault.getAbstractFileByPath(SBC.life));
       if (patch && HOST.setSidebar) HOST.setSidebar(patch).catch((e) => console.error('LifeWorld: the Sidebar groups could not follow a renamed folder', e));
       const next = renameSortPaths(this.state.sort, oldPath, f.path);
       if (JSON.stringify(next) === JSON.stringify(this.state.sort)) return;
@@ -1654,7 +1658,9 @@ class GroupsModal extends Modal {
     const held = SBC.groups.flatMap((g) => g.folders);
     const used = new Set(held.map(itemFolder));
     const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => c.name) : [];
-    return folders.concat(SBC.life ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : []);
+    // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
+    const lists = SBC.life && !held.includes('Projects') && this.app.vault.getAbstractFileByPath(`${SBC.life}/Projects`) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
+    return folders.concat(lists);
   }
   draw() {
     const { contentEl } = this;
