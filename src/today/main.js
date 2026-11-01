@@ -1115,7 +1115,8 @@ class TodayPlugin extends Plugin {
     this.addSettingTab(new TodaySettingTab(this.app, this));
     // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
     this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
-    this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity()));
+    // Not before the layout is ready: Obsidian announces every existing note as created while the vault loads.
+    this.app.workspace.onLayoutReady(() => this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity())));
     // shortcut: switching Today off or updating within the minute skips this save (a late write could land on the next start's settings); the note's own date still counts unless it is edited again.
     this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
     // Quitting within the minute still keeps the count.
@@ -1217,11 +1218,12 @@ class TodayPlugin extends Plugin {
     return this.extSource() ? 'other' : 'notes';
   }
   /** @param {boolean} on */
-  async saveReminderPopups(on) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.reminderPopups = !!on; await this.saveData(data); this.reminderPopups = !!on; this.checkReminders(); }
+  async saveReminderPopups(on) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.reminderPopups = !!on; await this.saveData(data); this.reminderPopups = !!on; this.checkReminders(!!on); }
 
   // Every half minute: shows what has come due, takes down cards of tasks finished or moved elsewhere.
   // shortcut: lives in the Today part, so with Today off there are no pop-ups; move it if people run the Planner alone.
-  checkReminders() {
+  /** @param {boolean} [justOn] pop-ups just turned on: what came due earlier today is not news */
+  checkReminders(justOn) {
     const on = this.reminderPopups && this.reminderSource() === 'notes';
     /** @type {Map<string, HTMLElement>} */
     const cards = this.reminderCards;
@@ -1241,10 +1243,11 @@ class TodayPlugin extends Plugin {
     const stored = /** @type {unknown} */ (this.app.loadLocalStorage(REMINDERS_SEEN));
     const seen = pruneSeen(stored && typeof stored === 'object' ? /** @type {Record<string, number>} */ (stored) : {}, today);
     const due = ringsDue(rings, now, seen, today).filter((r) => !cards.has(r.key));
-    const show = due.slice(0, Math.max(0, MAX_REMINDER_CARDS - cards.size));
+    if (justOn) for (const r of due) seen[r.key] = 0;
+    const show = justOn ? [] : due.slice(0, Math.max(0, MAX_REMINDER_CARDS - cards.size));
     for (const r of show) { this.showReminder(r, now); seen[r.key] = 0; }
     if (JSON.stringify(seen) !== JSON.stringify(stored)) this.app.saveLocalStorage(REMINDERS_SEEN, seen);
-    const more = due.length - show.length;
+    const more = justOn ? 0 : due.length - show.length;
     if (this.reminderMore) this.reminderMore.setText(more ? `and ${more} more` : '');
   }
 
@@ -1264,11 +1267,21 @@ class TodayPlugin extends Plugin {
     card.createDiv({ cls: 'lw-rem-title', text: item.title });
     card.createDiv({ cls: 'lw-rem-sub', text: [item.project, timeText(item.time || '')].filter(Boolean).join(' · ') });
     const btns = card.createDiv({ cls: 'lw-rem-btns' });
+    let working = false;
     /** @param {string} text @param {() => unknown} act @param {string} [cls] */
     const btn = (text, act, cls) => { const b = btns.createEl('button', { text, cls }); b.addEventListener('click', () => act()); };
     btn('Done', async () => {
-      try { if (!isTaskDone(item, day, this.completedStatuses())) await this.toggleTask(item, day); this.closeReminder(key); this.checkReminders(); }
-      catch (e) { new Notice(e instanceof Error && e.message ? e.message : 'That task could not be finished.'); }
+      if (working) return; // a second click would tick a repeating day back off
+      working = true;
+      try {
+        // As the note is now: it may have been ticked since the card went up.
+        const f = this.app.vault.getAbstractFileByPath(item.path);
+        const c = f instanceof TFile ? this.app.metadataCache.getFileCache(f) : null;
+        const now = (c && c.frontmatter && f instanceof TFile ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : null) || item;
+        if (!isTaskDone(now, day, this.completedStatuses())) await this.toggleTask(now, day);
+        this.closeReminder(key); this.checkReminders();
+      }
+      catch (e) { working = false; new Notice(e instanceof Error && e.message ? e.message : 'That task could not be finished.'); }
     }, 'mod-cta');
     btn('In 10 minutes', () => {
       const stored = /** @type {unknown} */ (this.app.loadLocalStorage(REMINDERS_SEEN));

@@ -1,6 +1,7 @@
 // Activity heatmap (phase 4): a year of active days. Obsidian keeps only a note's created and last-edited
 // dates, so older days can show gaps; while the widget is on, each day's count is kept in the settings file
 // (numbers only, no note names). Each day has its own setting there, so two devices merge day by day.
+// shortcut: on one day the later device's count wins, so a day can look lighter; it never stops being active.
 'use strict';
 
 import { dayOf, isDayStr, utcOf, addDays, MONTHS_SHORT } from './dates';

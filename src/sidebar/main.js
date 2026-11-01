@@ -794,7 +794,8 @@ class SidebarView extends ItemView {
     this.hideInRooms = hiddenUnderRooms(groups);
     this.counts = Object.assign(
       countNotes(filePaths, countFolders),
-      countNotesExcluding(filePaths, rooms.map((r) => r.path), this.hideInRooms),
+      // With no base folder a grouped top folder is hidden from Folders, and its own count must stand.
+      countNotesExcluding(filePaths, rooms.map((r) => r.path).filter((p) => SBC.life || !this.hideInRooms.has(p)), this.hideInRooms),
     );
     this.plus = formTargets();
     const activePath = this.activePath();
@@ -1657,7 +1658,7 @@ class GroupsModal extends Modal {
     const base = SBC.life ? this.app.vault.getAbstractFileByPath(SBC.life) : this.app.vault.getRoot();
     const held = SBC.groups.flatMap((g) => g.folders);
     const used = new Set(held.map(itemFolder));
-    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => c.name) : [];
+    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !VIRTUAL[c.name]).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
     // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
     const lists = SBC.life && !held.includes('Projects') && this.app.vault.getAbstractFileByPath(`${SBC.life}/Projects`) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
     return folders.concat(lists);
@@ -1672,7 +1673,7 @@ class GroupsModal extends Modal {
       const name = head.createEl('input', { type: 'text', value: g.label, attr: { 'aria-label': 'Group name' } });
       name.addEventListener('change', () => {
         const label = name.value.trim();
-        if (!label) { new Notice('A group needs a name.'); name.value = g.label; return; }
+        if (!label) { new Notice('A group needs a name.'); const cur = SBC.groups.find((x) => x.id === g.id); name.value = cur ? cur.label : g.label; return; }
         // No redraw: the click that moved focus here would land on a button that is gone.
         this.save((list) => list.map((x) => (x.id === g.id ? { ...x, label } : x)), true);
       });

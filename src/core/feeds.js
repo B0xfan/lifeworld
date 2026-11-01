@@ -7,7 +7,7 @@ import { requestUrl } from 'obsidian';
 const CACHE_KEY = 'lifeworld-news';
 const HOUR = 3600000;
 const TIMEOUT_MS = 15000;
-const MAX_CHARS = 5000000;
+const MAX_CHARS = 2000000;
 const KEEP_ITEMS = 12;
 const MAX_FEEDS = 30;
 const SHOW_CHOICES = [5, 8, 12];
@@ -55,6 +55,10 @@ function linkOf(item, base) {
   return cleanFeedUrl(atom ? atom.getAttribute('href') : rss, base) || cleanFeedUrl(textOf(item, ['guid', 'id']));
 }
 
+// A title as text: feeds often escape it twice. An inert page: nothing in it runs or loads.
+/** @param {string} s */
+function plainTitle(s) { return /[&<]/.test(s) ? (new DOMParser().parseFromString(s, 'text/html').documentElement.textContent || '').trim() : s; }
+
 // RSS, RDF and Atom text -> { title, items }, newest first. Throws Error('not-feed').
 /** @param {string} text @param {string} base the feed's own address, for links written relative to it */
 function parseFeed(text, base) {
@@ -62,8 +66,9 @@ function parseFeed(text, base) {
   const root = doc.documentElement;
   if (doc.querySelector('parsererror') || !root || !['rss', 'feed', 'RDF'].includes(root.localName)) throw new Error('not-feed');
   const items = Array.from(doc.querySelectorAll('item, entry')).map((el) => {
-    const at = Date.parse(textOf(el, ['pubDate', 'published', 'updated', 'date']));
-    return { title: textOf(el, ['title']).slice(0, 300), link: linkOf(el, base), at: Number.isFinite(at) ? at : 0 };
+    // First published before last edited, whichever the file lists first; a date ahead of now counts as now.
+    const at = Date.parse(['pubDate', 'published', 'date', 'updated'].map((n) => textOf(el, [n])).find(Boolean) || '');
+    return { title: plainTitle(textOf(el, ['title'])).slice(0, 300), link: linkOf(el, base), at: Number.isFinite(at) ? Math.min(at, Date.now()) : 0 };
   }).filter((x) => x.title);
   return { title: textOf(childOf(root, ['channel']) || root, ['title']).slice(0, 80), items: items.sort((a, b) => b.at - a.at).slice(0, KEEP_ITEMS) };
 }
@@ -81,6 +86,7 @@ function feedError(e) {
 async function readFeed(url) {
   /** @type {number | undefined} */
   let timer;
+  // shortcut: Obsidian's requestUrl cannot be stopped, so a late answer still downloads in the background.
   /** @type {Promise<never>} */
   const late = new Promise((_, no) => { timer = window.setTimeout(() => no(new Error('late')), TIMEOUT_MS); });
   try {
