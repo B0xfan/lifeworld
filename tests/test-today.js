@@ -513,6 +513,7 @@ eq(L.normalizePlaces([{ name: 'X', tz: 'Nope/Zone' }, { name: ' London ', tz: 'E
   const at = new Date('2026-10-19T15:41:23Z');
   const lon = L.clockAt(at, 'Europe/London'); const tok = L.clockAt(at, 'Asia/Tokyo');
   eq([lon.time, lon.big, lon.day, tok.time, tok.day], ['04:41 pm', '4:41:23 pm', 'MON', '12:41 am', 'TUE'], 'world clock: each place at its own time and day, from the device alone');
+  eq([L.handAngles(L.clockAt(at, 'UTC')), L.normalizeClockStyle('dial'), L.normalizeClockStyle(undefined), L.normalizeClockStyle('x')], [{ h: 110.5, m: 248.3, s: 138 }, 'dial', 'ring', 'ring'], 'world clock: dial hand angles; Clock look saved as ring or dial, ring by default');
   // 24-hour ring (2026-10-29): sun times from the weather line; ring colours across the day.
   const sun = L.sunFrom({ sunrise: '5:33 AM', sunset: '5:20 PM' });
   eq([sun && +sun.dawn.toFixed(3), sun && +sun.rise.toFixed(3), sun && +sun.set.toFixed(3), sun && +sun.dusk.toFixed(3)], [5.133, 5.55, 17.333, 17.75], 'ring: first light 25 min before sunrise, last light 25 min after sunset');

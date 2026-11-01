@@ -756,6 +756,9 @@ function ringColour(h, sun) {
   if (h < set) return mix(DAY, SUNUP, (h - (set - BLEND)) / BLEND);
   return mix(SUNUP, FIRST, (h - set) / (dusk - set));
 }
+// The classic dial's hand angles in degrees.
+/** @param {{ h: number, m: number, s: number }} c */
+function handAngles(c) { return { h: ((c.h % 12) + c.m / 60) * 30, m: (c.m + c.s / 60) * 6, s: c.s * 6 }; }
 // A local hour (fractions for minutes) as '5:31 AM'.
 /** @param {number} h */
 function hourLabel(h) { const mins = Math.round(h * 60) % 1440, H = Math.floor(mins / 60); return `${H % 12 || 12}:${String(mins % 60).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; }
@@ -1012,6 +1015,9 @@ function remindersFooter(list) {
  * focused or revealed at startup. Opening it by hand always works. */
 /** @param {unknown} raw */
 function normalizeOpenOnStartup(raw) { return raw !== false; }
+// The World clock's look (Settings, 2026-10-29): the 24-hour sun ring, or the classic dial from before it.
+/** @param {unknown} raw @returns {'ring' | 'dial'} */
+function normalizeClockStyle(raw) { return raw === 'dial' ? 'dial' : 'ring'; }
 /** @param {Fm | null | undefined} saved */
 function startupOpensToday(saved) { return normalizeOpenOnStartup(saved && saved.openOnStartup); }
 
@@ -1032,7 +1038,7 @@ function projectLines(projects, ix) {
 }
 
 const logic = {
-  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, sunFrom, ringColour, hourLabel,
+  normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, ringColour, hourLabel,
   ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
@@ -1062,6 +1068,7 @@ class TodayPlugin extends Plugin {
     this.userName = normalizeUserName(saved.userName);
     this.pins = normalizePins(saved.pins);
     this.places = normalizePlaces(saved.places);
+    this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
     // Runs the calendar sync now: (refresh) => Promise<boolean>. Set through LifeWorld's setCalendarSync
@@ -1100,6 +1107,7 @@ class TodayPlugin extends Plugin {
     this.userName = normalizeUserName(saved.userName);
     this.pins = normalizePins(saved.pins);
     this.places = normalizePlaces(saved.places);
+    this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
     this.applyLook();
@@ -1167,6 +1175,8 @@ class TodayPlugin extends Plugin {
     return on;
   }
 
+  /** @param {unknown} style */
+  async saveClockStyle(style) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const clockStyle = normalizeClockStyle(style); data.clockStyle = clockStyle; await this.saveData(data); this.clockStyle = clockStyle; this.layoutChanged(); }
   /** @param {unknown} list */
   async savePlaces(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const places = normalizePlaces(list); data.places = places; await this.saveData(data); this.places = places; this.layoutChanged(); }
 
@@ -1804,7 +1814,7 @@ class TodaySettingTab extends PluginSettingTab {
         if (this._cssRef) this.app.workspace.offref(this._cssRef);
         this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
       } },
-      { name: 'Widget setup', aliases: ['World clock', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder'],
+      { name: 'Widget setup', aliases: ['World clock', 'Clock look', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder'],
         render: (s) => { this.setupHost = blockRow(s, 'a4t-setup', true); this.renderSetup(); } },
       { name: 'Calendars', aliases: ['Refresh list'], render: (s) => {
         this.calHost = blockRow(s, 'a4t-cal-picker', true);
@@ -1869,6 +1879,7 @@ class TodaySettingTab extends PluginSettingTab {
     const on = (id) => !!zoneOf(plugin.layout, id);
     if (on('clock')) {
       new Setting(host).setName('World clock').setHeading();
+      new Setting(host).setName('Clock look').addDropdown((d) => d.addOption('ring', '24-hour sun ring').addOption('dial', 'Classic dial').setValue(plugin.clockStyle).onChange((v) => plugin.saveClockStyle(v)));
       for (const p of plugin.places) {
         new Setting(host).setName(p.name).setDesc(p.tz.replace(/_/g, ' '))
           .addButton((b) => b.setButtonText('Remove').onClick(async () => { await plugin.savePlaces(plugin.places.filter((x) => x !== p)); this.renderSetup(); }));
@@ -3248,6 +3259,7 @@ class TodayView extends ItemView {
   /** @param {HTMLElement} body @param {HTMLElement} el */
   renderClockWidget(body, el) {
     el.addClass('a4t-card');
+    if (this.plugin.clockStyle === 'dial') { this.renderDialClock(body); return; }
     const places = this.plugin.places;
     this.cardHead(body, 'World clock', 'Today');
     const C = 154, R = 118;
@@ -3297,6 +3309,43 @@ class TodayView extends ItemView {
       }
       const [sx, sy] = pt(hour);
       sunDot.setAttr('cx', sx); sunDot.setAttr('cy', sy);
+    };
+    paint();
+    this.clockPaint = () => (body.isConnected ? paint() : null);
+  }
+
+  // The classic dial (launch section 4, mockup v6), kept as a choice in Settings beside the sun ring.
+  /** @param {HTMLElement} body */
+  renderDialClock(body) {
+    const places = this.plugin.places;
+    this.cardHead(body, 'World clock', `${places.length + 1} place${places.length ? 's' : ''}`);
+    const top = body.createDiv({ cls: 'a4t-clk-top' });
+    const svg = top.createSvg('svg', { cls: 'a4t-clk-face', attr: { viewBox: '0 0 62 62', 'aria-hidden': 'true' } });
+    /** @param {string} cls @param {number} x1 @param {number} y1 @param {number} x2 @param {number} y2 */
+    const line = (cls, x1, y1, x2, y2) => svg.createSvg('line', { cls, attr: { x1, y1, x2, y2 } });
+    svg.createSvg('circle', { cls: 'a4t-clk-dial', attr: { cx: 31, cy: 31, r: 29 } });
+    const ticks = svg.createSvg('g', { cls: 'a4t-clk-ticks' });
+    for (let i = 0; i < 12; i++) ticks.createSvg('line', { attr: { x1: 31, y1: 3.5, x2: 31, y2: i % 3 ? 5.5 : 7.5, transform: `rotate(${i * 30} 31 31)` } });
+    /** @type {Record<string, SVGElement>} */
+    const hands = { h: line('a4t-clk-h', 31, 31, 31, 18.5), m: line('a4t-clk-m', 31, 31, 31, 11), s: line('a4t-clk-s', 31, 35, 31, 9) };
+    svg.createSvg('circle', { cls: 'a4t-clk-pin', attr: { cx: 31, cy: 31, r: 1.6 } });
+    const txt = top.createDiv();
+    const big = txt.createDiv({ cls: 'a4t-clk-big' });
+    const zone = txt.createDiv({ cls: 'a4t-clk-zone' });
+    const list = places.length ? body.createEl('ul', { cls: 'a4t-clk-places' }) : null;
+    const rows = places.map((p) => {
+      const li = /** @type {HTMLElement} */ (list).createEl('li', { cls: 'a4t-clk-place' });
+      li.createSpan({ cls: 'a4t-clk-name', text: p.name, attr: { title: p.name } });
+      return { p, time: li.createSpan({ cls: 'a4t-clk-time' }), day: li.createSpan({ cls: 'a4t-clk-day' }) };
+    });
+    const paint = () => {
+      const now = new Date();
+      const here = clockAt(now, null);
+      const a = handAngles(here);
+      for (const k of /** @type {('h' | 'm' | 's')[]} */ (['h', 'm', 's'])) hands[k].setAttr('transform', `rotate(${a[k]} 31 31)`);
+      big.setText(here.big);
+      zone.empty(); zone.appendText(here.zone); zone.createEl('em', { text: ' · ' }); zone.appendText('Here'); zone.createEl('em', { text: ' · ' }); zone.appendText(here.date);
+      for (const r of rows) { const c = clockAt(now, r.p.tz); r.time.setText(c.time); r.day.setText(c.day); }
     };
     paint();
     this.clockPaint = () => (body.isConnected ? paint() : null);

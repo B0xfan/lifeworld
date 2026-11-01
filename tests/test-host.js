@@ -833,7 +833,7 @@ const start = async (data) => {
     {
       const TL = LW.parts['a4-today'].logic;
       const wh = fakeEl('div'); let changed = 0;
-      const plug = { layout: TL.defaultLayout(), taskKind: () => 'notes', partOn: (x) => x !== 'projects', async saveLayout(l) { this.layout = TL.normalizeLayout(l); }, layoutChanged() { changed++; } };
+      const plug = { layout: TL.defaultLayout(), clockStyle: 'ring', taskKind: () => 'notes', partOn: (x) => x !== 'projects', async saveLayout(l) { this.layout = TL.normalizeLayout(l); }, layoutChanged() { changed++; } };
       const sh = fakeEl('div');
       plug.places = []; plug.pins = []; plug.habits = []; plug.canRunSync = () => false;
       const tab = { widgetsHost: wh, setupHost: sh, app: { vault: { getAbstractFileByPath: () => null }, loadLocalStorage: () => null }, plugin: plug, renderWidgetList: TS.renderWidgetList, renderSetup: TS.renderSetup };
@@ -852,6 +852,8 @@ const start = async (data) => {
       await row('World clock').rec.change(true);
       eq([plug.layout.zones.c2.slice(-1), changed], [['clock'], 1], 'switched on: at the end of its column, and the open Today page follows');
       ok(sh.kids.some((k) => k.rec && k.rec.heading && k.rec.name === 'World clock') && sh.kids.some((k) => k.rec && k.rec.name === 'Add a place'), 'World clock on: its setup section shows');
+      const lookRow = sh.kids.find((k) => k.rec && k.rec.name === 'Clock look');
+      eq([lookRow && lookRow.rec.options, lookRow && lookRow.rec.value], [[['ring', '24-hour sun ring'], ['dial', 'Classic dial']], 'ring'], 'Clock look: the sun ring by default, the classic dial as the other choice');
       // Add a place (2026-10-20): one search box with matches as you type, no time zone list or Add button.
       const addRow = sh.kids.find((k) => k.rec && k.rec.name === 'Add a place');
       eq([!!addRow.rec.text, addRow.rec.options, addRow.rec.buttons, addRow.rec.desc], [true, undefined, undefined, 'Type 3 or more letters, then pick a city from the list. Its time zone is filled in for you. Searching needs internet; the clocks do not.'], 'Add a place: one search box, no time zone list, the 3-letter wording');
@@ -907,7 +909,7 @@ const start = async (data) => {
       eq([asked, await settles(flying)], [['grand ju'], 'pending'], 'pick while a search is under way: its late answer is dropped');
       // The card: no "Here" tile; one line per place (name, time, day) in the order saved; none with no places.
       const TVc = LW.parts['a4-today'].TodayView.prototype;
-      const drawClock = (places) => { const body = fakeEl('div'); body.isConnected = true; const heads = []; TVc.renderClockWidget.call({ plugin: { places }, cardHead: (b, k, t) => heads.push(t) }, body, fakeEl('div')); return { body, heads }; };
+      const drawClock = (places, clockStyle = 'ring', weather = undefined) => { const body = fakeEl('div'); body.isConnected = true; const heads = []; TVc.renderClockWidget.call({ plugin: { places, clockStyle }, data: { weather }, cardHead: (b, k, t) => heads.push(t), renderDialClock: TVc.renderDialClock }, body, fakeEl('div')); return { body, heads }; };
       const find = (el, cls, out = []) => { for (const k of el.kids || []) { if (k.cls && k.cls.includes(cls)) out.push(k); find(k, cls, out); } return out; };
       const two = drawClock([{ name: 'Fresno, CA', tz: 'America/Los_Angeles' }, { name: 'Windsor, CO', tz: 'America/Denver' }]);
       const lines = find(two.body, 'a4t-clk-place');
@@ -917,6 +919,13 @@ const start = async (data) => {
       eq([lines[1].kids[2].text, /^\d\d:\d\d [ap]m$/.test(lines[1].kids[1].text)], [at.day, true], 'each line: that zone\'s time and day');
       const none = drawClock([]);
       eq([none.heads, find(none.body, 'a4t-clk-places').length], [['Today'], 0], 'no places: only the big clock, no empty list');
+      // Clock look = Classic dial (2026-10-29): the dial from before the ring, same place lines.
+      const dial = drawClock([{ name: 'Fresno, CA', tz: 'America/Los_Angeles' }], 'dial');
+      eq([dial.heads, find(dial.body, 'a4t-clk-face').length, find(dial.body, 'a4t-clk-ring').length, find(dial.body, 'a4t-clk-place').length], [['2 places'], 1, 0, 1], 'Classic dial: the dial face, no ring, the place lines');
+      // The ring shows sun times only, never tides, even when the weather carries them (tides stay on the weather card).
+      const texts = (el, out = []) => { if (el.text) out.push(el.text); for (const k of el.kids || []) texts(k, out); return out; };
+      const wet = drawClock([], 'ring', { sunrise: '5:33 AM', sunset: '5:20 PM', tides_today: [{ type: 'High', time: '4:17 AM' }] });
+      eq([texts(wet.body).some((t) => /4:17|high/i.test(t)), find(wet.body, 'a4t-clk-sunline')[0].text], [false, '☀︎ 5:33 AM – 5:20 PM'], 'sun ring: sun times only, no tides');
       await row('Calendar').rec.extras[0].click();
       eq([plug.layout.zones.c1.slice(-1), plug.layout.zones.c2[0]], [['calendar'], 'recent'], 'up from the top of Middle: into Left');
       plug.taskKind = () => 'checkbox'; tab.renderWidgetList();
