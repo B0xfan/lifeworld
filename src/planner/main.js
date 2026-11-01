@@ -483,6 +483,10 @@ class PlannerPlugin extends Plugin {
   async onExternalSettingsChange() {
     const saved = /** @type {Partial<PlannerData>} */ ((await this.loadData().catch(() => null)) || {});
     this.data = { ...DEFAULT_DATA, ...saved, collapsed: { ...(saved.collapsed || {}) }, made: { ...(saved.made || {}) } };
+    for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+      const v = /** @type {PlannerView} */ (l.view);
+      if (typeof v.scheduleRender === 'function') { v.mode = viewModeOf(this.data.mode); v.scheduleRender(); }
+    }
   }
 
   async save() { await this.saveData(this.data); }

@@ -110,6 +110,7 @@ class LifeWorldPlugin extends Plugin {
     this.store = found || { [HOST]: { carriedOver: true } };
     /** @type {LwStore} */
     this.ondisk = /** @type {LwStore} */ (copy(this.store)); // what the file holds as far as LifeWorld knows (see onExternalSettingsChange)
+    if (this.fileStale) this.writeStore().catch((e) => console.error('LifeWorld: settings merged by Sync could not be saved', e));
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
@@ -424,11 +425,12 @@ class LifeWorldPlugin extends Plugin {
   async readStore() {
     const before = this.ondisk;
     const d = await this.loadData();
-    if (d === null) { this.changes = {}; return {}; } // no file: a reset, and it stays one
+    const during = this.writing || this.ondisk !== before; // a save under way, or ended during the read: not in what was read
+    if (d === null) { if (!during) this.changes = {}; return {}; } // no file: a reset, and it stays one
     if (d && typeof d === 'object' && !Array.isArray(d)) {
-      const { store, changes } = readFile(/** @type {Record<string, unknown>} */ (d), Date.now());
-      // A save under way, or ended during the read: its changes are not in what was read.
-      this.changes = this.writing || this.ondisk !== before ? { ...changes, ...this.changes } : changes;
+      const { store, changes, stale } = readFile(/** @type {Record<string, unknown>} */ (d), Date.now());
+      this.changes = during ? { ...changes, ...this.changes } : changes;
+      this.fileStale = stale;
       return /** @type {LwStore} */ (store);
     }
     return null;
@@ -476,15 +478,9 @@ class LifeWorldPlugin extends Plugin {
       try {
         this.changes = addChanges(this.changes, this.ondisk, snap, Date.now());
         await this.saveData({ ...snap, ...this.changes });
-        // A Sync change taken during this write: its corners stay the record of what is on disk
-        // (the follow-up write puts them there), or a second Sync change to them would look like
-        // a change made here and be dropped (review p2-s3). Corners kept from here are in snap.
-        const s = this.syncedDuring;
-        this.ondisk = snap;
-        if (s) {
-          this.ondisk = /** @type {LwStore} */ (copy(s.now));
-          for (const k of s.kept) if (k in snap) this.ondisk[k] = snap[k]; else delete this.ondisk[k];
-        }
+        // A Sync change taken during this write: the merged settings are the record of what is on disk (the
+        // follow-up write puts them there), or that Sync change would look like one made here (review p2-s3).
+        this.ondisk = this.syncedDuring ? /** @type {LwStore} */ (copy(this.syncedDuring)) : snap;
       } finally { this.writing = false; this.syncedDuring = null; }
     });
     return this.saving;
@@ -511,19 +507,13 @@ class LifeWorldPlugin extends Plugin {
     // before this change, so one more write follows it.
     /** @type {LwStore} */
     const merged = /** @type {LwStore} */ (carryChanges(/** @type {LwStore} */ (copy(now)), was, before));
-    /** @type {string[]} */
-    const kept = [];
-    for (const k of new Set([...Object.keys(before), ...Object.keys(was)])) {
-      if (JSON.stringify(before[k]) === JSON.stringify(was[k])) continue;
-      kept.push(k);
-    }
     this.ondisk = now;
     this.store = merged;
-    /** @type {{ now: LwStore, kept: string[] } | null | undefined} */
-    if (this.writing) this.syncedDuring = { now: /** @type {LwStore} */ (copy(now)), kept };
+    /** @type {LwStore | null | undefined} */
+    if (this.writing) this.syncedDuring = /** @type {LwStore} */ (copy(merged));
     // After a save that ended during the read, write only if the file does not already hold the
     // result (review p2-s4: no write when nothing changed).
-    if (this.writing || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
+    if (this.writing || this.fileStale || (saved && JSON.stringify(merged) !== JSON.stringify(ours))) {
       this.writeStore().catch((e) => console.error('LifeWorld: the save after a settings change from outside failed', e));
     } else if (saved) {
       // No write: the file holds our save, not `now`; else the next Sync change looks local and is dropped (review p2-s5).

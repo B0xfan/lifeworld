@@ -283,12 +283,21 @@ const start = async (data) => {
     const log1 = (d) => Object.values(JSON.parse(disk[d.dir])).filter((v) => v && Array.isArray(v.path));
     eq(log1(mac).filter((e) => e.path.join('/') === 'a4-planner/mode').map((e) => e.value), ['mac last'], 'the log keeps only the newest change to a setting');
     const week = Date.now() - 8 * 864e5;
-    const old = await start({ 'a4-today': { look: 'old' }, '~change-old': { at: week, path: ['a4-today', 'look'], value: 'merged away' }, '~change-bad': { at: Date.now(), path: ['__proto__', 'polluted'], value: 1 }, '~change-odd': 'text' });
-    eq(await old.parts['a4-today'].loadData(), { look: 'merged away' }, 'an old change not yet saved still counts, a damaged one does not');
+    const old = await start({ 'a4-today': { look: 'now' }, '~change-old': { at: week, path: ['a4-today', 'look'], value: 'stale' }, '~change-bad': { at: Date.now(), path: ['__proto__', 'polluted'], value: 1 }, '~change-odd': 'text', '~change-g': { at: Date.now(), path: ['a4-planner', 'x'], gone: true } });
+    eq(await old.parts['a4-today'].loadData(), { look: 'now' }, 'a change older than a week, or a damaged one, is ignored');
     ok(!({}).polluted, 'a damaged change cannot reach other objects');
+    eq(await old.parts['a4-planner'].loadData(), null, 'a removal in a part with no settings invents none');
     await old.parts['a4-planner'].saveData({ mode: 'x' });
-    eq(plainFile(disk[old.dir])['a4-today'], { look: 'merged away' }, 'the next save writes it into the settings');
-    ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'and those entries go');
+    ok(!Object.keys(JSON.parse(disk[old.dir])).some((k) => ['~change-old', '~change-bad', '~change-odd'].includes(k)), 'those entries go at the next save');
+    // A merged-away change is saved at once, so it does not depend on the log.
+    const held = await start({ 'a4-today': { look: 'old', layout: ['y'] }, '~change-m': { at: Date.now(), path: ['a4-today', 'look'], value: 'merged' } });
+    await held.host.saving;
+    eq(plainFile(disk[held.dir])['a4-today'], { look: 'merged', layout: ['y'] }, 'a change only in the log is written into the settings at the start');
+    // A first save of a part: its unlogged settings stay out of the log, or an old copy would replay over newer ones.
+    const first = await start({});
+    await first.parts['a4-sidebar'].saveData({ open: { x: 1 }, sort: 'a' });
+    await first.parts['a4-sidebar'].saveData({ open: { x: 2 }, sort: 'a' });
+    eq((await start(disk[first.dir])).host.store['a4-sidebar'].open, { x: 2 }, 'a first save: a later unlogged setting is not rolled back');
     // Two switches in one map, on two devices.
     const mapBase = { lifeworld: { parts: { 'a4-planner': true, 'a4-sidebar': true } } };
     const m1 = await start(mapBase); const m2 = await start(mapBase);
@@ -306,12 +315,13 @@ const start = async (data) => {
     disk[inFlight.dir] = JSON.stringify({ 'a4-today': { look: 'a', layout: ['from mac'] } });
     await inFlight.host.onExternalSettingsChange(); await pendingSave; await inFlight.host.saving; writeDelay = () => 0;
     eq(plainFile(disk[inFlight.dir])['a4-today'], { look: 'here', layout: ['from mac'] }, 'Sync during a save in the same part: both settings kept');
+    ok(!Object.values(JSON.parse(disk[inFlight.dir])).some((v) => v && Array.isArray(v.path) && v.path[1] === 'layout'), 'and the Mac\'s setting is not logged here as a change of this device');
     // Settings deleted on purpose stay deleted.
     delete disk[mac.dir];
     await mac.host.onExternalSettingsChange();
     await mac.parts['a4-planner'].saveData({ mode: 'after reset' });
     eq(Object.keys(plainFile(disk[mac.dir])).sort(), ['a4-planner'], 'the settings file deleted: the log does not bring the old settings back');
-    for (const d of [mac, phone, again, old, m1, m2, mapMerged, ahead, inFlight]) d.host.unload();
+    for (const d of [mac, phone, again, old, held, first, m1, m2, mapMerged, ahead, inFlight]) d.host.unload();
   }
 
   // Two switches at once: one change at a time, never two copies of a part.
