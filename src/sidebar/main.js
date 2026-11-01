@@ -1658,7 +1658,7 @@ class GroupsModal extends Modal {
     const base = SBC.life ? this.app.vault.getAbstractFileByPath(SBC.life) : this.app.vault.getRoot();
     const held = SBC.groups.flatMap((g) => g.folders);
     const used = new Set(held.map(itemFolder));
-    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !VIRTUAL[c.name]).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
+    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !Object.keys(VIRTUAL).includes(c.name)).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
     // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
     const lists = SBC.life && !held.includes('Projects') && this.app.vault.getAbstractFileByPath(`${SBC.life}/Projects`) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
     return folders.concat(lists);

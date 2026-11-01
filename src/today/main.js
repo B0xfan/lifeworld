@@ -1093,7 +1093,7 @@ class TodayPlugin extends Plugin {
     this.reminderCards = new Map();
     const saved = /** @type {Fm} */ ((await this.loadData()) || {});
 
-    // Reminder pop-ups start off for everyone (John, 2026-11-01); the person turns them on in Settings.
+    // Reminder pop-ups start off for everyone; the person turns them on in Settings.
     this.reminderPopups = saved.reminderPopups === true;
     this.layout = normalizeLayout(saved.layout);
     this.look = normalizeLook(saved.look);
@@ -1159,7 +1159,9 @@ class TodayPlugin extends Plugin {
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
     this.weatherCfg = normalizeWeather(saved.weather);
     this.habits = normalizeHabits(saved.habits);
+    const popupsWere = this.reminderPopups;
     this.reminderPopups = saved.reminderPopups === true;
+    if (this.reminderPopups && !popupsWere) this.checkReminders(true); // turned on on another device: as quiet here
     this.heatCount = normalizeHeatCount(saved.heatCount);
     this.activity = normalizeActivity(saved.activity);
     this.feeds = normalizeFeeds(saved.feeds);
@@ -1277,8 +1279,8 @@ class TodayPlugin extends Plugin {
         // As the note is now: it may have been ticked since the card went up.
         const f = this.app.vault.getAbstractFileByPath(item.path);
         const c = f instanceof TFile ? this.app.metadataCache.getFileCache(f) : null;
-        const now = (c && c.frontmatter && f instanceof TFile ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : null) || item;
-        if (!isTaskDone(now, day, this.completedStatuses())) await this.toggleTask(now, day);
+        const now = c && c.frontmatter && f instanceof TFile ? taskFromFrontmatter(readable(/** @type {Fm} */ (c.frontmatter)), f.path, f.basename) : null;
+        if (now && !isTaskDone(now, day, this.completedStatuses())) await this.toggleTask(now, day); // no longer a task: nothing to finish
         this.closeReminder(key); this.checkReminders();
       }
       catch (e) { working = false; new Notice(e instanceof Error && e.message ? e.message : 'That task could not be finished.'); }
