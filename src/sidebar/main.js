@@ -478,10 +478,8 @@ function longPressState(start, now, moved) {
   return now - start >= LONG_PRESS_MS ? 'fire' : 'wait';
 }
 
-// Placement is per device kind: data.json syncs between Mac and phone, so the
-// Mac's "already placed" must not stop the phone from adding its own tab.
-/** @param {boolean} isMobile */
-function placedKey(isMobile) { return isMobile ? 'placedMobile' : 'placed'; }
+// Kept on this device, not in data.json: that syncs, so the iPhone's "already placed" stopped the iPad.
+const PLACED_KEY = 'lifeworld-sidebar-placed';
 
 // Group open state: remembered once toggled, else open only if active.
 /** @param {string} id @param {Record<string, boolean>} remembered @param {string | null} activeGroup */
@@ -1417,7 +1415,7 @@ class FilesChrome {
   }
 }
 /* ------------------------------------------------------------------ */
-/** @typedef {{ groups: Record<string, boolean>, sections: Record<string, boolean>, open: Record<string, boolean>, placed: boolean, placedMobile: boolean, sort: SortSettings, [k: string]: unknown }} SidebarState */
+/** @typedef {{ groups: Record<string, boolean>, sections: Record<string, boolean>, open: Record<string, boolean>, sort: SortSettings, [k: string]: unknown }} SidebarState */
 class SidebarPlugin extends Plugin {
   /** @type {SidebarSettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
 
@@ -1433,7 +1431,7 @@ class SidebarPlugin extends Plugin {
     /** @param {unknown} v @returns {Record<string, boolean>} */
     const obj = (v) => /** @type {Record<string, boolean>} */ (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
     /** @type {SidebarState} */
-    this.state = { groups: obj(sv.groups), sections: obj(sv.sections), open: obj(sv.open), placed: !!sv.placed, placedMobile: !!sv.placedMobile, sort: normalizeSort(sv.sort) };
+    this.state = { groups: obj(sv.groups), sections: obj(sv.sections), open: obj(sv.open), sort: normalizeSort(sv.sort) };
     const sortIsNew = !sv.sort;
     this.registerView(VIEW_TYPE, (leaf) => new SidebarView(leaf, this));
     this.addSettingTab(new SidebarSettingTab(this.app, this));
@@ -1455,14 +1453,7 @@ class SidebarPlugin extends Plugin {
     }
     this.chrome = new FilesChrome(this);
     this.app.workspace.onLayoutReady(async () => {
-      // First run only: add the tab next to Files and show it. After that
-      // Obsidian's own layout memory decides (closing it is respected).
-      const key = placedKey(IS_MOBILE);
-      if (!this.state[key] && !this.app.workspace.getLeavesOfType(VIEW_TYPE).length) {
-        if (IS_MOBILE) await this.placeInDrawer(); else await this.activate();
-        this.state[key] = true;
-        await this.saveState();
-      }
+      await this.placeFirstTime();
       // First run of 0.8.0: write the pre-filled sort settings, so the phone
       // and the settings page read the same list.
       if (sortIsNew) await this.saveState();
@@ -1470,6 +1461,14 @@ class SidebarPlugin extends Plugin {
       // Plugins that load later (an add-on's form, dashboards) change what rows show.
       window.setTimeout(() => this.scheduleRender(), 1500);
     });
+  }
+
+  // First run on this device only: add the tab next to Files and show it. After that
+  // Obsidian's own layout memory decides (closing it is respected).
+  async placeFirstTime() {
+    if (this.app.loadLocalStorage(PLACED_KEY)) return;
+    if (!this.app.workspace.getLeavesOfType(VIEW_TYPE).length) { if (IS_MOBILE) await this.placeInDrawer(); else await this.activate(); }
+    this.app.saveLocalStorage(PLACED_KEY, true);
   }
 
   async activate() {
@@ -1671,5 +1670,5 @@ SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 sect
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
-  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, placedKey, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
+  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

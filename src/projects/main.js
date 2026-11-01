@@ -4153,7 +4153,7 @@ class ProjectsView extends ItemView {
   }
 
   getViewType() { return VIEW_TYPE; }
-  getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? /** @type {string} */ (s.project.split('/').pop()).replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : s.focus ? `${SPHERE_LABEL[s.focus]} projects` : 'Projects'; }
+  getDisplayText() { const s = this.state; return s.page === 'project' && s.project ? /** @type {string} */ (s.project.split('/').pop()).replace(/\.md$/, '') : s.page === 'inbox' ? 'Inbox' : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects'; }
   getIcon() { return 'folder-kanban'; }
   getState() { return { page: this.state.page, project: this.state.project, focus: this.state.focus }; }
   /** @param {unknown} state @param {import('obsidian').ViewStateResult} result */
@@ -4167,6 +4167,10 @@ class ProjectsView extends ItemView {
     if (changed) { this.query = ''; this.expanded.clear(); this.tab = 'projects'; this.area = focus; /** @type {string | null} */ this.noteFor = null; /** @type {string | null} */ this.showAllNotes = null; }
     this.render(true, changed);
     await super.setState(state, result);
+    this.refreshTitle();
+  }
+
+  refreshTitle() {
     // The tab title and the header strip follow the list. shortcut: leaf.updateHeader and the view's
     // titleEl are Obsidian internals (not in obsidian.d.ts 1.14.4, read in its app code); no public call
     // redraws a tab title. A throwing one is logged, the tab still opens. Upgrade if Obsidian adds one.
@@ -4280,9 +4284,9 @@ class ProjectsView extends ItemView {
     const cfg = this.cfg; const today = this.today;
     const inbox = this.tasks.filter((t) => isInboxTask(t, cfg));
     const overdueAll = this.tasks.filter((t) => isOverdueTask(t, today, cfg));
-    // Opened from the sidebar's Work / Personal item: that list only (the crumb goes back to all).
-    // The Areas page and the boards filter by this.area (their Work / Personal buttons) instead.
-    const sp = this.state.focus;
+    // Every page filters by this.area (its Work / Personal buttons). A tab opened from the sidebar's
+    // Work / Personal item starts with that button on; its crumb stays while the button does.
+    const sp = this.state.focus && this.area === this.state.focus ? this.state.focus : null;
     const ui = this.plugin.settings.ui;
     const tasksKind = ui.kind === 'tasks'; // Tasks is always a board (spec 14)
     const areasKind = ui.kind === 'areas'; // its own page of area cards, never a board (Areas mockup, option 1)
@@ -4293,7 +4297,7 @@ class ProjectsView extends ItemView {
     const pick = async (key, k) => { const u = /** @type {Record<string, unknown>} */ (this.plugin.settings.ui); if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : sp ? `${SPHERE_LABEL[sp]} projects` : 'Projects', side ? [
+    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
       this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
     ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
@@ -4301,7 +4305,7 @@ class ProjectsView extends ItemView {
       // + Add task: the plugin's own New task box (Inbox page, as the "Add a task" command); new tasks start in Open.
       tasksKind ? { label: '+ Add task', cls: 'is-primary', run: () => this.go({ page: 'inbox', focusAdd: true }) }
         : board ? { label: '+ Add project', cls: 'is-primary', run: () => this.plugin.addProject() }
-          : { label: '+ Add area', cls: 'is-primary', run: () => this.plugin.addArea(areasKind ? this.area : sp) },
+          : { label: '+ Add area', cls: 'is-primary', run: () => this.plugin.addArea(this.area) },
     ]);
     // Areas / Projects / Tasks (Areas first, owner request 2026-10-19), then List / Board (Projects only: Tasks is a board).
     const act = /** @type {HTMLElement} */ (page.querySelector('.a4pj-actions'));
@@ -4326,6 +4330,7 @@ class ProjectsView extends ItemView {
       return;
     }
     if (board) { this.renderBoard(page); return; }
+    this.areaButtons(page);
     const tools = el(page, 'div', 'a4pj-tools');
     const seg = el(tools, 'div', 'a4pj-seg');
     for (const [k, l] of [['all', 'All'], ['active', 'Active'], ['paused', 'Paused'], ['waiting', 'Waiting'], ['blocked', 'Blocked'], ['backlog', 'Backlog']]) {
@@ -4346,7 +4351,7 @@ class ProjectsView extends ItemView {
   renderLists(host) {
     host.empty();
     const cfg = this.cfg; const today = this.today;
-    const sp = this.state.focus;
+    const sp = this.area;
     const groups = overviewGroups(this.projects, this.filter, this.query, sp);
     // Areas on top (mockup choice 1 A): they have no status, so only under All.
     const areas = this.filter === 'all' ? areaList(this.areas, this.query, sp) : [];
@@ -4598,7 +4603,7 @@ class ProjectsView extends ItemView {
     for (const k of ['work', 'personal']) {
       const b = el(areas, 'button', this.area === k ? 'is-on' : '', SPHERE_LABEL[k]);
       b.setAttr('aria-pressed', String(this.area === k));
-      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); });
+      b.addEventListener('click', () => { this.area = this.area === k ? null : k; this.render(true); this.refreshTitle(); });
     }
   }
 

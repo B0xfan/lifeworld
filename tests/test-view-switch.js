@@ -28,7 +28,7 @@ assert.deepStrictEqual(ui(saved), ['board', 'projects']);
 
 // A click after a Sync reload swapped the settings object writes to the new one.
 // Tiny fake DOM: just what renderOverview's switches touch.
-const node = () => { const n = { kids: [], listeners: {}, className: '', textContent: '',
+const node = () => { const n = { kids: [], listeners: {}, className: '', textContent: '', dataset: {}, empty() {},
   createEl() { const c = node(); n.kids.push(c); return c; }, setAttr() {}, prepend(c) { n.kids.unshift(c); },
   addEventListener(t, f) { n.listeners[t] = f; }, querySelector() { return n.act; } }; return n; };
 global.createDiv = () => node();
@@ -76,5 +76,22 @@ const find = (n, text) => n.textContent === text ? n : n.kids.map((c) => find(c,
   const empty = pg();
   plugin.ProjectsView.prototype.renderOverview.call({ ...pv, area: 'work', areas: [], areaSection() { return false; } }, empty);
   assert.ok(find(empty, 'no work areas yet'), 'an empty Work list says so');
+  // Projects > List follows the same buttons (owner task 2026-10-28): the areas, projects and tasks it lists,
+  // whatever the tab was opened from. Same fixtures as above; a real areaList, overviewGroups and search.
+  const lp = pg(); let listButtons = 0; let listed = null; let listHead = null;
+  const lv = { ...pv, areas: av.areas, projects: [], notes: [], tasks: [], filter: 'all', query: '', state: { focus: 'personal' }, area: null,
+    plugin: { ...host2, settings: normalizeSettings({ ui: { kind: 'projects', view: 'list' } }) },
+    areaButtons() { listButtons++; }, areaSection(h, areas) { listed = areas.map((a) => a.name); return areas.length; },
+    head(p, c, t) { listHead = [c.map((x) => x[0]), t]; } };
+  lv.renderLists = plugin.ProjectsView.prototype.renderLists;
+  plugin.ProjectsView.prototype.renderOverview.call(lv, lp);
+  assert.strictEqual(listButtons, 1, 'List has the Work / Personal buttons');
+  assert.deepStrictEqual(listed, ['a', 'B'], 'List, buttons cleared in a Personal tab: every area');
+  assert.deepStrictEqual(listHead, [['/ Projects'], 'Projects'], 'List, buttons cleared in a Personal tab: the crumb and title say so');
+  plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'work' }, pg());
+  assert.deepStrictEqual(listed, ['B'], 'List, Work pressed: work areas only');
+  assert.deepStrictEqual(listHead, [['/ Projects'], 'Work projects'], 'List, Work pressed: the title says so');
+  plugin.ProjectsView.prototype.renderOverview.call({ ...lv, area: 'personal' }, pg());
+  assert.deepStrictEqual(listHead, [['/ Projects', 'Personal'], 'Personal projects'], 'List opened as Personal, still Personal: crumb and title unchanged');
   console.log('view switch self-check: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -26,7 +26,7 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - Calendar: today and the next 7 days, from calendar links you add
 - Habits: tick today's habits and watch the streak grow
 - Mood: a short check-in and a page that shows how your weeks went
-- World clock: your time and any places you add
+- World clock: your time and any places you add, on a 24-hour sun ring or a classic dial
 - Active projects, recent notes, pinned shortcuts
 - Latest journal entry, and a journal box that writes a line into today's daily note
 - A Planner shortcut

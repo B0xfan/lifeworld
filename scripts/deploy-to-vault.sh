@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Install this build of LifeWorld in John's vault (run on his Mac; the release gate checks his OK first).
+#
+#   scripts/deploy-to-vault.sh            # back up, copy, confirm his settings were not touched
+#   scripts/deploy-to-vault.sh --dry-run  # show what would change, copy nothing
+#
+# Copies only main.js, manifest.json and styles.css. Never writes data.json; the backup goes outside the vault.
+# Target folder: $LIFEWORLD_PLUGIN_DIR, else the A4 vault.
+set -euo pipefail
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST="${LIFEWORLD_PLUGIN_DIR:-$HOME/Projects/A4/.obsidian/plugins/lifeworld}"
+FILES=(main.js manifest.json styles.css)
+case "${1:-}" in
+  --dry-run) DRY=1 ;;
+  "") DRY=0 ;;
+  -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
+  *) echo "Unknown option: $1" >&2; exit 2 ;;
+esac
+fail() { echo "deploy: $*" >&2; exit 1; }
+
+[ -f "$DEST/manifest.json" ] || fail "no manifest.json in $DEST; refusing to install into an unknown folder"
+read_id() { node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).id' "$1"; }
+[ "$(read_id "$REPO/manifest.json")" = lifeworld ] || fail "this repo's manifest is not LifeWorld"
+[ "$(read_id "$DEST/manifest.json")" = lifeworld ] || fail "$DEST does not hold LifeWorld"
+for f in "${FILES[@]}"; do [ -s "$REPO/$f" ] || fail "missing or empty $REPO/$f"; done
+node --check "$REPO/main.js" || fail "main.js does not parse"
+
+for f in "${FILES[@]}"; do cmp -s "$REPO/$f" "$DEST/$f" || echo "  changed: $f"; done
+[ "$DRY" = 0 ] || { echo "Dry run: nothing copied."; exit 0; }
+
+BACKUP="$HOME/Backups/lifeworld-live-$(date +%Y-%m-%d-%H%M%S)"
+mkdir -p "$BACKUP"
+for f in "${FILES[@]}"; do cp -p "$DEST/$f" "$BACKUP/$f"; done
+before="$(shasum "$DEST/data.json" 2>/dev/null || true)"
+for f in "${FILES[@]}"; do cp "$REPO/$f" "$DEST/$f.new" && mv "$DEST/$f.new" "$DEST/$f"; done
+[ "$before" = "$(shasum "$DEST/data.json" 2>/dev/null || true)" ] || fail "data.json changed during the install; check it (backup: $BACKUP)"
+for f in "${FILES[@]}"; do cmp "$REPO/$f" "$DEST/$f" || fail "$f did not copy cleanly (backup: $BACKUP)"; done
+echo "Installed $(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version' "$DEST/manifest.json"); data.json untouched; backup in $BACKUP"

@@ -262,5 +262,31 @@ const OWNER_SORT = {
   ok(/openBase\(path, e\) \{[\s\S]*?getLeaf\(\(e && !IS_MOBILE && Keymap\.isModEvent\(e\)\) \|\| false\)/.test(src), 'bases: Cmd-click opens a new tab');
 }
 
-console.log(`\n${n} checks, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+/* ---- first placing: per device, not per kind of device ---------------------- */
+// data.json syncs, so a flag in it set by the iPhone stopped the iPad placing the tab (owner task 2026-10-28).
+{
+  const device = (leaves = 0) => {
+    const local = new Map(); let placed = 0;
+    const p = Object.create(SB.prototype);
+    p.app = { loadLocalStorage: (k) => (local.has(k) ? local.get(k) : null), saveLocalStorage: (k, v) => { local.set(k, v); }, workspace: { getLeavesOfType: () => Array(leaves) } };
+    p.state = { placed: true, placedMobile: true }; // what Sync brings from the other devices
+    p.activate = async () => { placed++; };
+    p.placeInDrawer = async () => { placed++; };
+    return { p, placedCount: () => placed, close() { leaves = 0; } };
+  };
+  (async () => {
+    const d = device();
+    await d.p.placeFirstTime();
+    eq(d.placedCount(), 1, 'sidebar: a new device with synced settings still adds the tab');
+    await d.p.placeFirstTime();
+    eq(d.placedCount(), 1, 'sidebar: closed by hand on this device, it stays closed at the next start');
+    const open = device(1);
+    await open.p.placeFirstTime();
+    eq(open.placedCount(), 0, 'sidebar: already open on this device, no second tab');
+    open.close();
+    await open.p.placeFirstTime();
+    eq(open.placedCount(), 0, 'sidebar: closing it later on that device is respected');
+    console.log(`\n${n} checks, ${failed} failed`);
+    process.exit(failed ? 1 : 0);
+  })().catch((e) => { console.error(e); process.exit(1); });
+}
