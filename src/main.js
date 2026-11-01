@@ -113,6 +113,11 @@ class LifeWorldPlugin extends Plugin {
     if (this.fileStale) this.writeStore().catch((e) => console.error('LifeWorld: settings merged by Sync could not be saved', e));
     vault.setVault(this.store[HOST] && this.store[HOST].vault); // before any part starts: every part reads it
     PART_HOST.setSidebar = (patch) => this.setVaultSettings({ sidebar: patch });
+    // Your folders and notes keep their settings when they are renamed or moved, even with every part off.
+    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
+      const change = vault.pathsAfterRename(oldPath, f.path);
+      if (change) this.setVaultSettings(change).catch((e) => console.error('LifeWorld: its settings could not follow a renamed folder', e));
+    }));
     /** @type {Record<string, PartSettingTab>} */
     this.tabs = {};
     /** @type {LifeWorldSettingTab | null} LifeWorld's settings page (it sets this itself) */

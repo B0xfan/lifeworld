@@ -189,4 +189,20 @@ function toNote(fm) {
 
 const isRenamed = () => renamed;
 
-export { BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+// A folder or note renamed or moved: every saved path at or under it follows, as a change for the saved settings,
+// or null. Obsidian announces each folder and note inside too; once followed, those match nothing.
+/** @param {string} oldPath @param {string} newPath */
+function pathsAfterRename(oldPath, newPath) {
+  /** @param {string} p */
+  const moved = (p) => (p === oldPath ? newPath : p.startsWith(`${oldPath}/`) ? newPath + p.slice(oldPath.length) : p);
+  /** @param {Record<string, string>} m */
+  const changed = (m) => Object.fromEntries(Object.entries(m).filter(([, p]) => moved(p) !== p).map(([k, p]) => [k, moved(p)]));
+  const fd = changed(folders), nt = changed(feeds);
+  const change = /** @type {{ folders?: Record<string, string>, feeds?: Record<string, string>, sidebar?: Record<string, unknown> }} */ ({});
+  if (Object.keys(fd).length) change.folders = fd;
+  if (Object.keys(nt).length) change.feeds = nt;
+  if (sidebar.life && moved(sidebar.life) !== sidebar.life) change.sidebar = { life: moved(sidebar.life) };
+  return Object.keys(change).length ? change : null;
+}
+
+export { pathsAfterRename, BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };

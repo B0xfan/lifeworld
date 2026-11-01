@@ -22,7 +22,7 @@ const EXPORTS = {
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
   tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['ADDON', 'HOST', 'PARTS', 'partOf'],
-  vault: ['BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'planning', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
+  vault: ['pathsAfterRename', 'BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'planning', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
   calendars: ['isHttp', 'normalizeLinks', 'linksOf', 'saveLinks', 'fetchUrl', 'eventsFromIcs', 'calendarEvents', 'refreshCalendars', 'calendarErrors', 'resetCalendars'],
   weather: ['SG_KEY', 'normalizeWeather', 'wmoWords', 'fromOpenMeteo', 'tidesFromSeaLevel', 'tidesFromStormglass', 'findPlaces', 'weatherFor', 'weatherError', 'refreshWeather'],
   daily: ['formatDateTokens', 'momentFormat', 'scratchNameFor', 'scratchPathFor', 'renderTemplate', 'insertUnderHeading', 'newDailyContent', 'writeDailyNote'],
@@ -94,5 +94,15 @@ check(() => {
   const write = (day, at) => { const after = { 'a4-today': { activity: { '2026-10-30': 2, [day]: 3 } } }; return { ...after, ...S.addChanges({}, base, after, at) }; };
   const merged = { ...write('2026-10-31', 1000), ...write('2026-11-01', 2000) };
   assert.deepStrictEqual(S.readFile(merged, 3000).store['a4-today'].activity, { '2026-10-30': 2, '2026-10-31': 3, '2026-11-01': 3 }, 'heatmap: both devices keep their days');
+});
+// Saved paths follow a rename: the folder itself, what is under it, and nothing that only starts the same.
+check(() => {
+  const V = core.vault;
+  V.setVault({ folders: { tasks: 'P/Tasks', archive: 'P/Archive', projects: 'W/Life/Projects', goals: 'W/Life/Goals', habits: 'W/Life/Habits', journal: 'W/Journal', mood: 'W2/Mood' }, feeds: { calendar: 'P/Cal.md', weather: '' }, sidebar: { life: 'W/Life' } });
+  assert.deepStrictEqual(V.pathsAfterRename('W', 'X'), { folders: { projects: 'X/Life/Projects', goals: 'X/Life/Goals', habits: 'X/Life/Habits', journal: 'X/Journal' }, sidebar: { life: 'X/Life' } }, 'a rename further up');
+  assert.deepStrictEqual(V.pathsAfterRename('W/Life', 'W/L'), { folders: { projects: 'W/L/Projects', goals: 'W/L/Goals', habits: 'W/L/Habits' }, sidebar: { life: 'W/L' } }, 'the base folder itself');
+  assert.deepStrictEqual(V.pathsAfterRename('P/Cal.md', 'P/Calendar.md'), { feeds: { calendar: 'P/Calendar.md' } }, 'a note');
+  assert.strictEqual(V.pathsAfterRename('Other', 'Else'), null, 'nothing saved under it');
+  V.setVault(null);
 });
 console.log(`core self-check: OK (${n} checks)`);
