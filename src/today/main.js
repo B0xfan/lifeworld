@@ -3727,6 +3727,7 @@ class TodayView extends ItemView {
     this.drag = { id, el, ph, dx: e.clientX - r.left, dy: e.clientY - r.top, pointerId: e.pointerId };
     el.style.setProperty('--a4t-w', `${r.width}px`);
     el.addClass('is-dragging');
+    this.page.addClass('a4t-has-drag');
     this.moveGhost(e);
     /** @param {PointerEvent} ev */
     this._onMove = (ev) => this.onDragMove(ev);
@@ -3782,6 +3783,7 @@ class TodayView extends ItemView {
     const zone = zoneEl && zoneEl.getAttr ? zoneEl.getAttr('data-zone') : null;
     const index = zoneEl ? Array.from(zoneEl.children).filter((c) => c === ph || (c.hasClass('a4t-w') && !c.hasClass('is-dragging'))).indexOf(ph) : -1;
     el.removeClass('is-dragging');
+    this.page.removeClass('a4t-has-drag');
     ['--a4t-x', '--a4t-y', '--a4t-w'].forEach((v) => el.style.removeProperty(v));
     ph.remove();
     for (const z of ZONES) this.zoneEls[z].removeClass('is-drop-here');
