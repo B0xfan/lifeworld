@@ -115,7 +115,7 @@ def orb(p, key, time, y_share=None):
     return s, cx, cy
 
 
-def extras(p, key, time, seed):
+def extras(p, time, seed):
     rng = random.Random(seed)
     s = ''
     if time == 'night':
@@ -131,7 +131,7 @@ def extras(p, key, time, seed):
 def mountains(key, time):
     p = PAL[time]
     orb_svg, _, _ = orb(p, key, time)
-    s = sky(p, key) + extras(p, key, time, 3) + orb_svg
+    s = sky(p, key) + extras(p, time, 3) + orb_svg
     far = ridge(11, 345, [(420, 70, 380), (900, 95, 300), (1500, 120, 340)], 24)
     s += f'<polygon points="{pts(closed(far))}" fill="{p["far"]}" opacity=".85"/>'
     summits = [(1190, 285, 420), (1450, 190, 300), (860, 120, 280), (560, 58, 240)]
@@ -155,7 +155,7 @@ def road(p, key):
     left, right = [], []
     for i in range(41):
         t = i / 40
-        y = 520 - t * t * 0 - t * 92
+        y = 520 - t * 92
         x = 1040 + 150 * t + 88 * math.sin(t * 8.4) * (1 - t) ** 1.25
         half = 30 * (1 - t) ** 1.7 + 1.1
         left.append((x - half, y))
@@ -183,7 +183,7 @@ def coast(key, time):
     p = PAL[time]
     horizon = 322
     orb_svg, cx, _ = orb(p, key, time, .5 if time in ('dawn', 'dusk') else None)
-    s = sky(p, key) + extras(p, key, time, 9) + orb_svg
+    s = sky(p, key) + extras(p, time, 9) + orb_svg
     s += (f'<linearGradient id="{key}w" x2="0" y2="1"><stop offset="0" stop-color="{p["sea"][0]}"/>'
           f'<stop offset="1" stop-color="{p["sea"][1]}"/></linearGradient>'
           f'<rect y="{horizon}" width="{W}" height="{H - horizon}" fill="url(#{key}w)"/>')
@@ -207,7 +207,7 @@ def coast(key, time):
 def volcano(key, time):
     p = PAL[time]
     orb_svg, _, _ = orb(p, key, time)
-    s = sky(p, key) + extras(p, key, time, 14) + orb_svg
+    s = sky(p, key) + extras(p, time, 14) + orb_svg
     # A far volcano cone, for the Costa Rican skyline.
     cone = ridge(41, 372, [(1120, 230, 370)], 5)
     s += f'<polygon points="{pts(closed(cone))}" fill="{p["far"]}"/>'

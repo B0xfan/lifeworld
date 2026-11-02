@@ -466,14 +466,16 @@ html:not(#a4t-guard) .a4t-root[data-a4t-scene] { --a4t-scrim: rgba(9, 11, 17, .6
 html:not(#a4t-guard) .a4t-root[data-a4t-scene].is-narrow { --a4t-hero-top: 44px; }
 html:not(#a4t-guard) body.theme-light .a4t-root[data-a4t-scene][data-a4t-time="day"] { --a4t-scrim: rgba(246, 243, 235, .72); --a4t-glass: rgba(246, 243, 235, .86); }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-scroll { container-type: inline-size; }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page { padding-top: var(--a4t-hero-top); }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-hero { position: relative; isolation: isolate; padding-bottom: 54px; margin-bottom: 8px; }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page { padding-top: var(--a4t-hero-top); isolation: isolate; }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-hero { position: relative; padding-bottom: 54px; margin-bottom: 8px; }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-scene { display: block; position: absolute; z-index: -1; top: calc(-1 * var(--a4t-hero-top)); bottom: 0; left: 50%; width: 100cqw; margin-left: -50cqw; background-size: cover; background-position: right center; -webkit-mask-image: linear-gradient(#000 84%, transparent); mask-image: linear-gradient(#000 84%, transparent); }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-scene::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--a4t-scrim) 0%, var(--a4t-scrim) 26%, transparent 66%); }
+/* The add-widget panel widens the page's right padding (360 against 40), which would move the banner's middle. */
+html:not(#a4t-guard) .a4t-root[data-a4t-scene]:not(.is-narrow) .a4t-page.is-panel-open .a4t-scene { left: calc(50% + 160px); }
 /* On a phone the coast sits further left, which keeps the palms off the handwritten line. */
 html:not(#a4t-guard) .a4t-root[data-a4t-scene="coast"].is-narrow .a4t-scene { background-position: 85% center; }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head, html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-zone-top > .a4t-w:not(.a4t-card) { --a4t-paper: #fff; --a4t-dim: rgba(255, 255, 255, .86); --a4t-faint: rgba(255, 255, 255, .8); --a4t-hair: rgba(255, 255, 255, .26); --a4t-hair2: rgba(255, 255, 255, .4); --a4t-wash: rgba(255, 255, 255, .12); color: var(--a4t-paper); text-shadow: 0 1px 8px var(--a4t-scrim); }
-html:not(#a4t-guard) body.theme-light .a4t-root[data-a4t-scene][data-a4t-time="day"] .a4t-head, html:not(#a4t-guard) body.theme-light .a4t-root[data-a4t-scene][data-a4t-time="day"] .a4t-zone-top > .a4t-w:not(.a4t-card) { --a4t-paper: #15171c; --a4t-dim: #2c2f36; --a4t-faint: #33363d; --a4t-hair: rgba(20, 24, 30, .28); --a4t-hair2: rgba(20, 24, 30, .42); --a4t-wash: rgba(20, 24, 30, .08); --a4t-acc: #a83a12; }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head, html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top > .a4t-w:not(.a4t-card) { --a4t-paper: #fff; --a4t-dim: rgba(255, 255, 255, .86); --a4t-faint: rgba(255, 255, 255, .8); --a4t-hair: rgba(255, 255, 255, .26); --a4t-hair2: rgba(255, 255, 255, .4); --a4t-wash: rgba(255, 255, 255, .12); color: var(--a4t-paper); text-shadow: 0 1px 8px var(--a4t-scrim); }
+html:not(#a4t-guard) body.theme-light .a4t-root[data-a4t-scene][data-a4t-time="day"] .a4t-head, html:not(#a4t-guard) body.theme-light .a4t-root[data-a4t-scene][data-a4t-time="day"] .a4t-page:not(.is-editing) .a4t-zone-top > .a4t-w:not(.a4t-card) { --a4t-paper: #15171c; --a4t-dim: #2c2f36; --a4t-faint: #33363d; --a4t-hair: rgba(20, 24, 30, .28); --a4t-hair2: rgba(20, 24, 30, .42); --a4t-wash: rgba(20, 24, 30, .08); --a4t-acc: #a83a12; }
 html:not(#a4t-guard) .a4t-root[data-a4t-time="dawn"] .a4t-head { --a4t-acc: #ffcda6; }
 html:not(#a4t-guard) body.theme-dark .a4t-root[data-a4t-time="day"] .a4t-head { --a4t-acc: #ffdb9e; }
 html:not(#a4t-guard) .a4t-root[data-a4t-time="dusk"] .a4t-head { --a4t-acc: #ffb573; }
@@ -481,6 +483,10 @@ html:not(#a4t-guard) .a4t-root[data-a4t-time="night"] .a4t-head { --a4t-acc: #bd
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head { margin-bottom: 46px; }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-title { font-size: clamp(36px, 4vw, 52px); }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene].is-narrow .a4t-title { font-size: 30px; }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head .a4t-btn { color: var(--a4t-paper); text-shadow: none; background: var(--a4t-glass); backdrop-filter: blur(8px); border: 1px solid var(--a4t-hair); }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-zone-top .a4t-capture { background: var(--a4t-glass); backdrop-filter: blur(10px); }
-html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-zone-top .a4t-w-upd { padding: 2px 6px; border-radius: var(--a4t-r-control); color: var(--a4t-paper); background: var(--a4t-glass); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head .a4t-btn:not(.a4t-primary) { color: var(--a4t-paper); text-shadow: none; background: var(--a4t-glass); backdrop-filter: blur(8px); border: 1px solid var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-head .a4t-btn:not(.a4t-primary):hover { border-color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top > .a4t-w:not(.a4t-card) .a4t-capture { background: var(--a4t-glass); backdrop-filter: blur(10px); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top .a4t-w-upd { padding: 2px 6px; border-radius: var(--a4t-r-control); background: var(--a4t-glass); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top .a4t-w-upd:not(.is-stale) { color: var(--a4t-paper); }
+/* Some themes colour bold text themselves. */
+html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top .a4t-w-main b { color: var(--a4t-paper); }

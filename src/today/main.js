@@ -1543,7 +1543,7 @@ class TodayPlugin extends Plugin {
   }
 
   applyLook() {
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {TodayView} */ (leaf.view); if (v && v.contentEl) { this.styleLook(v.contentEl); v.renderScene(); } }
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {TodayView} */ (leaf.view); if (v && v.contentEl) { this.styleLook(v.contentEl); if (v.renderScene) v.renderScene(); } }
   }
 
   async openToday() {
@@ -1998,7 +1998,7 @@ class TodaySettingTab extends PluginSettingTab {
         s.settingEl.addClass('a4t-startup');
       } },
       { name: 'Widgets', aliases: allWidgets().map((w) => w.name), render: (s) => { this.widgetsHost = blockRow(s, 'a4t-widget-list', true); this.renderWidgetList(); } },
-      { name: 'Banner scene', desc: 'A picture behind the top of the Today page. It follows the time of day by itself, from dawn to night.', render: (s) => s.addDropdown((d) => {
+      { name: 'Banner scene', desc: 'A picture behind the top of the Today page. It follows the time of day by itself, from dawn to night. While it is on, the greeting takes its colours from the scene.', render: (s) => s.addDropdown((d) => {
         SCENES.forEach((o) => d.addOption(o.id, o.name));
         d.setValue(look.scene);
         d.onChange((v) => update({ scene: v }));
@@ -2368,6 +2368,7 @@ class TodayView extends ItemView {
     }
     this.updateWidth();
     this.plugin.styleLook(root);
+    this.renderScene();
     await this.refresh();
   }
 
@@ -3737,8 +3738,9 @@ class TodayView extends ItemView {
 
   /** @param {PointerEvent} e */
   moveGhost(e) {
-    const pr = this.page.getBoundingClientRect();
     const drag = /** @type {NonNullable<typeof this.drag>} */ (this.drag);
+    // With a banner scene on, a top-row widget is placed from the banner, not the page.
+    const pr = (drag.el.offsetParent || this.page).getBoundingClientRect();
     drag.el.style.setProperty('--a4t-x', `${e.clientX - drag.dx - pr.left}px`);
     drag.el.style.setProperty('--a4t-y', `${e.clientY - drag.dy - pr.top}px`);
   }
