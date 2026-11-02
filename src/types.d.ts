@@ -154,7 +154,7 @@ interface SidebarExtra { id?: string; item?: string; command?: string; label?: s
 /** A task as the Today page draws it (taskFromFrontmatter's item, or a source's). */
 interface TodayItem extends TaskItem { projectLink?: unknown; projectKey?: string | null; ext?: ExtInfo; repeats?: boolean; blockers?: { path: string; title: string }[] }
 /** The Today page's look (accent colour and handwriting font). */
-interface TodayLook { accent: string; font: string }
+interface TodayLook { accent: string; font: string; scene: string }
 
 /** A part as LifeWorld (src/main.js) handles it: the plugin plus the optional hooks some parts have. */
 type PartPlugin = import('obsidian').Plugin & {

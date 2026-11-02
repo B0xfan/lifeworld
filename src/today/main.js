@@ -329,14 +329,16 @@ const HAND_FONTS = [
 ];
 // Ink blue is the public default (2026-10-06); a saved Orange is kept
 // because the owner's data.json stores it explicitly.
+const SCENES = [{ id: 'off', name: 'Off' }, { id: 'mountains', name: 'Mountains' }, { id: 'coast', name: 'Coast' }, { id: 'volcano', name: 'Volcano' }];
 /** @type {TodayLook} */
-const DEFAULT_LOOK = { accent: 'blue', font: 'caveat' };
+const DEFAULT_LOOK = { accent: 'blue', font: 'caveat', scene: 'off' };
 /** @param {unknown} raw @returns {TodayLook} */
 function normalizeLook(raw) {
   const r = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
   return {
     accent: ACCENTS.some((a) => a.id === r.accent) ? /** @type {string} */ (r.accent) : DEFAULT_LOOK.accent,
     font: HAND_FONTS.some((f) => f.id === r.font) ? /** @type {string} */ (r.font) : DEFAULT_LOOK.font,
+    scene: SCENES.some((s) => s.id === r.scene) ? /** @type {string} */ (r.scene) : DEFAULT_LOOK.scene,
   };
 }
 /** @param {unknown} c @returns {number[] | null} */
@@ -749,6 +751,15 @@ function sunHere(w, now) {
   const tz = w && typeof w.timezone === 'string' ? w.timezone : null;
   try { return tz && clockAt(now, tz).time !== clockAt(now, null).time ? null : sunFrom(w); } catch { return null; } // a zone this device cannot read
 }
+// Which picture the Today banner shows at local hour `h`: dawn and dusk run 45 minutes either side of sunrise
+// and sunset. No sun times (no weather, or a town in another zone): 6 AM and 6 PM.
+/** @param {number} h @param {ReturnType<typeof sunFrom>} sun */
+function sceneTime(h, sun) {
+  const rise = sun ? sun.rise : 6, set = sun ? sun.set : 18;
+  if (h < rise - 0.75 || h >= set + 0.75) return 'night';
+  if (h < rise + 0.75) return 'dawn';
+  return h < set - 0.75 ? 'day' : 'dusk';
+}
 // The ring colour at local hour `h` (the 24-hour World clock, 2026-10-29): night purple, light orange at
 // first light growing to bright orange at sunrise, easing to day blue over 80 minutes; the evening mirrors it.
 // No sun times (no weather): day blue all round. -> 'rgb(r,g,b)'
@@ -1066,7 +1077,7 @@ const MAX_REMINDER_CARDS = 3;
 const logic = {
   ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen,
   normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, sunHere, ringColour, hourLabel,
-  ACCENTS, HAND_FONTS, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
+  ACCENTS, HAND_FONTS, SCENES, sceneTime, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
   normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords,
@@ -1532,7 +1543,7 @@ class TodayPlugin extends Plugin {
   }
 
   applyLook() {
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {TodayView} */ (leaf.view); if (v && v.contentEl) this.styleLook(v.contentEl); }
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) { const v = /** @type {TodayView} */ (leaf.view); if (v && v.contentEl) { this.styleLook(v.contentEl); v.renderScene(); } }
   }
 
   async openToday() {
@@ -1987,6 +1998,11 @@ class TodaySettingTab extends PluginSettingTab {
         s.settingEl.addClass('a4t-startup');
       } },
       { name: 'Widgets', aliases: allWidgets().map((w) => w.name), render: (s) => { this.widgetsHost = blockRow(s, 'a4t-widget-list', true); this.renderWidgetList(); } },
+      { name: 'Banner scene', desc: 'A picture behind the top of the Today page. It follows the time of day by itself, from dawn to night.', render: (s) => s.addDropdown((d) => {
+        SCENES.forEach((o) => d.addOption(o.id, o.name));
+        d.setValue(look.scene);
+        d.onChange((v) => update({ scene: v }));
+      }) },
       { name: 'Accent colour', desc: 'Colour of the underline under the greeting and the handwritten lines. Following the Obsidian accent uses the accent from settings › appearance, shaded so it stays readable.', render: (s) => {
         s.addDropdown((d) => {
           accent = d;
@@ -2399,6 +2415,7 @@ class TodayView extends ItemView {
   tick() {
     if (dayOf(new Date()) !== this.renderedDay) { this.refresh(); return; }
     this.renderClock();
+    this.renderScene();
     this.renderWeatherAge();
     if (zoneOf(this.plugin.layout, 'news') && feedsStale(newsResults(this.app), this.plugin.feeds, Date.now())) refreshNews(this.app, this.plugin.feeds);
   }
@@ -2609,6 +2626,7 @@ class TodayView extends ItemView {
     this.data = data;
     this.renderedDay = data.today;
     this.renderHeader();
+    this.renderScene();
     this.renderWidgets();
     this.renderClock();
   }
@@ -2616,7 +2634,9 @@ class TodayView extends ItemView {
   /* ---- shell ------------------------------------------------------------ */
 
   buildShell() {
-    const head = this.page.createDiv({ cls: 'a4t-head' });
+    const hero = this.page.createDiv({ cls: 'a4t-hero' });
+    hero.createDiv({ cls: 'a4t-scene' });
+    const head = hero.createDiv({ cls: 'a4t-head' });
     const left = head.createDiv();
     this.kickerEl = left.createDiv({ cls: 'a4t-kicker' });
     // Not `titleEl`: on a view that name is Obsidian's own header title (an internal it writes to).
@@ -2658,7 +2678,7 @@ class TodayView extends ItemView {
 
     /** @type {Record<string, HTMLElement>} */
     this.zoneEls = {};
-    this.zoneEls.top = this.page.createDiv({ cls: 'a4t-zone a4t-zone-top', attr: { 'data-zone': 'top' } });
+    this.zoneEls.top = hero.createDiv({ cls: 'a4t-zone a4t-zone-top', attr: { 'data-zone': 'top' } });
     const grid = this.page.createDiv({ cls: 'a4t-grid' });
     for (const z of ['c1', 'c2', 'c3']) this.zoneEls[z] = grid.createDiv({ cls: 'a4t-zone a4t-col', attr: { 'data-zone': z } });
     // The closing line rides at the end of the right-hand column
@@ -2749,6 +2769,15 @@ class TodayView extends ItemView {
     this.plateEl.setText(plateText(this.openCount(), d.lists.total));
     // The Planner switched off: its button goes, as drawn (phase 2 section 6).
     this.planBtn.toggleClass('a4t-off', !this.plugin.plannerOn());
+  }
+
+  // The picture itself is CSS (scenes.css), chosen by these two attributes; nothing is drawn while they are absent.
+  renderScene() {
+    const { scene } = /** @type {TodayLook} */ (this.plugin.look);
+    if (scene === 'off') { this.contentEl.removeAttribute('data-a4t-scene'); this.contentEl.removeAttribute('data-a4t-time'); return; }
+    const now = new Date();
+    this.contentEl.setAttr('data-a4t-scene', scene);
+    this.contentEl.setAttr('data-a4t-time', sceneTime(now.getHours() + now.getMinutes() / 60, sunHere(this.data && this.data.weather, now)));
   }
 
   openCount() {

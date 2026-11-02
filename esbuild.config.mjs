@@ -27,5 +27,5 @@ const PARTS = ['projects', 'today', 'planner', 'sidebar'];
 const fonts = fs.readdirSync('src/today/fonts').sort().map((f) => fs.readFileSync(`src/today/fonts/${f}`, 'utf8').trim());
 const footer = { js: `/*! Font licences (Today's handwriting fonts)\n\n${fonts.join('\n\n')}\n*/` };
 await esbuild.build({ ...common, entryPoints: ['src/main.js'], outfile: 'main.js', banner, footer });
-fs.writeFileSync('styles.css', ['src', ...PARTS.map((p) => `src/${p}`)].map((d) => fs.readFileSync(`${d}/styles.css`, 'utf8')).join('\n'));
+fs.writeFileSync('styles.css', [...['src', ...PARTS.map((p) => `src/${p}`)].map((d) => `${d}/styles.css`), 'src/today/scenes.css'].map((f) => fs.readFileSync(f, 'utf8')).join('\n'));
 

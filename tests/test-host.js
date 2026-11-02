@@ -124,7 +124,7 @@ const start = async (data) => {
   const ver = (v) => v.split('.').map(Number).reduce((a, x) => a * 1000 + x, 0);
   for (const id of IDS) ok(ver(man.minAppVersion) >= ver(JSON.parse(fs.readFileSync(path.join(ROOT, 'src', id.slice(3), 'manifest.json'), 'utf8')).minAppVersion), `minAppVersion covers ${id}`);
   // Styles: the four parts' styles, in start order.
-  eq(fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8'), ['src', ...IDS.map((id) => path.join('src', id.slice(3)))].map((d) => fs.readFileSync(path.join(ROOT, d, 'styles.css'), 'utf8')).join('\n'), "styles.css is LifeWorld's own, then the four parts in start order");
+  eq(fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8'), [...['src', ...IDS.map((id) => path.join('src', id.slice(3)))].map((d) => path.join(d, 'styles.css')), 'src/today/scenes.css'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n'), "styles.css is LifeWorld's own, then the four parts in start order, then the banner scenes");
 
   // Start: in order, one after the other, each under its old id, in LifeWorld's folder.
   const { app, host, parts, dir } = await start({ 'a4-today': { layout: ['weather'] }, 'a4-sidebar': { sort: 'az' } });

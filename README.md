@@ -33,6 +33,10 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - News feeds: the newest headlines from feeds you add, off until you turn it on
 - A Planner shortcut
 
+For a picture behind the top of the page, choose **Banner scene** in the settings: Mountains, Coast or
+Volcano. It changes by itself through the day, from dawn to night, using your weather's sunrise and
+sunset. It is off until you choose one.
+
 A new install starts with Quick capture, the task cards, Calendar, Recent notes, Mood, Habits and
 Active projects. The rest are one click away under **Settings → LifeWorld → Today page**.
 

@@ -309,9 +309,22 @@ eq(L.SCHEMES.map((x) => [x.id, x.label, x.icon]), [['moonstone', 'Light', 'sun']
 ok(L.schemeOf('nonsense') === null, 'unknown scheme value is not guessed');
 
 /* ---- look: accent colour and handwriting font ------------------------------ */
-eq(L.normalizeLook(undefined), { accent: 'blue', font: 'caveat' }, 'no saved look = public default Ink blue + Caveat');
-eq(L.normalizeLook({ accent: 'nope', font: 'kalam' }), { accent: 'blue', font: 'kalam' }, 'unknown accent falls back to Ink blue, valid font kept');
-eq(L.normalizeLook({ accent: 'orange', font: 'caveat' }), { accent: 'orange', font: 'caveat' }, 'a saved Orange + Caveat is kept');
+eq(L.normalizeLook(undefined), { accent: 'blue', font: 'caveat', scene: 'off' }, 'no saved look = public default Ink blue + Caveat');
+eq(L.normalizeLook({ accent: 'nope', font: 'kalam' }), { accent: 'blue', font: 'kalam', scene: 'off' }, 'unknown accent falls back to Ink blue, valid font kept');
+eq(L.normalizeLook({ accent: 'orange', font: 'caveat' }), { accent: 'orange', font: 'caveat', scene: 'off' }, 'a saved Orange + Caveat is kept, and an older save gets no banner');
+eq(L.normalizeLook({ scene: 'coast' }).scene, 'coast', 'a saved scene is kept');
+eq(L.normalizeLook({ scene: 'moon' }).scene, 'off', 'an unknown scene counts as Off');
+{
+  const sun = { rise: 5.5, set: 17.5 };
+  const at = [[4.74, 'night'], [4.75, 'dawn'], [6.24, 'dawn'], [6.25, 'day'], [16.74, 'day'], [16.75, 'dusk'], [18.24, 'dusk'], [18.25, 'night'], [0, 'night'], [23.9, 'night']];
+  for (const [h, want] of at) eq(L.sceneTime(h, sun), want, `banner at ${h} with sun times is ${want}`);
+  const fixed = [[5, 'night'], [5.5, 'dawn'], [7, 'day'], [17.5, 'dusk'], [19, 'night']];
+  for (const [h, want] of fixed) eq(L.sceneTime(h, null), want, `banner at ${h} with no sun times is ${want}`);
+}
+{
+  const css = require('fs').readFileSync(STYLES, 'utf8');
+  for (const s of L.SCENES.filter((x) => x.id !== 'off')) for (const t of ['dawn', 'day', 'dusk', 'night']) ok(css.includes(`[data-a4t-scene="${s.id}"][data-a4t-time="${t}"] .a4t-scene { background-image`), `the built styles have ${s.id} at ${t}`);
+}
 {
   // Any-theme defaults (mockup-today-any-theme, approved 2026-10-07): every token
   // still reads the theme's --ink-* variable first, so a page on such a theme is unchanged.
