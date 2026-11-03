@@ -288,6 +288,10 @@ const OWNER_SORT = {
     eq(open.placedCount(), 0, 'sidebar: closing it later on that device is respected');
     // An update in a running app: the open tab is noted before the view registers and starts its rebuild.
     ok(/getLeavesOfType\(VIEW_TYPE\)\.length\) this\.app\.saveLocalStorage\(PLACED_KEY, true\);[\s\S]*?this\.registerView\(VIEW_TYPE/.test(src), 'sidebar: an open tab is noted before the view registers');
+    // 1.3.1: a folder clicked in a note's path, from the note's folder and which crumb it was.
+    eq(S.crumbFolder('02 Planner/TaskNotes/Tasks', 2), '02 Planner/TaskNotes/Tasks', 'path click: the last crumb is the note\'s own folder');
+    eq(S.crumbFolder('02 Planner/TaskNotes/Tasks', 0), '02 Planner', 'path click: the first crumb is the room');
+    eq([S.crumbFolder('02 Planner', 1), S.crumbFolder('02 Planner', -1), S.crumbFolder('/', 0), S.crumbFolder(null, 0)], [null, null, null, null], 'path click: no folder past the end, for a vault-root note, or with no note');
     console.log(`\n${n} checks, ${failed} failed`);
     process.exit(failed ? 1 : 0);
   })().catch((e) => { console.error(e); process.exit(1); });

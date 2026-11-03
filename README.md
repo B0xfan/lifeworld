@@ -70,7 +70,8 @@ A panel on the left with search, Today and the Planner at the top, then your fol
 on each. Drag a note onto a folder to move it, and pick how each folder sorts. Turn the Sidebar off and
 Obsidian's normal file list comes back. Under **Settings → LifeWorld → Sidebar**, **My groups** gathers your
 folders under names you choose. Your folders and notes stay where they are. Rename or move a folder LifeWorld
-uses, inside Obsidian, and its settings follow it.
+uses, inside Obsidian, and its settings follow it. Click a folder in the path at the top of a note and the Sidebar opens on that
+folder.
 
 ![The Sidebar](screenshots/sidebar-dark.png)
 

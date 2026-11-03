@@ -429,6 +429,14 @@ function activeGroupFor(activePath, groups, classify) {
 
 // Which room the open note belongs to (highlighted like Today/Planner/Focus).
 // A note the My Life section already shows highlights its My Life item instead.
+// The folder a note's path names at crumb i (Obsidian draws one crumb per part of the note's folder).
+/** @param {string | null | undefined} parent @param {number} i @returns {string | null} */
+function crumbFolder(parent, i) {
+  if (!parent || parent === '/' || i < 0) return null;
+  const parts = parent.split('/');
+  return i < parts.length ? parts.slice(0, i + 1).join('/') : null;
+}
+
 /** @param {string | null | undefined} activePath @param {string[]} roomPaths @param {Iterable<string> | null} [hidden] */
 function activeRoomFor(activePath, roomPaths, hidden) {
   if (!activePath) return null;
@@ -1235,6 +1243,37 @@ class SidebarView extends ItemView {
     else new Notice('Open the files tab to find it.');
   }
 
+  // A folder clicked in a note's path (1.3.1): open what holds it and the folder itself, as hand clicks would
+  // (so the folds are saved), then scroll to it. A folder not drawn here gives way to the nearest one above it.
+  /** @param {string} path */
+  revealFolder(path) {
+    const root = this.contentEl;
+    /** @param {string} p */
+    const rowFor = (p) => /** @type {HTMLElement[]} */ ([...root.querySelectorAll('.a4sb-folder')]).find((r) => r.dataset.path === p);
+    /** @param {Element | null} kids a closed body; the row or head before it opens it */
+    const openBody = (kids) => {
+      const head = kids && kids.previousElementSibling;
+      if (!(head instanceof HTMLElement)) return;
+      const fold = head.classList.contains('a4sb-folder') ? head.querySelector('.a4sb-fold') : head; // the fold, never the row: a row can open a page
+      if (fold instanceof HTMLElement) fold.click();
+    };
+    const parts = path.split('/');
+    /** @type {HTMLElement | undefined} */ let row;
+    for (let i = 1; i <= parts.length; i++) {
+      const r = rowFor(parts.slice(0, i).join('/'));
+      if (!r) continue;
+      row = r;
+      for (let el = r.parentElement; el && el !== root; el = el.parentElement) if (el.classList.contains('is-hidden')) openBody(el);
+      const kids = r.nextElementSibling;
+      if (kids && kids.classList.contains('a4sb-kids') && kids.classList.contains('is-hidden')) openBody(kids);
+    }
+    if (!row) return;
+    const shown = row;
+    shown.scrollIntoView({ block: 'center' });
+    shown.addClass('is-flash');
+    window.setTimeout(() => shown.removeClass('is-flash'), 1600);
+  }
+
   /** @param {import('obsidian').TAbstractFile} f @param {MouseEvent} e @param {{ noSort?: boolean } | null} [opts] */
   menuFor(f, e, opts) {
     e.preventDefault();
@@ -1481,6 +1520,7 @@ class SidebarPlugin extends Plugin {
       this.saveState();
     }));
     this.addRibbonIcon('layout-list', 'Open the LifeWorld sidebar', () => this.activate());
+    this.registerDomEvent(document, 'click', (e) => { void this.onPathClick(e); }, { capture: true });
     this.addCommand({ id: 'open', name: 'Open the sidebar', callback: () => this.activate() });
     // The toolbar commands (0.7.0): ours, so the buttons work with ICOR Connect off.
     for (const [id, c] of Object.entries(CORE_TOOLS)) {
@@ -1519,7 +1559,29 @@ class SidebarPlugin extends Plugin {
       if (!leaf) leaf = ws.getLeftLeaf(false);
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
     }
-    ws.revealLeaf(leaf);
+    await ws.revealLeaf(leaf);
+    return leaf;
+  }
+
+  // Obsidian's own click on a folder in a note's path shows it in the Files tab; this one runs first and
+  // shows it here instead. Right-click and dragging the name are other events, left as they are.
+  // shortcut: the main window only; a popout window's path keeps Obsidian's click. Upgrade if popouts need it.
+  /** @param {MouseEvent} e */
+  async onPathClick(e) {
+    const crumb = e.target instanceof HTMLElement ? e.target.closest('.view-header-breadcrumb') : null;
+    if (!crumb || !crumb.parentElement) return;
+    /** @type {TFile | null} */ let file = null;
+    this.app.workspace.iterateAllLeaves((l) => {
+      const f = /** @type {{ file?: unknown }} */ (l.view).file;
+      if (!file && f instanceof TFile && l.view.containerEl.contains(crumb)) file = f;
+    });
+    const crumbs = [...crumb.parentElement.querySelectorAll(':scope > .view-header-breadcrumb')];
+    const path = crumbFolder(file ? /** @type {TFile} */ (file).parent?.path : null, crumbs.indexOf(crumb));
+    if (!path || !this.app.vault.getFolderByPath(path)) return;
+    e.stopPropagation();
+    const leaf = await this.activate();
+    const view = /** @type {SidebarView} */ (leaf.view);
+    if (view && view.revealFolder) view.revealFolder(path);
   }
 
   // Phone, first run only: put the tab first in the left drawer and make it
@@ -1791,5 +1853,5 @@ SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 sect
 SidebarPlugin.__logic = {
   NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   lifePath, renameInSidebar, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
-  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
+  hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, crumbFolder, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };
