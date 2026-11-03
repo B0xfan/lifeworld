@@ -427,8 +427,6 @@ function activeGroupFor(activePath, groups, classify) {
   return null;
 }
 
-// Which room the open note belongs to (highlighted like Today/Planner/Focus).
-// A note the My Life section already shows highlights its My Life item instead.
 // The folder a note's path names at crumb i (Obsidian draws one crumb per part of the note's folder).
 /** @param {string | null | undefined} parent @param {number} i @returns {string | null} */
 function crumbFolder(parent, i) {
@@ -437,6 +435,8 @@ function crumbFolder(parent, i) {
   return i < parts.length ? parts.slice(0, i + 1).join('/') : null;
 }
 
+// Which room the open note belongs to (highlighted like Today/Planner/Focus).
+// A note the My Life section already shows highlights its My Life item instead.
 /** @param {string | null | undefined} activePath @param {string[]} roomPaths @param {Iterable<string> | null} [hidden] */
 function activeRoomFor(activePath, roomPaths, hidden) {
   if (!activePath) return null;
