@@ -42,8 +42,9 @@ A new install starts with Quick capture, the task cards, Calendar, Recent notes,
 Active projects. The rest are one click away under **Settings → LifeWorld → Today page**.
 
 A task with a reminder and a clock time pops up inside Obsidian while it is open, with Done, In 10 minutes,
-Open and Dismiss. It starts off: turn it on with **Reminder pop-ups** in the same settings. It works with task
-notes, and stays off with the TaskNotes plugin, which has its own alerts.
+Open and Dismiss. It starts off: turn it on with **Reminder pop-ups** under **Settings → LifeWorld → Planning**.
+It works with the Today page, the Planner or Projects on, with task notes, and stays off with the TaskNotes
+plugin, which has its own alerts.
 
 ![The Today page in dark mode](screenshots/today-dark.png)
 
@@ -71,7 +72,8 @@ A panel on the left with search, Today and the Planner at the top, then your fol
 on each. Drag a note onto a folder to move it, and pick how each folder sorts. Turn the Sidebar off and
 Obsidian's normal file list comes back. Under **Settings → LifeWorld → Sidebar**, **My groups** gathers your
 folders under names you choose. Your folders and notes stay where they are. Rename or move a folder LifeWorld
-uses, inside Obsidian, and its settings follow it. Click a folder in the path at the top of a note and the Sidebar opens on that
+uses, inside Obsidian, and its settings follow it. Renamed or moved outside Obsidian, the folder is marked as
+missing, with a button to pick where it went. Click a folder in the path at the top of a note and the Sidebar opens on that
 folder.
 
 ![The Sidebar](screenshots/sidebar-dark.png)
