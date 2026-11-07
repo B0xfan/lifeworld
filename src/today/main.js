@@ -115,7 +115,7 @@ import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key
 import { drawRows, blockRow } from '../core/settings';
 import { ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen } from '../core/popups'; // Reminder pop-ups (phase 4)
 import { HEAT_MODES, normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords } from '../core/activity'; // Activity heatmap (phase 4)
-import { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge } from '../core/feeds'; // News feeds (phase 4)
+import { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, readFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge } from '../core/feeds'; // News feeds (phase 4)
 import { isHttp, linksOf, saveLinks, calendarEvents, refreshCalendars, calendarErrors, resetCalendars } from '../core/calendars'; // calendar links (launch section 6)
 import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertUnderHeading, newDailyContent, writeDailyNote } from '../core/daily'; // a day's daily note (launch section 5)
 
@@ -1092,7 +1092,7 @@ const logic = {
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
   normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords,
-  cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, feedsStale, newsCard, newsAge,
+  cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, readFeed, feedsStale, newsCard, newsAge,
   greetingLine, scratchPathFor, insertUnderHeading, latestDailyEntry, dayFromNoteName, cleanCapture, captureLine, captureMaxHeight, captureDragHeight, CAPTURE_MAX_PX, renderTemplate, formatDateTokens, insertQuickNote, insertSectionAtTop, weatherAge, tidesLine,
   wmoIcon, fmt12, eventsWindow, longDate, shortDue, eventDayLabel, moodWhen, clockText, journalExcerpt, defaultLayout,
   normalizeLayout, removeWidget, addWidget, moveWidget, canMoveWidget, setWidgetOn, placeWidget, sameLayout, WIDGETS, STARTER_OFF, ADDED_OFF, ZONES, EXTRA_WIDGETS,

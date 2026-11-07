@@ -75,7 +75,8 @@ function parseFeed(text, base) {
   const reader = new DOMParser();
   let doc = reader.parseFromString(text.trimStart(), 'text/xml');
   // One &nbsp; or bare & fails strict reading, though most readers accept the feed: try again with those escaped.
-  if (doc.querySelector('parsererror')) doc = reader.parseFromString(text.trimStart().replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;'), 'text/xml');
+  // Not inside CDATA, where a bare & is already plain text (escaping it there put "&amp;" into the link).
+  if (doc.querySelector('parsererror')) doc = reader.parseFromString(text.trimStart().replace(/(<!\[CDATA\[[\s\S]*?\]\]>)|&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, (/** @type {string} */ m, /** @type {string | undefined} */ cdata) => cdata || '&amp;'), 'text/xml');
   const root = doc.documentElement;
   if (doc.querySelector('parsererror') || !root || !['rss', 'feed', 'RDF'].includes(root.localName)) throw new Error('not-feed');
   const items = Array.from(doc.querySelectorAll('item, entry')).map((el) => {
@@ -98,15 +99,23 @@ function feedError(e) {
   return "the site didn't answer";
 }
 
+// Feeds still downloading. Obsidian's requestUrl cannot be stopped, so a slow feed past its time limit finishes in the
+// background; while it does, that feed is not asked for again, so a slow site never has more than one download going.
+/** @type {Set<string>} */
+const downloading = new Set();
+
 /** @param {string} url */
 async function readFeed(url) {
+  if (downloading.has(url)) throw new Error('late');
   /** @type {number | undefined} */
   let timer;
-  // shortcut: Obsidian's requestUrl cannot be stopped, so a late answer still downloads in the background.
   /** @type {Promise<never>} */
   const late = new Promise((_, no) => { timer = window.setTimeout(() => no(new Error('late')), TIMEOUT_MS); });
+  downloading.add(url);
+  const ask = requestUrl({ url, method: 'GET', throw: false });
+  ask.then(() => downloading.delete(url), () => downloading.delete(url));
   try {
-    const r = await Promise.race([requestUrl({ url, method: 'GET', throw: false }), late]);
+    const r = await Promise.race([ask, late]);
     if (r.status >= 400) throw new Error(String(r.status));
     if (r.text.length > MAX_CHARS) throw new Error('too-large');
     return parseFeed(r.text, url);
@@ -168,4 +177,4 @@ function newsAge(at, now) {
   return minutesWords(min);
 }
 
-export { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge };
+export { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, readFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge };

@@ -76,8 +76,13 @@ const VIRTUAL = {
   'Personal projects': { kind: 'personal' },
   'Unsorted projects': { kind: 'unsorted', hideEmpty: true },
 };
+// A real folder named like a built-in list (a folder called "Work projects") is kept in a group as "./Work projects",
+// so it is never read as the list.
+const REAL = './';
+/** @param {string} folderName */
+const asItem = (folderName) => (VIRTUAL[folderName] ? REAL + folderName : folderName);
 /** @param {string} n */
-const itemFolder = (n) => (VIRTUAL[n] ? nameOf(projectsDir()) : n);
+const itemFolder = (n) => (n.startsWith(REAL) ? n.slice(REAL.length) : VIRTUAL[n] ? nameOf(projectsDir()) : n);
 // The built-in project lists' folder: the Projects folder setting when it sits in the base folder or is really there
 // elsewhere (it follows a rename or a move); otherwise the one named Projects in the base folder, as always (a new
 // install's default setting points at a Projects folder at the top that may not exist).
@@ -199,14 +204,14 @@ function buildLifeGroups(myLifeFolderNames) {
     items.forEach((n) => used.add(itemFolder(n)));
     return { id: g.id, label: g.label, items };
   });
-  const rest = myLifeFolderNames.filter((n) => !used.has(n)).sort(collator.compare);
+  const rest = myLifeFolderNames.filter((n) => !used.has(n)).sort(collator.compare).map(asItem);
   // No base folder: the ungrouped ones stay under Folders.
   if (SBC.life && rest.length) groups.push({ id: 'more', label: 'More', items: rest });
   return groups.filter((g) => g.items.length);
 }
 
 /** @param {string} name */
-function itemLabel(name) { return SBC.labels[name] || name; }
+function itemLabel(name) { return SBC.labels[name] || (name.startsWith(REAL) ? name.slice(REAL.length) : name); }
 /** @param {string} name */
 function itemIcon(name) { return SBC.icons[name] || 'folder'; }
 /** @param {string} name */
@@ -536,14 +541,14 @@ function hiddenUnderRooms(groups) {
 /** @param {{ groups: { id: string, label: string, folders: string[] }[], icons: Record<string, string>, labels: Record<string, string>, noCount: string[], life: string }} sb @param {string} oldPath @param {string} newPath @param {boolean} lifeThere */
 function renameInSidebar(sb, oldPath, newPath, lifeThere) {
   if (parentOf(oldPath) !== sb.life) return null;
-  const was = nameOf(oldPath), stays = parentOf(newPath) === sb.life, now = nameOf(newPath);
+  const was = asItem(nameOf(oldPath)), stays = parentOf(newPath) === sb.life, now = asItem(nameOf(newPath));
   if (!stays) {
     if (!lifeThere || !sb.groups.some((g) => g.folders.includes(was))) return null;
     return { groups: sb.groups.map((g) => ({ ...g, folders: g.folders.filter((n) => n !== was) })) };
   }
   if (!sb.groups.some((g) => g.folders.includes(was)) && !(was in sb.icons) && !(was in sb.labels) && !sb.noCount.includes(was)) return null;
-  // An old entry of that name stays the only one; a built-in list's name would be read as that list, so it leaves.
-  const taken = sb.groups.some((g) => g.folders.includes(now)) || Object.keys(VIRTUAL).includes(now);
+  // An old entry of that name stays the only one.
+  const taken = sb.groups.some((g) => g.folders.includes(now));
   /** @param {Record<string, string>} m */
   const moved = (m) => { const out = { ...m }; if (was in out) { out[now] = out[was]; delete out[was]; } return out; };
   return {
@@ -1711,8 +1716,8 @@ class GroupItemPick extends FuzzySuggestModal {
   /** @param {import('obsidian').App} app @param {string[]} names @param {(name: string) => unknown} onPick */
   constructor(app, names, onPick) { super(app); this.names = names; this.onPick = onPick; this.setPlaceholder('Pick a folder'); }
   getItems() { return this.names; }
-  /** @param {string} n */
-  getItemText(n) { return itemLabel(n); }
+  /** @param {string} n a real folder named like a built-in list says so, as both are offered */
+  getItemText(n) { return n.startsWith(REAL) ? `${itemLabel(n)} (folder)` : itemLabel(n); }
   /** @param {string} n */
   onChooseItem(n) { this.onPick(n); }
 }
@@ -1734,7 +1739,7 @@ class GroupsModal extends Modal {
     const base = SBC.life ? this.app.vault.getAbstractFileByPath(SBC.life) : this.app.vault.getRoot();
     const held = SBC.groups.flatMap((g) => g.folders);
     const used = new Set(held.map(itemFolder));
-    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.') && !Object.keys(VIRTUAL).includes(c.name)).map((c) => c.name) : []; // a folder named like a built-in list would be read as that list
+    const folders = base instanceof TFolder ? base.children.filter((c) => c instanceof TFolder && !used.has(c.name) && !c.name.startsWith('.')).map((c) => asItem(c.name)) : [];
     // Built-in lists show part of the Projects folder, so only while it is there and not in a group by itself.
     const lists = SBC.life && !held.includes(nameOf(projectsDir())) && this.app.vault.getAbstractFileByPath(projectsDir()) ? Object.keys(VIRTUAL).filter((n) => !held.includes(n)) : [];
     return folders.concat(lists);

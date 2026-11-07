@@ -15,7 +15,7 @@ const EXPORTS = {
   dates: ['minutesWords', 'pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
   lists: ['asList'],
   activity: ['HEAT_MODES', 'normalizeHeatCount', 'normalizeActivity', 'pruneActivity', 'datesPerDay', 'mergeCounts', 'tasksDonePerDay', 'heatLevel', 'heatDays', 'heatMonths', 'heatWords'],
-  feeds: ['MAX_FEEDS', 'SHOW_CHOICES', 'cleanFeedUrl', 'normalizeFeeds', 'normalizeFeedCount', 'parseFeed', 'newsResults', 'feedsStale', 'refreshNews', 'newsCard', 'newsAge'],
+  feeds: ['MAX_FEEDS', 'SHOW_CHOICES', 'cleanFeedUrl', 'normalizeFeeds', 'normalizeFeedCount', 'parseFeed', 'readFeed', 'newsResults', 'feedsStale', 'refreshNews', 'newsCard', 'newsAge'],
   popups: ['ringsOf', 'ringsDue', 'pruneSeen', 'ringWhen', 'renameSeen'],
   'settings-log': ['readFile', 'addChanges', 'carryChanges'],
   settings: ['drawRows', 'blockRow', 'noCleanup'],

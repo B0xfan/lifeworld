@@ -838,7 +838,9 @@ const start = async (data) => {
   eq(SBL.renameInSidebar(sbx, 'My Life/Other', 'My Life/New', true).icons, { Clients: 'chart', New: 'x' }, 'a folder in no group keeps its icon too');
   eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'Old/Clients', true), { groups: [{ id: 'w', label: 'Work', folders: ['Work projects', 'Gone'] }] }, 'moved out of the base folder: it leaves its group');
   eq([SBL.renameInSidebar(sbx, 'My Life/Clients', 'Life/Clients', false), SBL.renameInSidebar(sbx, 'Z/Clients', 'Z/C', true), SBL.renameInSidebar(sbx, 'My Life/Plain', 'My Life/P2', true)], [null, null, null], 'a rename further up, or of a folder with nothing saved, changes nothing');
-  eq(SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Personal projects', true).groups[0].folders, ['Work projects', 'Gone'], 'renamed to a built-in list name: it leaves its group');
+  { const rb = SBL.renameInSidebar(sbx, 'My Life/Clients', 'My Life/Personal projects', true);
+    eq([rb.groups[0].folders, rb.icons, rb.labels], [['./Personal projects', 'Work projects', 'Gone'], { Other: 'x', './Personal projects': 'chart' }, { './Personal projects': 'My clients' }], 'renamed to a built-in list name: it stays in its group as the real folder, never read as the list'); }
+  eq(SBL.renameInSidebar({ ...sbx, groups: [{ id: 'w', label: 'Work', folders: ['./Work projects', 'Work projects'] }] }, 'My Life/Work projects', 'My Life/Office', true).groups[0].folders, ['Office', 'Work projects'], 'a real folder named like a list, renamed: it follows; the list stays');
   eq(SBL.renameInSidebar({ ...sbx, life: '' }, 'Clients', 'Customers', true).groups[0].folders[0], 'Customers', 'no base folder: top folders follow too');
   sb0.host.unload();
   // One rename, one change: saved paths and the Sidebar's names together.
@@ -870,6 +872,9 @@ const start = async (data) => {
   ok(oldRooms.length >= 3, 'the frozen vault has rooms to compare');
   eq(SBL.buildLifeGroups(['Notes', 'Health', 'Goals', 'Projects', 'Odd']).map((g) => [g.label, g.items]), [['Direction', ['Goals', 'Personal projects', 'Unsorted projects']], ['Wellbeing', ['Health']], ['Money & work', ['Work projects']], ['Notes', ['Notes']], ['More', ['Odd']]], "owner's preset: My Life groups as before (Projects split, the rest under More)");
   eq([SBL.itemLabel('Guide'), SBL.itemIcon('Work projects'), SBL.itemShowsCount('Finance'), SBL.itemShowsCount('Goals')], ['Places', 'kanban', false, true], "owner's preset: a label, an icon and the counts as before");
+  // A real folder named like a built-in list (2026-11-07): kept as "./Work projects", shown and found as the folder.
+  eq(SBL.buildLifeGroups(['Notes', 'Projects', 'Work projects']).find((g) => g.id === 'more').items, ['./Work projects'], 'a real folder named like a list, in no group: under More as the folder');
+  eq([SBL.itemLabel('./Work projects'), SBL.lifePath('./Work projects'), SBL.lifePath('Work projects')], ['Work projects', '04 Library/My Life/Work projects', '04 Library/My Life/Projects'], 'a real folder named like a list: its name, its own folder; the list still reads Projects');
   // A damaged value (wrong type, an empty room start) counts as missing; the other values stay.
   sb1.host.store.lifeworld.vault.sidebar = { ...ownerFile.lifeworld.vault.sidebar, groups: 'x', rooms: [{ prefix: '', name: 'All', icon: 'box' }], brand: ' ' };
   await sb1.host.setVaultSettings({ folders: {} }); // reads the whole stored block again
