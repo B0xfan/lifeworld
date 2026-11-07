@@ -176,3 +176,4 @@ html:not(#a4sb-guard) .a4sb { padding: 0; } /* outranks the view's own padding *
 .a4sb-gr-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 7px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); background: var(--background-secondary); font-size: var(--font-ui-small); }
 .a4sb-gr-chip .clickable-icon { padding: 2px; height: auto; }
 .a4sb-gr-foot { display: flex; justify-content: space-between; gap: 8px; }
+.a4sb-pick-life { display: block; margin-top: var(--size-4-2); }

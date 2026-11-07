@@ -5,7 +5,7 @@
 // part's own settings under its heading. A part switched off is not started at all.
 'use strict';
 
-import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder, AbstractInputSuggest } from 'obsidian';
 import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
@@ -171,7 +171,25 @@ class LifeWorldPlugin extends Plugin {
   /** @param {string} id */
   wanted(id) {
     if (id === 'a4-projects') return ['a4-projects', 'a4-today', 'a4-planner'].some((x) => this.isOn(x));
+    // Today also runs for its reminder pop-ups alone (popupsOnly) while the Planner or Projects is on (2026-11-07 mockup).
+    if (id === 'a4-today') return this.isOn(id) || (this.popupsOn() && (this.isOn('a4-planner') || this.isOn('a4-projects')));
     return this.isOn(id);
+  }
+
+  // The Reminder pop-ups switch (Settings › Planning), saved in Today's settings as before.
+  popupsOn() { const t = this.store['a4-today']; return !!t && t.reminderPopups === true; }
+
+  // Settings › Planning › Reminder pop-ups: saved, the running Today part told, and Today started or stopped for them.
+  /** @param {boolean} on */
+  async setReminderPopups(on) {
+    /** @type {Fm} */
+    const t = { ...(this.store['a4-today'] || {}), reminderPopups: on };
+    if (on) t.reminderPopupsFrom = Date.now(); // what came due before is not news
+    this.store['a4-today'] = t;
+    await this.writeStore();
+    const td = this.running['a4-today'];
+    if (td && typeof td.onExternalSettingsChange === 'function') await /** @type {() => Promise<unknown>} */ (td.onExternalSettingsChange)();
+    await this.applyParts();
   }
 
   /** @param {PartEntry} entry */
@@ -183,6 +201,7 @@ class LifeWorldPlugin extends Plugin {
     const part = new Part(this.app, { ...manifest, name: this.manifest.name, dir: this.manifest.dir });
     // The Projects switch off while Today or the Planner is on: the task engine only, no pages (section 1).
     if (id === 'a4-projects') part.pagesOff = !this.isOn('a4-projects');
+    if (id === 'a4-today') part.popupsOnly = !this.isOn('a4-today');
     part.loadData = async () => copy(this.store[id]);
     part.saveData = (data) => { this.store[id] = /** @type {Fm} */ (copy(data)); return this.writeStore(); };
     // Kept for LifeWorld's one settings page instead of a page of its own.
@@ -319,7 +338,7 @@ class LifeWorldPlugin extends Plugin {
       for (const [m] of PART_LIST.slice().reverse()) {
         const part = this.running[m.id];
         // The task engine with or without its pages: started again in the other way.
-        const modeChanged = part && m.id === 'a4-projects' && !!part.pagesOff !== !this.isOn('a4-projects');
+        const modeChanged = part && ((m.id === 'a4-projects' && !!part.pagesOff !== !this.isOn('a4-projects')) || (m.id === 'a4-today' && !!part.popupsOnly !== !this.isOn('a4-today')));
         if (!part || (this.wanted(m.id) && !modeChanged)) continue;
         for (const type of this.views[m.id]) this.app.workspace.detachLeavesOfType(type);
         // Today's heatmap count still waiting for its minute is saved while the part can still save.
@@ -404,7 +423,7 @@ class LifeWorldPlugin extends Plugin {
     try {
       const td = /** @type {PartTypes['a4-today'] | undefined} */ (/** @type {unknown} */ (this.running['a4-today']));
       // Weather shows on Today (its note or a town); calendars on Today and the Planner (their note or links).
-      const weather = !!td && (!!vault.feedNotes.weather || !!(td.weatherCfg && td.weatherCfg.place));
+      const weather = !!td && !td.popupsOnly && (!!vault.feedNotes.weather || !!(td.weatherCfg && td.weatherCfg.place));
       const calendars = !!(td || this.running['a4-planner']) && (!!vault.feedNotes.calendar || linksOf(this.app).length > 0);
       found = findSetup(this.app, { engine: !!this.running['a4-projects'], sidebar: !!this.running['a4-sidebar'], weather, calendars });
     } catch (e) { console.error('LifeWorld: the setup window could not look at the vault', e); return; }
@@ -545,11 +564,13 @@ class LifeWorldPlugin extends Plugin {
     }
     // Parts switched on or off, or Your vault changed, elsewhere (the phone): follow them here too.
     const hostChanged = JSON.stringify(before[HOST]) !== JSON.stringify(this.store[HOST]);
+    // Pop-ups switched on or off elsewhere: Today starts or stops for them with its page off.
+    const popupsChanged = (before['a4-today'] || {}).reminderPopups !== (this.store['a4-today'] || {}).reminderPopups;
     if (hostChanged) {
       const h = this.store[HOST];
       if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) this.applyVault(h && h.vault);
-      await this.applyParts();
     }
+    if (hostChanged || popupsChanged) await this.applyParts();
     // Once, last, and only before 1.13: from 1.13 Obsidian calls the open page's update() after this handler.
     if ((partsChanged || hostChanged) && !(this.settingPage && this.settingPage.settingItems)) this.redrawSettings();
   }
@@ -608,13 +629,30 @@ class LifeWorldSettingTab extends PluginSettingTab {
   // Planning: one choice every part follows when a task is put on a day (0.1.16).
   /** @returns {Group} */
   planning() {
-    return { type: 'group', heading: 'Planning', items: [{
+    return { type: 'group', heading: 'Planning', items: [...this.placeRow(), ...(this.plugin.running['a4-projects'] ? [this.popupsRow()] : [])] };
+  }
+
+  // Reminder pop-ups (moved here from the Today page section, 2026-11-07 mockup): they run with any task part on.
+  /** @returns {Row} */
+  popupsRow() {
+    const pj = /** @type {{ settings?: { source?: string }, extSource?: () => unknown } | undefined} */ (/** @type {unknown} */ (this.plugin.running['a4-projects']));
+    const src = pj && pj.settings && pj.settings.source === 'tasknotes' ? 'tasknotes' : pj && typeof pj.extSource === 'function' && pj.extSource() ? 'other' : 'notes';
+    return {
+      name: 'Reminder pop-ups',
+      desc: src === 'tasknotes' ? 'Stays off while TaskNotes is your task source: TaskNotes has its own alerts.' : src === 'other' ? 'Only task notes have reminders, so this stays off with your current task source.' : "Shows task reminders while Obsidian is open, with the Today page, Planner or Projects on. Nothing can pop up while it's closed; a reminder missed today shows when you next open it.",
+      render: (s) => s.addToggle((t) => { t.setValue(this.plugin.popupsOn() && src === 'notes'); t.setDisabled(src !== 'notes'); t.onChange((v) => { this.plugin.setReminderPopups(v).catch((e) => console.error('LifeWorld: the pop-up switch could not be saved', e)); }); }),
+    };
+  }
+
+  /** @returns {Row[]} */
+  placeRow() {
+    return [{
       name: 'When you place a task on a day',
       desc: this.taskSource() === 'checkbox' ? 'Checkboxes: "Set its due date" writes 📅, "Just plan it" writes ⏳.' : 'Dragging a task onto a day, picking a day for it, or adding one straight onto a day. "Set its due date": that day becomes its due date. "Just plan it for that day": the task shows on that day and its due date, if it has one, stays as it is.',
       render: (s) => s.addDropdown((d) => d.addOption('due', 'Set its due date').addOption('plan', 'Just plan it for that day')
         .setValue(vault.planning.setsDue ? 'due' : 'plan')
         .onChange(async (v) => { await this.plugin.setVaultSettings({ placeOnDay: v }); this.plugin.app.workspace.trigger('lifeworld:tasks'); })),
-    }] };
+    }];
   }
 
   // Your vault: the six folders, Daily notes (Obsidian's own setting), Property names.
@@ -624,13 +662,24 @@ class LifeWorldSettingTab extends PluginSettingTab {
     const where = dn.folder ? `folder "${dn.folder}"` : "the vault's top folder";
     const tpl = dn.template ? `, template "${dn.template.split('/').pop()}"` : '';
     return { type: 'group', heading: 'Your vault', items: [
-      ...FOLDER_ROWS.map(([key, name, desc]) => /** @type {Row} */ ({ name, desc, render: (s) => s.addText((t) => {
-        t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(vault.vaultFolders[key]);
-        // Saved when the box is left or Enter is pressed (the change event), not on every keystroke:
-        // a half-typed folder would be read and sent out through Sync (review p2-s4).
-        t.inputEl.addEventListener('change', () => this.plugin.setVaultSettings({ folders: { [key]: t.getValue().trim() } }));
-        t.inputEl.setAttr('aria-label', name);
-      }) })),
+      ...FOLDER_ROWS.map(([key, name, desc]) => {
+        // A chosen folder that is gone (renamed or moved outside Obsidian, 2026-11-07 mockup); a new install's
+        // default that does not exist yet is not news.
+        const set = vault.vaultFolders[key];
+        const gone = set !== vault.FOLDER_DEFAULTS[key] && !(this.app.vault.getAbstractFileByPath(set) instanceof TFolder);
+        return /** @type {Row} */ ({ name, desc: gone ? 'Not in the vault right now. Renamed or moved outside Obsidian? Pick where it went.' : desc, render: (s) => {
+          if (gone) s.descEl.addClass('lw-missing');
+          s.addText((t) => {
+            t.setPlaceholder(vault.FOLDER_DEFAULTS[key]).setValue(set);
+            // Saved when the box is left or Enter is pressed (the change event), not on every keystroke:
+            // a half-typed folder would be read and sent out through Sync (review p2-s4).
+            t.inputEl.addEventListener('change', () => this.plugin.setVaultSettings({ folders: { [key]: t.getValue().trim() } }).then(() => this.redraw()));
+            t.inputEl.setAttr('aria-label', name);
+            new FolderSuggest(this.app, t.inputEl);
+          });
+          if (gone) s.addButton((b) => b.setButtonText('Pick').onClick(() => new (/** @type {typeof Sidebar} */ (Sidebar)).__logic.FolderPickModal(this.app, (/** @type {string} */ path) => this.plugin.setVaultSettings({ folders: { [key]: path } }).then(() => this.redraw())).open()));
+        } });
+      }),
       { name: 'Daily notes', desc: `Uses Obsidian's own Daily notes settings (${where}, ${dn.format}${tpl})`,
         // shortcut: app.setting is Obsidian's undocumented settings window; upgrade if it gets an API.
         render: (s) => s.addButton((b) => b.setButtonText('Open').onClick(() => { const w = this.app.setting; if (w && typeof w.openTabById === 'function') w.openTabById('daily-notes'); })) },
@@ -645,6 +694,22 @@ class LifeWorldSettingTab extends PluginSettingTab {
   hide() {
     for (const tab of Object.values(this.plugin.tabs)) if (typeof tab.hide === 'function') tab.hide();
   }
+}
+
+// Folders suggested while typing in a Your vault folder box; picking one saves it as leaving the box would.
+/** @extends {AbstractInputSuggest<TFolder>} */
+class FolderSuggest extends AbstractInputSuggest {
+  /** @param {import('obsidian').App} app @param {HTMLInputElement} input */
+  constructor(app, input) { super(app, input); this.input = input; }
+  /** @param {string} query */
+  getSuggestions(query) {
+    const q = query.toLowerCase();
+    return /** @type {TFolder[]} */ (this.app.vault.getAllLoadedFiles().filter((f) => f instanceof TFolder && f.path !== '/' && !f.path.startsWith('.') && f.path.toLowerCase().includes(q))).slice(0, 50);
+  }
+  /** @param {TFolder} f @param {HTMLElement} el */
+  renderSuggestion(f, el) { el.setText(f.path); }
+  /** @param {TFolder} f */
+  selectSuggestion(f) { this.setValue(f.path); this.input.dispatchEvent(new Event('change')); this.close(); }
 }
 
 // Settings › Your vault › Property names: Change (the approved mockup's dialog). Names are saved

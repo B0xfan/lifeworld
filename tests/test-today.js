@@ -742,7 +742,7 @@ async function writeBack() {
 /* ---- Open Today when Obsidian starts (setting, 1.3.1) ---------------------- */
 eq([L.startupOpensToday(undefined), L.startupOpensToday({}), L.startupOpensToday({ openOnStartup: true }), L.startupOpensToday({ openOnStartup: false })], [true, true, true, false], 'startup setting: on unless saved as false');
 eq([L.normalizeOpenOnStartup('false'), L.normalizeOpenOnStartup(0), L.normalizeOpenOnStartup(null)], [true, true, true], 'startup setting: only a real false turns it off (damaged data keeps today\'s behaviour)');
-async function startupRun(saved, files) {
+async function startupRun(saved, files, popupsOnly) {
   // Real onload against a stand-in app: count every way Today could be opened,
   // focused or revealed once the layout is ready.
   const ready = []; const touched = []; let stored = saved; const cm = { exts: [], updated: 0 };
@@ -758,11 +758,14 @@ async function startupRun(saved, files) {
     metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null, on: () => ({}), getMarkdownFiles: () => files || [] },
     loadLocalStorage: () => null, saveLocalStorage: () => {},
   };
-  Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop, register: nop, registerInterval: nop,
-    registerEditorExtension: (e) => cm.exts.push(e), registerView: nop, addRibbonIcon: nop, addCommand: nop, registerObsidianProtocolHandler: nop });
+  const calls = [];
+  const note = (k) => () => { calls.push(k); };
+  Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: note('settings'), registerEvent: nop, register: nop, registerInterval: note('interval'),
+    registerEditorExtension: (e) => cm.exts.push(e), registerView: note('view'), addRibbonIcon: note('ribbon'), addCommand: note('command'), registerObsidianProtocolHandler: note('protocol') });
+  if (popupsOnly) p.popupsOnly = true;
   global.window = { setInterval: () => 0 }; // the pop-up check's timer
   try { await p.onload(); for (const cb of ready) await cb(); await new Promise((r) => setTimeout(r, 0)); } finally { delete global.window; }
-  return { p, touched, stored: () => stored, cm };
+  return { p, touched, stored: () => stored, cm, calls };
 }
 const startupChecks = (async () => {
   const keep = { layout: { zones: { top: ['weather'] }, hidden: [] }, look: { accent: 'orange', font: 'caveat' }, calendars: { selected: ['x'] } };
@@ -771,6 +774,10 @@ const startupChecks = (async () => {
   const empty = await startupRun({});
   eq([empty.p.reminderPopups, empty.stored()], [false, {}], 'pop-ups: off for everyone until turned on; Today writes nothing at start');
   eq((await startupRun({ reminderPopups: true })).p.reminderPopups, true, 'pop-ups: on when saved on');
+  // The Today page off, pop-ups on (2026-11-07 mockup): Today runs for its pop-ups only, with nothing of its page.
+  const po = await startupRun({ reminderPopups: true, openOnStartup: true }, [], true);
+  eq([po.p.reminderPopups, po.calls.filter((c) => c !== 'interval'), po.calls.includes('interval'), po.touched], [true, [], true, []], 'pop-ups only: the half-minute check, no tab, command, ribbon button, settings or page opened');
+  ok(!('reminderPopups' in (await startupRun({}, [], true)).stored()), 'pop-ups only: nothing written at start');
   // Activity kept: today and yesterday when grown, a lower count never replaces a higher one, nothing while the widget is off.
   {
     const dayStr = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };

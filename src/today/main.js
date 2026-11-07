@@ -1109,6 +1109,7 @@ const logic = {
 class TodayPlugin extends Plugin {
   /** @type {((refresh: boolean) => unknown) | null} an add-on's calendar sync (LifeWorld sets it) */ calendarSync = null;
   /** @type {TodaySettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
+  /** @type {boolean | undefined} LifeWorld sets it: the Today page is off, only the reminder pop-ups run */ popupsOnly;
 
   async onload() {
     /** @type {Map<string, HTMLElement>} */
@@ -1135,17 +1136,6 @@ class TodayPlugin extends Plugin {
     // Runs the calendar sync now: (refresh) => Promise<boolean>. Set through LifeWorld's setCalendarSync
     // by a companion add-on; none = the picker saves the choice and the next sync picks it up.
     this.calendarSync = null;
-    this.addSettingTab(new TodaySettingTab(this.app, this));
-    // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
-    this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
-    // Not before the layout is ready: Obsidian announces every existing note as created while the vault loads.
-    this.app.workspace.onLayoutReady(() => this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity())));
-    // An update within the minute drops the waiting save (a late write could land on the next start's settings), so
-    // each start saves the count from the notes' dates; switching Today off saves it first (flushActivity).
-    this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
-    this.app.workspace.onLayoutReady(() => this.keepActivity().catch((e) => console.error('[LifeWorld] the activity count could not be saved', e)));
-    // Quitting within the minute still keeps the count.
-    this.registerEvent(this.app.workspace.on('quit', (tasks) => { if (this._activityTimer) tasks.add(() => this.flushActivity()); }));
     this.registerInterval(window.setInterval(() => this.checkReminders(), 30000));
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!this.reminderPopups || f instanceof TFolder) return;
@@ -1158,6 +1148,19 @@ class TodayPlugin extends Plugin {
     }));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
+    // The Today page off with pop-ups on (LifeWorld sets popupsOnly, 2026-11-07 mockup): the pop-ups only, nothing of the page.
+    if (this.popupsOnly) return;
+    this.addSettingTab(new TodaySettingTab(this.app, this));
+    // The Activity heatmap keeps today's count while it is on (a minute after the last edit at most).
+    this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
+    // Not before the layout is ready: Obsidian announces every existing note as created while the vault loads.
+    this.app.workspace.onLayoutReady(() => this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity())));
+    // An update within the minute drops the waiting save (a late write could land on the next start's settings), so
+    // each start saves the count from the notes' dates; switching Today off saves it first (flushActivity).
+    this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
+    this.app.workspace.onLayoutReady(() => this.keepActivity().catch((e) => console.error('[LifeWorld] the activity count could not be saved', e)));
+    // Quitting within the minute still keeps the count.
+    this.registerEvent(this.app.workspace.on('quit', (tasks) => { if (this._activityTimer) tasks.add(() => this.flushActivity()); }));
     // First run after the picker shipped: adopt what the sync is already
     // fetching (it carried old ticks over) as the saved choice.
     this.registerEvent(this.app.metadataCache.on('changed', (file) => { if (file && feedNotes.calendar && file.path === feedNotes.calendar) this.adoptCalendarChoice(); }));
@@ -1195,6 +1198,7 @@ class TodayPlugin extends Plugin {
     this.habits = normalizeHabits(saved.habits);
     this.reminderPopups = saved.reminderPopups === true;
     this.popupsFrom = Number(saved.reminderPopupsFrom) || 0;
+    this.checkReminders(); // switched on or off in Settings or on another device: at once
     this.heatCount = normalizeHeatCount(saved.heatCount);
     // Two devices' counts for one day: the higher stays, and goes back in the file for the other device.
     // A file reset elsewhere (no activity in it) stays reset.
@@ -1261,10 +1265,9 @@ class TodayPlugin extends Plugin {
     return this.extSource() ? 'other' : 'notes';
   }
   /** @param {boolean} on */
-  async saveReminderPopups(on) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.reminderPopups = !!on; if (on) data.reminderPopupsFrom = Date.now(); await this.saveData(data); this.reminderPopups = !!on; this.popupsFrom = Number(data.reminderPopupsFrom) || 0; this.checkReminders(); }
 
   // Every half minute: shows what has come due, takes down cards of tasks finished or moved elsewhere.
-  // shortcut: lives in the Today part, so with Today off there are no pop-ups; move it if people run the Planner alone.
+  // With the Today page off, LifeWorld still runs this part for its pop-ups (popupsOnly) while the Planner or Projects is on.
   checkReminders() {
     const on = this.reminderPopups && this.reminderSource() === 'notes';
     /** @type {Map<string, HTMLElement>} */
@@ -2059,9 +2062,6 @@ class TodaySettingTab extends PluginSettingTab {
         paintPreview();
         if (this._cssRef) this.app.workspace.offref(this._cssRef);
         this._cssRef = this.app.workspace.on('css-change', () => { if (pv.isConnected) { paintSwatches(); paintPreview(); } });
-      } },
-      { name: 'Reminder pop-ups', desc: this.plugin.reminderSource() === 'tasknotes' ? 'Stays off while TaskNotes is your task source: TaskNotes has its own alerts.' : this.plugin.reminderSource() === 'other' ? 'Only task notes have reminders, so this stays off with your current task source.' : "Shows task reminders while Obsidian is open. Nothing can pop up while it's closed; a reminder missed today shows when you next open it.", render: (s) => {
-        s.addToggle((t) => { t.setValue(this.plugin.reminderPopups && this.plugin.reminderSource() === 'notes'); t.setDisabled(this.plugin.reminderSource() !== 'notes'); t.onChange((v) => this.plugin.saveReminderPopups(v)); });
       } },
       { name: 'Widget setup', aliases: ['World clock', 'Clock look', 'Add a place', 'Weather', 'Forecast shows', 'Temperature', 'Show tides', 'Stormglass key', 'Habits', 'Add a habit', 'Calendar links', 'Add a calendar link', 'Pinned shortcuts', 'Add a note or folder', 'Activity heatmap', 'A day counts when', 'News feeds', 'Add a feed', 'Headlines shown'],
         render: (s) => { this.setupHost = blockRow(s, 'a4t-setup', true); this.renderSetup(); } },

@@ -44,7 +44,7 @@ const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, dataset: {}, text: 
   createEl(t, o) { const d = fakeEl(t); if (o && o.text) d.text = o.text; if (o && o.cls) d.cls.push(...String(o.cls).split(' ')); if (o && o.attr) Object.assign(d.attr, o.attr); this.kids.push(d); return d; } });
 class PluginSettingTab { constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = fakeEl(); } }
 class Setting {
-  constructor(el) { this.settingEl = fakeEl(); this.rec = {}; el.kids.push(this); }
+  constructor(el) { this.settingEl = fakeEl(); this.descEl = fakeEl(); this.rec = {}; el.kids.push(this); }
   setName(v) { this.rec.name = v; return this; }
   setDesc(v) { this.rec.desc = v; return this; }
   setHeading() { this.rec.heading = true; return this; }
@@ -211,7 +211,7 @@ const start = async (data) => {
 
   // Section 2: one settings page, the Parts switches.
   const draw = (h) => { h.settingTab.display(); return h.settingTab.containerEl.kids.filter((k) => !(k.cls || []).includes('lw-hint')).map((k) => (k.rec ? k.rec : 'section')); };
-  const rows = (h) => draw(h).filter((r) => r !== 'section' && !r.heading && 'on' in r); // the Parts switches
+  const rows = (h) => draw(h).filter((r) => r !== 'section' && !r.heading && 'on' in r && r.name !== 'Reminder pop-ups'); // the Parts switches
   const heads = (h) => draw(h).filter((r) => r.heading).map((r) => r.name);
   const cmds = (a) => Object.keys(a.commands).map((c) => c.split(':')[0]).filter((p) => p !== 'lifeworld').sort(); // the parts' commands
   const pg = await start({ 'a4-today': { layout: ['weather'] } });
@@ -222,6 +222,16 @@ const start = async (data) => {
     ['Sidebar', "The LifeWorld panel on the left. Off: Obsidian's normal file list.", true, false],
   ], 'Parts: the four switches as drawn, all on for a setup that never switched one');
   eq(heads(pg.host), ['Parts', 'Planning', 'Your vault', 'Tasks', 'Today page', 'Sidebar'], 'then each part\'s own settings under the mockup\'s heading, in its order');
+  { const names = draw(pg.host).filter((r) => r !== 'section').map((r) => (r.heading ? `#${r.name}` : r.name));
+    const at = names.indexOf('Reminder pop-ups');
+    ok(at > names.indexOf('#Planning') && at < names.indexOf('#Your vault') && names.filter((n) => n === 'Reminder pop-ups').length === 1, 'Reminder pop-ups: once, under Planning (2026-11-07 mockup)'); }
+  // Your vault: a chosen folder that is gone says so (renamed outside Obsidian, 2026-11-07 mockup); a default that does not exist yet does not.
+  { const gv = await start({ lifeworld: { vault: { folders: { goals: 'Life/Aims' } } } });
+    const row = (n) => draw(gv.host).find((r) => r !== 'section' && r.name === n);
+    eq([row('Goals folder').desc, row('Habits folder').desc], ['Not in the vault right now. Renamed or moved outside Obsidian? Pick where it went.', 'One note per habit, ticked on the Today page'], 'Your vault: a missing chosen folder says so; a missing default does not');
+    gv.app.vault.getAbstractFileByPath = (p) => (p === 'Life/Aims' ? new TFolder('Life/Aims', []) : null);
+    eq(row('Goals folder').desc, 'Goals your projects point to', 'Your vault: the folder there again, the usual words');
+    gv.host.unload(); }
   const names = draw(pg.host).filter((r) => r !== 'section').map((r) => r.name);
   ok(['a4-projects', 'a4-today', 'a4-sidebar'].every((id, i) => names.indexOf(`${id} row`) === names.lastIndexOf(heads(pg.host)[3 + i]) + 1), 'each part\'s own rows sit under its heading');
   ok(pg.host.settingTab.containerEl.cls.includes('lw-settings'), 'the page carries LifeWorld\'s class');
@@ -336,6 +346,31 @@ const start = async (data) => {
   eq(pg.host._children.filter((c) => c.manifest.id === 'a4-sidebar').length, 1, 'one Sidebar');
   pg.host.unload();
 
+  // Reminder pop-ups with the Today page off (2026-11-07 mockup): Today runs for its pop-ups only while another task part is on.
+  {
+    const po = await start({ lifeworld: { parts: { 'a4-today': false } }, 'a4-today': { reminderPopups: true } });
+    ok(po.host.running['a4-today'] && po.host.running['a4-today'].popupsOnly === true, 'Today off, pop-ups on: Today runs for its pop-ups only');
+    po.host.unload();
+    const pn = await start({ lifeworld: { parts: { 'a4-today': false } }, 'a4-today': { reminderPopups: false, look: { accent: 'orange' } } });
+    ok(!pn.host.running['a4-today'], 'Today off, pop-ups off: Today does not run');
+    await pn.host.setReminderPopups(true);
+    ok(pn.host.running['a4-today'] && pn.host.running['a4-today'].popupsOnly === true, 'switched on with Today off: pop-ups start at once');
+    eq([pn.host.store['a4-today'].reminderPopups, pn.host.store['a4-today'].look, typeof pn.host.store['a4-today'].reminderPopupsFrom], [true, { accent: 'orange' }, 'number'], 'switched on: saved in Today\'s settings, the rest kept');
+    await pn.host.setReminderPopups(false);
+    ok(!pn.host.running['a4-today'], 'switched off with Today off: pop-ups stop at once');
+    disk[pn.dir] = JSON.stringify({ ...plainFile(disk[pn.dir]), 'a4-today': { reminderPopups: true } });
+    await pn.host.onExternalSettingsChange();
+    ok(pn.host.running['a4-today'] && pn.host.running['a4-today'].popupsOnly === true, 'switched on on another device: pop-ups start here too');
+    await pn.host.setPart('a4-today', true);
+    ok(pn.host.running['a4-today'] && !pn.host.running['a4-today'].popupsOnly, 'Today switched on: its whole page again');
+    pn.host.unload();
+    const none = await start({ lifeworld: { parts: { 'a4-today': false, 'a4-planner': false, 'a4-projects': false } }, 'a4-today': { reminderPopups: true } });
+    ok(!none.host.running['a4-today'], 'no task part on: no pop-ups');
+    none.host.unload();
+    const all = await start({ 'a4-today': { reminderPopups: true } });
+    ok(all.host.running['a4-today'] && !all.host.running['a4-today'].popupsOnly, 'Today on: as before');
+    all.host.unload();
+  }
   // Next start: a part switched off is not started; Today or the Planner on without Projects stay off.
   log.length = 0;
   const off = await start({ lifeworld: { parts: { 'a4-sidebar': false } } });

@@ -893,7 +893,13 @@ class SidebarView extends ItemView {
       }
     }
 
-    if (SBC.life && !myLife && SBC.groups.length) scroll.createDiv({ cls: 'setting-item-description a4sb-sort-empty', text: `Your groups need the folder "${SBC.life}", which is not in the vault.` });
+    if (SBC.life && !myLife && SBC.groups.length) {
+      const box = scroll.createDiv({ cls: 'setting-item-description a4sb-sort-empty', text: `Your groups need the folder "${SBC.life}", which is not in the vault.` });
+      // Renamed or moved outside Obsidian (2026-11-07 mockup): pick where it went; the groups keep their folders, names and icons.
+      box.createEl('button', { cls: 'mod-cta a4sb-pick-life', text: 'Pick its new place' }).addEventListener('click', () => new FolderPickModal(this.app, (path) => {
+        if (HOST.setSidebar) HOST.setSidebar({ life: path }).catch((e) => console.error('LifeWorld: the base folder could not be saved', e));
+      }).open());
+    }
 
     // Rooms; with none set, the top folders under "Folders" (as drawn in the step 0 mockup)
     const rs = this.section(scroll, 'rooms', SBC.rooms.length ? 'Rooms' : 'Folders');
@@ -1855,7 +1861,7 @@ class SidebarSettingTab extends PluginSettingTab {
 export default SidebarPlugin;
 SidebarPlugin.addExtra = addExtra; // for LifeWorld's add-on hooks (phase 2 section 7)
 SidebarPlugin.__logic = {
-  NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
+  FolderPickModal, NAV, FILE_CAP, SBC, SidebarView, FilesChrome, EXTRA, runExtra, extraButton,
   lifePath, renameInSidebar, findRoomFolders, buildLifeGroups, itemLabel, itemIcon, itemShowsCount, resolveLanding,
   hasExternalFiles, splitName, freePath, VIRTUAL, sphereOf, sortProjects, openRuleFrom, openProjects, openProjectCount, dropAccepts, nameTakenMessage, itemFolder, activeRoomFor, crumbFolder, longPressState, PLACED_KEY, LONG_PRESS_MS, TOOLS, CORE_TOOLS, BASES_TOOL, baseWhere, listBases, toolbarItems, formTargets, isAllOpen, toggleAll, countNotes, countNotesExcluding, hiddenUnderRooms, sortChildren, SORT_MODES, SORT_LABEL, DEFAULT_SORT, normalizeSort, sortRuleFor, dateKey, sortComparator, folderDisplay, setFolderSort, renameSortPaths, planMove, planRename, activeGroupFor, isGroupOpen, plusTargetsByPath, parentOf, nameOf,
 };

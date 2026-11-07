@@ -1,5 +1,6 @@
 /* LifeWorld's own settings page: a widget whose part is off is dimmed, as drawn (mockup v6). */
 .setting-item.lw-dim { opacity: .45; }
+.lw-missing { color: var(--text-warning); }
 .lw-hint { margin: var(--size-4-1) 0 var(--size-4-3); }
 /* A settings row that holds a block (a list, a picker) under its name, or alone (bare). */
 .setting-item.lw-wrap { flex-wrap: wrap; }
