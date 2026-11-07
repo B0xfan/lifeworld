@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Writes src/today/scenes.css: the Today banner's scenes, 3 places x 4 times of day, as SVG background images.
+"""Writes src/today/scenes.css: the Today banner's scenes, 3 places x 4 times of day, as SVG background images,
+and the weather layers drawn over them (cloudy, rain, storm x 4 times of day).
 
 Seeded, so the same drawing every run. Run from the repo root after changing a scene:
     python3 scripts/draw-scenes.py
@@ -228,6 +229,75 @@ def volcano(key, time):
 SCENES = {'mountains': mountains, 'coast': coast, 'volcano': volcano}
 
 
+# Cloud colours per time of day: (deep, mid, light), toned to each scene palette.
+CLOUD = {
+    'dawn': ('#2f2a44', '#5a4f6c', '#a07f8f'),
+    'day': ('#55616d', '#7c8893', '#aab4bc'),
+    'dusk': ('#1c1416', '#3d2824', '#7a4430'),
+    'night': ('#080c18', '#141c31', '#26324d'),
+}
+# How heavy each weather is: sky wash at the top, at the horizon and on the land, clouds, rain.
+LOOK = {
+    'cloudy': dict(top=.6, mid=.35, low=.08, clouds=7, rain=0),
+    'rain': dict(top=.97, mid=.72, low=.3, clouds=11, rain=.5),
+    'storm': dict(top=1, mid=.85, low=.45, clouds=14, rain=.7),
+}
+
+
+def cloud(rng, cx, base, w, fill, op):
+    """A flat-bottomed cumulus: a row of round bumps, tallest in the middle."""
+    n = rng.randint(4, 6)
+    step = w / n
+    d = f'M{cx - w / 2:.0f} {base:.0f}'
+    for i in range(n):
+        mid = 1 - abs((i + .5) / n - .5) * 1.2
+        r = step * rng.uniform(.52, .62) * (.8 + mid * .5)
+        d += f'A{r:.0f} {r * .75:.0f} 0 1 1 {cx - w / 2 + step * (i + 1):.0f} {base:.0f}'
+    return f'<path d="{d}Z" fill="{fill}" opacity="{op:.2f}"/>'
+
+
+def overlay(weather, time):
+    look, (deep, mid, light) = LOOK[weather], CLOUD[time]
+    rng = random.Random(f'{weather}{time}')
+    k = f'w{weather[0]}{time[:2]}'
+    # The wash: thick at the top (hides the sun or moon in rain), thinner over the land so the scene still shows.
+    s = (f'<linearGradient id="{k}" x2="0" y2="1"><stop offset="0" stop-color="{deep}" stop-opacity="{look["top"]}"/>'
+         f'<stop offset=".45" stop-color="{mid}" stop-opacity="{look["mid"]}"/>'
+         f'<stop offset="1" stop-color="{deep}" stop-opacity="{look["low"]}"/></linearGradient>'
+         f'<rect width="{W}" height="{H}" fill="url(#{k})"/>')
+    # Clouds back to front: far ones low and dark, near ones high, big and lit on top.
+    for i in range(look['clouds']):
+        t = i / max(1, look['clouds'] - 1)
+        fill = (mid, mid, light)[min(2, int(t * 3))]
+        w = rng.uniform(300, 560) * (.7 + t * .5)
+        s += cloud(rng, rng.uniform(-80, W + 80), 250 - t * 160 + rng.uniform(-20, 20), w, fill, rng.uniform(.8, .97))
+    if look['rain']:  # The sun or moon goes behind a cloud of its own.
+        ox, oy, r = ORB[time]
+        s += (f'<radialGradient id="{k}o"><stop offset=".45" stop-color="{mid}" stop-opacity=".97"/>'
+              f'<stop offset="1" stop-color="{mid}" stop-opacity="0"/></radialGradient>')
+        for y in (oy * H, .5 * H):  # coast draws a low sun at dawn and dusk at half height
+            s += f'<circle cx="{ox * W:.0f}" cy="{y:.0f}" r="{r * 4:.0f}" fill="url(#{k}o)"/>'
+        s += cloud(rng, ox * W, oy * H + r * 2, r * 16, mid, 1)
+    if look['rain']:  # Rain as one small tile, repeated: keeps the file small.
+        drops = ''
+        for _ in range(26):
+            x, y, ln = rng.uniform(0, 240), rng.uniform(0, 200), rng.uniform(30, 70)
+            drops += (f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{x - ln * .22:.0f}" y2="{y + ln:.0f}" stroke="{light}" '
+                      f'stroke-width="{rng.choice((1.2, 1.6, 2))}" stroke-linecap="round" opacity="{rng.uniform(.4, 1):.2f}"/>')
+        s += (f'<pattern id="{k}r" width="240" height="200" patternUnits="userSpaceOnUse" overflow="visible">{drops}</pattern>'
+              f'<rect y="120" width="{W}" height="{H - 120}" fill="url(#{k}r)" opacity="{look["rain"]}"/>')
+    if weather == 'storm':  # A thin forked bolt from the cloud base, away from the greeting on the left.
+        main = [(1230, 150), (1214, 205), (1232, 214), (1206, 285), (1220, 292), (1198, 360)]
+        fork = [(1232, 214), (1262, 250), (1255, 280)]
+        line = lambda p: ' '.join(f'{x},{y}' for x, y in p)
+        s += (f'<radialGradient id="{k}b"><stop offset="0" stop-color="#dfe4ff" stop-opacity=".35"/>'
+              f'<stop offset="1" stop-color="#dfe4ff" stop-opacity="0"/></radialGradient>'
+              f'<circle cx="1220" cy="240" r="190" fill="url(#{k}b)"/>'
+              f'<polyline points="{line(main)}" fill="none" stroke="#f4f6ff" stroke-width="3.5" stroke-linejoin="round"/>'
+              f'<polyline points="{line(fork)}" fill="none" stroke="#f4f6ff" stroke-width="2" stroke-linejoin="round"/>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMaxYMid slice">{s}</svg>'
+
+
 def svg(scene, time):
     key = f'{scene[0]}{time[:2]}'
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}">{SCENES[scene](key, time)}</svg>'
@@ -243,6 +313,9 @@ if __name__ == '__main__':
     for scene in SCENES:
         for time in PAL:
             rules.append(f'html:not(#a4t-guard) .a4t-root[data-a4t-scene="{scene}"][data-a4t-time="{time}"] .a4t-scene {{ background-image: {data_url(svg(scene, time))}; }}')
+    for weather in LOOK:
+        for time in PAL:
+            rules.append(f'html:not(#a4t-guard) .a4t-root[data-a4t-scene][data-a4t-weather="{weather}"][data-a4t-time="{time}"] .a4t-scene::before {{ background-image: {data_url(overlay(weather, time))}; }}')
     out = '\n'.join(rules) + '\n'
     Path('src/today/scenes.css').write_text(out)
     print(f'{len(out.encode()) / 1000:.0f} KB')

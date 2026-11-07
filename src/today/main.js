@@ -751,6 +751,17 @@ function sunHere(w, now) {
   const tz = w && typeof w.timezone === 'string' ? w.timezone : null;
   try { return tz && clockAt(now, tz).time !== clockAt(now, null).time ? null : sunFrom(w); } catch { return null; } // a zone this device cannot read
 }
+// The weather layer over the Today banner (scenes.css), from the weather's WMO code: null = none (clear, a few
+// clouds, no weather). Snow has no picture of its own and shows as cloudy.
+/** @param {unknown} code @returns {'cloudy' | 'rain' | 'storm' | null} */
+function sceneWeather(code) {
+  const c = Number(code);
+  if (code == null || code === '' || !Number.isInteger(c)) return null;
+  if (c >= 95 && c <= 99) return 'storm';
+  if ((c >= 51 && c <= 67) || (c >= 80 && c <= 82)) return 'rain';
+  if (c === 3 || c === 45 || c === 48 || (c >= 71 && c <= 77) || c === 85 || c === 86) return 'cloudy';
+  return null;
+}
 // Which picture the Today banner shows at local hour `h`: dawn and dusk run 45 minutes either side of sunrise
 // and sunset. No sun times (no weather, or a town in another zone): 6 AM and 6 PM.
 /** @param {number} h @param {ReturnType<typeof sunFrom>} sun */
@@ -1077,7 +1088,7 @@ const MAX_REMINDER_CARDS = 3;
 const logic = {
   ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen,
   normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, sunHere, ringColour, hourLabel,
-  ACCENTS, HAND_FONTS, SCENES, sceneTime, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
+  ACCENTS, HAND_FONTS, SCENES, sceneTime, sceneWeather, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
   normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords,
@@ -1129,10 +1140,12 @@ class TodayPlugin extends Plugin {
     this.registerEvent(this.app.vault.on('modify', () => this.scheduleActivity()));
     // Not before the layout is ready: Obsidian announces every existing note as created while the vault loads.
     this.app.workspace.onLayoutReady(() => this.registerEvent(this.app.vault.on('create', () => this.scheduleActivity())));
-    // shortcut: switching Today off or updating within the minute skips this save (a late write could land on the next start's settings); the note's own date still counts unless it is edited again.
+    // An update within the minute drops the waiting save (a late write could land on the next start's settings), so
+    // each start saves the count from the notes' dates; switching Today off saves it first (flushActivity).
     this.register(() => { if (this._activityTimer) window.clearTimeout(this._activityTimer); });
+    this.app.workspace.onLayoutReady(() => this.keepActivity().catch((e) => console.error('[LifeWorld] the activity count could not be saved', e)));
     // Quitting within the minute still keeps the count.
-    this.registerEvent(this.app.workspace.on('quit', (tasks) => { if (this._activityTimer) tasks.add(() => this.keepActivity()); }));
+    this.registerEvent(this.app.workspace.on('quit', (tasks) => { if (this._activityTimer) tasks.add(() => this.flushActivity()); }));
     this.registerInterval(window.setInterval(() => this.checkReminders(), 30000));
     this.registerEvent(this.app.vault.on('rename', (f, oldPath) => {
       if (!this.reminderPopups || f instanceof TFolder) return;
@@ -1183,9 +1196,17 @@ class TodayPlugin extends Plugin {
     this.reminderPopups = saved.reminderPopups === true;
     this.popupsFrom = Number(saved.reminderPopupsFrom) || 0;
     this.heatCount = normalizeHeatCount(saved.heatCount);
-    this.activity = normalizeActivity(saved.activity);
+    // Two devices' counts for one day: the higher stays, and goes back in the file for the other device.
+    // A file reset elsewhere (no activity in it) stays reset.
+    /** @type {Record<string, number>} */
+    const mine = this.activity;
+    const synced = normalizeActivity(saved.activity);
+    const kept = saved.activity != null;
+    const higher = kept && Object.entries(mine).some(([d, n]) => n > (synced[d] || 0));
+    this.activity = kept ? mergeCounts(synced, mine) : synced;
     this.feeds = normalizeFeeds(saved.feeds);
     this.feedCount = normalizeFeedCount(saved.feedCount);
+    if (higher) await this.saveData({ ...saved, activity: this.activity });
     this.applyLook();
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (!v) return; if (v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); if (v.data && v.renderHeader) v.renderHeader(); });
   }
@@ -1344,8 +1365,19 @@ class TodayPlugin extends Plugin {
     if (!grown.length) return;
     this.activity = pruneActivity({ ...was, ...Object.fromEntries(grown.map((d) => [d, counts[d]])) }, today);
     const data = /** @type {Fm} */ ((await this.loadData()) || {});
-    data.activity = this.activity;
+    /** @type {Record<string, number>} */
+    const merged = pruneActivity(mergeCounts(normalizeActivity(data.activity), this.activity), today); // never under another device's higher count
+    this.activity = merged;
+    data.activity = merged;
     await this.saveData(data);
+  }
+
+  // Today switched off (or Obsidian quitting) within the minute after an edit: the waiting count is saved now.
+  async flushActivity() {
+    if (!this._activityTimer) return;
+    window.clearTimeout(this._activityTimer);
+    this._activityTimer = null;
+    await this.keepActivity();
   }
 
   // Each day's count for the chosen "A day counts when": day -> number.
@@ -2775,8 +2807,11 @@ class TodayView extends ItemView {
   // The picture itself is CSS (scenes.css), chosen by these two attributes; nothing is drawn while they are absent.
   renderScene() {
     const { scene } = /** @type {TodayLook} */ (this.plugin.look);
-    if (scene === 'off') { this.contentEl.removeAttribute('data-a4t-scene'); this.contentEl.removeAttribute('data-a4t-time'); return; }
+    if (scene === 'off') { for (const a of ['data-a4t-scene', 'data-a4t-time', 'data-a4t-weather']) this.contentEl.removeAttribute(a); return; }
     const now = new Date();
+    const w = this.data && this.data.weather;
+    const sky = sceneWeather(w && w.weathercode);
+    if (sky) this.contentEl.setAttr('data-a4t-weather', sky); else this.contentEl.removeAttribute('data-a4t-weather');
     this.contentEl.setAttr('data-a4t-scene', scene);
     this.contentEl.setAttr('data-a4t-time', sceneTime(now.getHours() + now.getMinutes() / 60, sunHere(this.data && this.data.weather, now)));
   }

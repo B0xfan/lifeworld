@@ -471,6 +471,7 @@ html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page { padding-top: var(--a4
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page.a4t-has-drag { z-index: 41; }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-hero { position: relative; padding-bottom: 54px; margin-bottom: 8px; }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-scene { display: block; position: absolute; z-index: -1; top: calc(-1 * var(--a4t-hero-top)); bottom: 0; left: 50%; width: 100cqw; margin-left: -50cqw; background-size: cover; background-position: right center; -webkit-mask-image: linear-gradient(#000 84%, transparent); mask-image: linear-gradient(#000 84%, transparent); }
+html:not(#a4t-guard) .a4t-root[data-a4t-scene][data-a4t-weather] .a4t-scene::before { content: ''; position: absolute; inset: 0; background-size: inherit; background-position: inherit; }
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-scene::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--a4t-scrim) 0%, var(--a4t-scrim) 26%, transparent 66%); }
 /* The add-widget panel widens the page's right padding (360 against 40), which would move the banner's middle. */
 html:not(#a4t-guard) .a4t-root[data-a4t-scene]:not(.is-narrow) .a4t-page.is-panel-open .a4t-scene { left: calc(50% + 160px); }

@@ -44,7 +44,7 @@ import { Plugin, ItemView, Menu, Modal, Notice, Keymap, TFile, TFolder, normaliz
 import { partOf, ADDON, HOST } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 // The groups, rooms, icons and names shown (phase 2 section 6): LifeWorld's stored settings, read
 // each time the panel draws. A new install has none and lists its top folders.
-import { sidebarContent, vaultFolders, movePath } from '../core/vault';
+import { sidebarContent, vaultFolders, vaultHas, movePath } from '../core/vault';
 import { errField } from '../core/sources';
 import { drawRows, blockRow } from '../core/settings';
 const SBC = sidebarContent;
@@ -78,12 +78,16 @@ const VIRTUAL = {
 };
 /** @param {string} n */
 const itemFolder = (n) => (VIRTUAL[n] ? nameOf(projectsDir()) : n);
-// The built-in project lists' folder: the Projects folder setting when it sits in the base folder, as it follows
-// a rename; otherwise the one named Projects there, as always.
-function projectsDir() { return parentOf(vaultFolders.projects) === SBC.life ? vaultFolders.projects : `${SBC.life}/Projects`; }
+// The built-in project lists' folder: the Projects folder setting when it sits in the base folder or is really there
+// elsewhere (it follows a rename or a move); otherwise the one named Projects in the base folder, as always (a new
+// install's default setting points at a Projects folder at the top that may not exist).
+function projectsDir() { const set = vaultFolders.projects; return parentOf(set) === SBC.life || vaultHas.folder(set) ? set : `${SBC.life}/Projects`; }
+// The Projects folder sits outside the base folder, so its lists are not found among the base folder's own.
+const projectsAway = () => parentOf(projectsDir()) !== SBC.life;
 // A group's folder in the vault: inside the base folder, or at the top when there is none (a new install).
+// A built-in list is the Projects folder itself, wherever it is.
 /** @param {string} n */
-const lifePath = (n) => (SBC.life ? `${SBC.life}/${itemFolder(n)}` : itemFolder(n));
+const lifePath = (n) => (VIRTUAL[n] && SBC.life ? projectsDir() : SBC.life ? `${SBC.life}/${itemFolder(n)}` : itemFolder(n));
 /** @param {Fm | null | undefined} fm */
 function sphereOf(fm) {
   const v = fm && typeof fm.sphere === 'string' ? fm.sphere.trim().toLowerCase() : '';
@@ -191,7 +195,7 @@ function buildLifeGroups(myLifeFolderNames) {
   /** @type {Set<string>} */
   const used = new Set();
   const groups = SBC.groups.map((g) => {
-    const items = g.folders.filter((n) => have.has(itemFolder(n)));
+    const items = g.folders.filter((n) => have.has(itemFolder(n)) || (!!VIRTUAL[n] && !!SBC.life && projectsAway()));
     items.forEach((n) => used.add(itemFolder(n)));
     return { id: g.id, label: g.label, items };
   });
@@ -521,7 +525,7 @@ function hiddenUnderRooms(groups) {
   const out = new Set();
   if (!groups || !groups.length) return out;
   if (SBC.life) out.add(SBC.life);
-  for (const g of groups) for (const n of g.items) out.add(lifePath(n));
+  for (const g of groups) for (const n of g.items) if (!VIRTUAL[n] || !projectsAway()) out.add(lifePath(n)); // a moved Projects folder stays in its room
   return out;
 }
 

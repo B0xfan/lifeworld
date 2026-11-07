@@ -94,6 +94,7 @@ const copy = (v) => { const c = /** @type {unknown} */ (v === undefined ? null :
 /** @typedef {Record<string, Fm>} LwStore */
 class LifeWorldPlugin extends Plugin {
   async onload() {
+    vault.vaultHas.folder = (p) => this.app.vault.getAbstractFileByPath(p) instanceof TFolder;
     /** @type {Promise<void>} */
     this.saving = Promise.resolve();
     this.gone = false;
@@ -321,6 +322,9 @@ class LifeWorldPlugin extends Plugin {
         const modeChanged = part && m.id === 'a4-projects' && !!part.pagesOff !== !this.isOn('a4-projects');
         if (!part || (this.wanted(m.id) && !modeChanged)) continue;
         for (const type of this.views[m.id]) this.app.workspace.detachLeavesOfType(type);
+        // Today's heatmap count still waiting for its minute is saved while the part can still save.
+        const flush = /** @type {{ flushActivity?: () => Promise<void> }} */ (/** @type {unknown} */ (part)).flushActivity;
+        if (typeof flush === 'function') await flush.call(part).catch((e) => console.error('LifeWorld: the activity count could not be saved', e));
         delete this.running[m.id]; delete PARTS[m.id]; this.removeChild(part);
         // Sidebar off: Obsidian's file list comes forward in its place, as the mockup says.
         const files = m.id === 'a4-sidebar' && this.app.workspace.getLeavesOfType('file-explorer')[0];

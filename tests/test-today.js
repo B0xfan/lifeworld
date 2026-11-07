@@ -320,6 +320,11 @@ eq(L.normalizeLook({ scene: 'moon' }).scene, 'off', 'an unknown scene counts as 
   for (const [h, want] of at) eq(L.sceneTime(h, sun), want, `banner at ${h} with sun times is ${want}`);
   const fixed = [[5, 'night'], [5.5, 'dawn'], [7, 'day'], [17.5, 'dusk'], [19, 'night']];
   for (const [h, want] of fixed) eq(L.sceneTime(h, null), want, `banner at ${h} with no sun times is ${want}`);
+  // The weather layer (2026-11-07 mockup): WMO code -> layer; clear, no weather or a damaged code -> none.
+  eq([0, 2, 3, 45, 51, 65, '65', 67, 71, 80, 82, 95, 99, null, undefined, '', 'x', 7.5, 100].map(L.sceneWeather),
+    [null, null, 'cloudy', 'cloudy', 'rain', 'rain', 'rain', 'rain', 'cloudy', 'rain', 'rain', 'storm', 'storm', null, null, null, null, null, null], 'banner weather: each code picks its layer');
+  { const css = require('fs').readFileSync(path.join(path.dirname(SRC), 'scenes.css'), 'utf8');
+    for (const w of ['cloudy', 'rain', 'storm']) for (const t of ['dawn', 'day', 'dusk', 'night']) ok(css.includes(`[data-a4t-weather="${w}"][data-a4t-time="${t}"] .a4t-scene::before`), `banner weather: ${w} at ${t} is drawn`); }
 }
 {
   const css = require('fs').readFileSync(STYLES, 'utf8');
@@ -737,7 +742,7 @@ async function writeBack() {
 /* ---- Open Today when Obsidian starts (setting, 1.3.1) ---------------------- */
 eq([L.startupOpensToday(undefined), L.startupOpensToday({}), L.startupOpensToday({ openOnStartup: true }), L.startupOpensToday({ openOnStartup: false })], [true, true, true, false], 'startup setting: on unless saved as false');
 eq([L.normalizeOpenOnStartup('false'), L.normalizeOpenOnStartup(0), L.normalizeOpenOnStartup(null)], [true, true, true], 'startup setting: only a real false turns it off (damaged data keeps today\'s behaviour)');
-async function startupRun(saved) {
+async function startupRun(saved, files) {
   // Real onload against a stand-in app: count every way Today could be opened,
   // focused or revealed once the layout is ready.
   const ready = []; const touched = []; let stored = saved; const cm = { exts: [], updated: 0 };
@@ -750,7 +755,7 @@ async function startupRun(saved) {
       revealLeaf: () => touched.push('revealLeaf'), setActiveLeaf: () => touched.push('setActiveLeaf'),
       updateOptions: () => cm.updated++,
     },
-    metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null, on: () => ({}), getMarkdownFiles: () => [] },
+    metadataCache: { on: () => ({}), getFileCache: () => null }, vault: { getAbstractFileByPath: () => null, on: () => ({}), getMarkdownFiles: () => files || [] },
     loadLocalStorage: () => null, saveLocalStorage: () => {},
   };
   Object.assign(p, { loadData: async () => stored, saveData: async (d) => { stored = JSON.parse(JSON.stringify(d)); }, addSettingTab: nop, registerEvent: nop, register: nop, registerInterval: nop,
@@ -781,6 +786,36 @@ const startupChecks = (async () => {
     hm.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }];
     await hm.p.keepActivity();
     eq(hm.stored().activity, { [T]: 2, [Y]: 1 }, 'activity: a lower count does not replace a higher one');
+    // Two devices: a synced lower count for a day keeps this device's higher one, and saves it back for the other.
+    hm.p.applyLook = () => {};
+    await hm.p.saveData({ ...hm.stored(), activity: { [T]: 1, [Y]: 1 } });
+    await hm.p.onExternalSettingsChange();
+    eq([hm.p.activity[T], hm.stored().activity[T]], [2, 2], 'activity: two devices disagree, the higher count is kept and saved');
+    await hm.p.saveData({ ...hm.stored(), activity: { [T]: 5, [Y]: 1 } });
+    await hm.p.onExternalSettingsChange();
+    eq(hm.p.activity[T], 5, 'activity: a higher synced count is taken');
+    const { activity: _gone, ...reset } = hm.stored();
+    await hm.p.saveData(reset);
+    await hm.p.onExternalSettingsChange();
+    eq([hm.p.activity, 'activity' in hm.stored()], [{}, false], 'activity: a settings file reset elsewhere stays reset');
+    // Saving merges with the file: a higher count another device wrote is never written over.
+    await hm.p.saveData({ ...hm.stored(), activity: { [Y]: 9 } });
+    hm.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }];
+    await hm.p.keepActivity();
+    eq(hm.stored().activity, { [Y]: 9, [T]: 1 }, 'activity: saving keeps a higher count already in the file');
+    // Today switched off within the minute after an edit: the waiting count is saved first.
+    const HM = { layout: { zones: { top: [], c1: [], c2: ['heatmap'], c3: [] }, hidden: [] } };
+    const fl = await startupRun(JSON.parse(JSON.stringify(HM)));
+    fl.p.app.vault.getMarkdownFiles = () => [{ stat: { mtime: now, ctime: now } }];
+    global.window = { setTimeout: () => 7, clearTimeout: () => {} };
+    try { fl.p.scheduleActivity(); } finally { delete global.window; }
+    ok(!('activity' in fl.stored()), 'activity: an edit waits its minute before saving');
+    global.window = { setTimeout: () => 7, clearTimeout: () => {} };
+    try { await fl.p.flushActivity(); } finally { delete global.window; }
+    eq(fl.stored().activity, { [T]: 1 }, 'activity: Today switched off saves the waiting count');
+    // Updated within the minute: the next start saves the day's count from the notes' dates.
+    const up = await startupRun(JSON.parse(JSON.stringify(HM)), [{ stat: { mtime: now, ctime: now } }, { stat: { mtime: y, ctime: y } }]);
+    eq(up.stored().activity, { [T]: 1, [Y]: 1 }, 'activity: the next start keeps the count an update cut short');
   }
   ok(on.touched.includes('setViewState'), 'startup, no saved setting: Today opens as before');
   eq([on.cm.exts.length, on.cm.updated], [0, 0], 'startup: Today adds no editor extension (the marker hiding left with the companion add-on)');

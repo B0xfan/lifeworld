@@ -814,6 +814,16 @@ const start = async (data) => {
     eq([v.folders.goals, v.folders.projects, v.sidebar.groups[0].folders, v.sidebar.icons, v.sidebar.life], ['L/Aims', 'L/Projects', ['Aims'], { Aims: 'target' }, 'L'], 'a renamed folder: its setting, group and icon follow together');
     rn.host.unload();
   }
+  // The Projects folder moved out of the base folder: the built-in lists still show, from where it is now.
+  {
+    const mv = await start({ lifeworld: { vault: { folders: { projects: 'Work/Projects' }, sidebar: { life: 'L', groups: [{ id: 'd', label: 'D', folders: ['Goals', 'Work projects', 'Unsorted projects'] }] } } } });
+    eq(SBL.lifePath('Work projects'), 'L/Projects', 'a Projects setting pointing at no folder: the base folder\'s Projects, as before');
+    mv.app.vault.getAbstractFileByPath = (p) => (p === 'Work/Projects' ? new TFolder('Work/Projects', []) : null);
+    eq(SBL.buildLifeGroups(['Goals']).find((g) => g.id === 'd').items, ['Goals', 'Work projects', 'Unsorted projects'], 'Projects outside the base folder: its lists stay in their group');
+    eq([SBL.lifePath('Work projects'), SBL.lifePath('Goals')], ['Work/Projects', 'L/Goals'], 'Projects outside the base folder: the lists read the folder where it is');
+    eq([...SBL.hiddenUnderRooms([{ items: ['Goals', 'Work projects'] }])], ['L', 'L/Goals'], 'Projects outside the base folder: its own folder still shows in its room');
+    mv.host.unload();
+  }
   // The owner's preset (the frozen vault's LifeWorld file): the very groups, icons, names, counts
   // and rooms the old code had, so the owner's Sidebar draws as before.
   const ownerFile = JSON.parse(fs.readFileSync(path.join(FIX, '.obsidian', 'plugins', 'lifeworld', 'data.json'), 'utf8'));

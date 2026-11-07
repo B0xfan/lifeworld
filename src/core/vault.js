@@ -222,4 +222,8 @@ function pathsAfterRename(oldPath, newPath, topFolders = []) {
   return Object.keys(change).length ? change : null;
 }
 
-export { movePath, pathsAfterRename, BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
+// Whether a folder is in the vault, for a part with no app at hand; LifeWorld sets it at start (none before).
+/** @type {{ folder: (path: string) => boolean }} */
+const vaultHas = { folder: () => false };
+
+export { vaultHas, movePath, pathsAfterRename, BAD_NAME, RESERVED, isReserved, FOLDER_DEFAULTS, PROPS, DAILY_DEFAULTS, folders as vaultFolders, names as propNames, feeds as feedNotes, sidebar as sidebarContent, planning, setVault, startWith, namesProblem, dailyNotes, inTaskFolders, readable, writable, toNote, isRenamed };
