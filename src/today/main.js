@@ -110,7 +110,7 @@ import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTi
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
-import { addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_PREVIEW } from './notes.js'; // the Notes card (1.5.0)
+import { addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_PREVIEW, noteParts } from './notes.js'; // the Notes card (1.5.0)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
 import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
 import { drawRows, blockRow } from '../core/settings';
@@ -1101,7 +1101,7 @@ const logic = {
   normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
-  addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile,
+  addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, noteParts,
 };
 
 /* ========================================================================== *
@@ -3157,7 +3157,7 @@ class TodayView extends ItemView {
     const shown = this.notesExpanded ? notes.open : notes.open.slice(0, NOTES_PREVIEW);
     for (const n of [...notes.pinned, ...shown]) {
       const pinned = n.section === 'Pinned';
-      const row = list.createDiv({ cls: `a4t-note${pinned ? ' is-pinned' : ''}` });
+      const row = list.createDiv({ cls: `a4t-note${pinned ? ' is-pinned' : n === shown[0] ? ' is-latest' : ''}` });
       const top = row.createDiv({ cls: 'a4t-note-top' });
       top.createSpan({ cls: 'a4t-note-day', text: noteDay(n.day, today) });
       const acts = top.createSpan({ cls: 'a4t-note-acts' });
@@ -3184,14 +3184,20 @@ class TodayView extends ItemView {
     catch (e) { console.error('[LifeWorld] note not moved', e); new Notice('Could not change that note.'); }
   }
 
-  // A note's words, its [[links]] clickable (they open the note, a new tab on Cmd/Ctrl-click).
+  // A note's words, its [[links]] clickable (they open the note, a new tab on Cmd/Ctrl-click) and its web
+  // addresses too (they open in the browser).
   /** @param {HTMLElement} parent @param {string} text @param {string} from */
   noteText(parent, text, from) {
-    for (const part of text.replace(/!\[\[/g, '[[').split(/(\[\[[^\]]+\]\])/)) {
-      if (!part.startsWith('[[')) { if (part) parent.appendText(part); continue; }
-      const inner = part.slice(2, -2);
-      const target = inner.split('|')[0];
-      const a = parent.createEl('a', { cls: 'a4t-note-link', text: inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target.split('#')[0] || target, attr: { tabindex: '0', role: 'link' } });
+    for (const p of noteParts(text)) {
+      if (!p.wiki && !p.url) { parent.appendText(p.text); continue; }
+      const a = parent.createEl('a', { cls: 'a4t-note-link', text: p.text, attr: { tabindex: '0', role: 'link' } });
+      if (p.url) {
+        const url = p.url;
+        a.setAttr('href', url); a.setAttr('target', '_blank'); a.setAttr('rel', 'noopener'); a.setAttr('title', url);
+        a.addEventListener('click', (e) => { e.preventDefault(); window.open(url, '_blank'); });
+        continue;
+      }
+      const target = p.wiki || '';
       const open = (/** @type {MouseEvent | KeyboardEvent} */ e) => { this.app.workspace.openLinkText(target, from, Keymap.isModEvent(e)); };
       a.addEventListener('click', open);
       a.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(e); });

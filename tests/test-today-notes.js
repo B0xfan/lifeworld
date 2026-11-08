@@ -80,6 +80,19 @@ for (const bad of ['Plans: 2026', '.obsidian/x.md', 'a/.hidden/b', 'x#y', 'a//b'
 assert.ok(T.WIDGETS.some((w) => w.id === 'notes' && w.zone === 'c1'));
 assert.ok(T.STARTER_OFF.includes('notes') && T.ADDED_OFF.includes('notes'));
 
+// 9. (1.5.1) Links in a note: [[links]], [words](https://...), bare http(s) addresses; nothing else.
+const P = T.noteParts;
+assert.deepStrictEqual(P('https://example.org'), [{ text: 'example.org', url: 'https://example.org' }]);
+assert.deepStrictEqual(P('See https://example.com/buy/. Thanks'), [{ text: 'See ' }, { text: 'example.com/buy', url: 'https://example.com/buy/' }, { text: '. Thanks' }]);
+assert.deepStrictEqual(P('(http://a.com/x)'), [{ text: '(' }, { text: 'a.com/x', url: 'http://a.com/x' }, { text: ')' }]);
+assert.deepStrictEqual(P('Ask [[Alex|K]] about [the deck](https://x.io/d) and [[Sam#Notes]]'), [{ text: 'Ask ' }, { text: 'K', wiki: 'Alex' }, { text: ' about ' }, { text: 'the deck', url: 'https://x.io/d' }, { text: ' and ' }, { text: 'Sam', wiki: 'Sam#Notes' }]);
+assert.deepStrictEqual(P('javascript:alert(1) [x](javascript:alert(1)) ftp://a.b'), [{ text: 'javascript:alert(1) [x](javascript:alert(1)) ftp://a.b' }]);
+assert.deepStrictEqual(P('see https://w.org/wiki/Foo_(bar).'), [{ text: 'see ' }, { text: 'w.org/wiki/Foo_(bar)', url: 'https://w.org/wiki/Foo_(bar)' }, { text: '.' }]);
+assert.deepStrictEqual(P('(see https://a.com/x.)'), [{ text: '(see ' }, { text: 'a.com/x', url: 'https://a.com/x' }, { text: '.)' }]);
+assert.deepStrictEqual(P('plain words'), [{ text: 'plain words' }]);
+assert.deepStrictEqual(P(''), []);
+assert.strictEqual(P('a https://b.c/d?e=1&f=2, g').map((x) => x.text).join(''), 'a b.c/d?e=1&f=2, g');
+
 // 8. A real note (copy) survives an add and a tick untouched apart from the one line.
 if (process.env.LW_REAL_NOTE) {
   const real = fs.readFileSync(process.env.LW_REAL_NOTE, 'utf8');

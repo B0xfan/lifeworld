@@ -498,9 +498,23 @@ html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-z
 /* Notes card (1.5.0, mockup A approved 2026-11-08): pinned notes on top in the accent wash, open notes
  * newest first; each open note's check always faint, the pin only on hover or keyboard focus
  * (always faint on a touch screen, which has no hover). */
-html:not(#a4t-guard) .a4t-root .a4t-notes-add { margin: 2px 0 12px; }
-html:not(#a4t-guard) .a4t-root .a4t-notes { display: flex; flex-direction: column; gap: 4px; }
-html:not(#a4t-guard) .a4t-root .a4t-note { padding: 5px 8px 6px; border-left: 3px solid transparent; border-radius: 0 var(--a4t-r-control) var(--a4t-r-control) 0; }
+html:not(#a4t-guard) .a4t-root .a4t-notes-add { margin: 2px 0 12px; padding: 6px 10px; gap: 8px; }
+/* 1.5.1: mockup A draws the add box compact, its text the size of a note, and "Show all" small at the left. */
+html:not(#a4t-guard) .a4t-root .a4t-notes-add textarea.a4t-capture-text { font-size: 13px; }
+html:not(#a4t-guard) .a4t-root .a4t-notes-add .a4t-ic svg { width: 13px; height: 13px; }
+html:not(#a4t-guard) .a4t-root .a4t-notes-add .a4t-capture-send { font-size: 10px; padding: 1px 5px; }
+html:not(#a4t-guard) .a4t-root .a4t-notes .a4t-more { align-self: flex-start; padding-left: 26px; font: 11px var(--a4t-f-mono); text-decoration: underline; text-underline-offset: 2px; }
+html:not(#a4t-guard) .a4t-root .a4t-notes { display: flex; flex-direction: column; }
+html:not(#a4t-guard) .a4t-root .a4t-note { position: relative; padding: 4px 8px 10px 26px; border-left: 3px solid transparent; border-radius: 0 var(--a4t-r-control) var(--a4t-r-control) 0; }
+/* 1.5.1: the project-page timeline of mockup A, one dot per note on a thin line. */
+html:not(#a4t-guard) .a4t-root .a4t-note::before { content: ''; position: absolute; z-index: 1; left: 6px; top: 8px; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; background: var(--a4t-bg2); border: 1.6px solid var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-note::after { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 1px; background: var(--a4t-hair2); }
+html:not(#a4t-guard) .a4t-root .a4t-note:first-child::after { top: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-note:last-of-type::after { bottom: auto; height: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-note:only-of-type::after { display: none; }
+html:not(#a4t-guard) .a4t-root .a4t-note.is-latest::before, html:not(#a4t-guard) .a4t-root .a4t-note.is-pinned::before { background: var(--a4t-marker); border-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-note.is-latest::before { box-shadow: 0 0 0 3px var(--a4t-marker-soft); }
+html:not(#a4t-guard) .a4t-root .a4t-note.is-latest .a4t-note-day { color: var(--a4t-marker); }
 html:not(#a4t-guard) .a4t-root .a4t-note:hover, html:not(#a4t-guard) .a4t-root .a4t-note:focus-within { background: var(--a4t-wash); }
 html:not(#a4t-guard) .a4t-root .a4t-note.is-pinned { background: var(--a4t-marker-soft); border-left-color: var(--a4t-marker); }
 html:not(#a4t-guard) .a4t-root .a4t-note-top { display: flex; align-items: center; gap: 8px; min-height: 18px; }
@@ -513,5 +527,5 @@ html:not(#a4t-guard) .a4t-root .a4t-note-done { opacity: .55; }
 html:not(#a4t-guard) .a4t-root .a4t-note-pin { opacity: 0; }
 html:not(#a4t-guard) .a4t-root .a4t-note:hover .a4t-note-pin, html:not(#a4t-guard) .a4t-root .a4t-note:focus-within .a4t-note-pin { opacity: 1; }
 html:not(#a4t-guard) body.is-mobile .a4t-root .a4t-note-pin { opacity: .45; }
-html:not(#a4t-guard) .a4t-root .a4t-note-text { font-size: 14px; line-height: 1.45; color: var(--a4t-paper); overflow-wrap: anywhere; }
-html:not(#a4t-guard) .a4t-root .a4t-note-link { color: inherit; border-bottom: 1px solid var(--a4t-faint); cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-note-text { font-size: 13.5px; line-height: 1.45; color: var(--a4t-paper); overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-note-link { color: inherit; text-decoration: none; border-bottom: 1px solid var(--a4t-faint); cursor: pointer; }

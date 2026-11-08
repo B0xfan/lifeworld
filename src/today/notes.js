@@ -126,4 +126,31 @@ const normalizeNotesFile = (v) => cleanNotesFile(v) || NOTES_FILE;
 
 const NOTES_PREVIEW = 3;
 
-export { sectionRange, noteLine, addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_FILE, NOTES_PREVIEW };
+// A note's text in pieces for the card (1.5.1): plain words, [[links]], [words](https://…) and bare
+// http(s) addresses. Only http(s) ever becomes a web link; ends like "." or ")" stay outside it.
+/** @param {string} text @returns {Array<{ text: string, wiki?: string, url?: string }>} */
+function noteParts(text) {
+  /** @type {Array<{ text: string, wiki?: string, url?: string }>} */
+  const out = [];
+  const re = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>]+)/gi;
+  const src = text.replace(/!\[\[/g, '[[');
+  let at = 0;
+  for (let m; (m = re.exec(src));) {
+    let end = m.index + m[0].length;
+    let url = m[3] || m[4];
+    if (m[4]) {
+      let t = url.replace(/[.,;:!?'"\]]+$/, '');
+      // A closing bracket ends the link only when it has no opening one inside it (Foo_(bar) keeps it).
+      while (t.endsWith(')') && t.split(')').length > t.split('(').length) t = t.slice(0, -1).replace(/[.,;:!?'"\]]+$/, '');
+      end -= url.length - t.length; url = t;
+    }
+    if (m.index > at) out.push({ text: src.slice(at, m.index) });
+    if (m[1]) { const target = m[1].split('|')[0]; out.push({ text: m[1].includes('|') ? m[1].slice(m[1].indexOf('|') + 1) : target.split('#')[0] || target, wiki: target }); }
+    else out.push({ text: m[2] || url.replace(/^https?:\/\//i, '').replace(/\/$/, ''), url });
+    at = end; re.lastIndex = end;
+  }
+  if (at < src.length) out.push({ text: src.slice(at) });
+  return out;
+}
+
+export { sectionRange, noteLine, addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_FILE, NOTES_PREVIEW, noteParts };
