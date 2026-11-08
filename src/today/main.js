@@ -110,7 +110,7 @@ import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTi
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
-import { addNote, readNotes, moveNote, noteDay, normalizeNotesFile, NOTES_PREVIEW } from './notes.js'; // the Notes card (1.5.0)
+import { addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_PREVIEW } from './notes.js'; // the Notes card (1.5.0)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
 import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
 import { drawRows, blockRow } from '../core/settings';
@@ -1101,7 +1101,7 @@ const logic = {
   normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
-  addNote, readNotes, moveNote, noteDay, normalizeNotesFile,
+  addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile,
 };
 
 /* ========================================================================== *
@@ -1152,7 +1152,7 @@ class TodayPlugin extends Plugin {
     }));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
     // The Notes card's file renamed in Obsidian: the setting follows it.
-    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => { if (f instanceof TFile && oldPath === this.notesFile) { this.notesFile = f.path; this.saveNotesFile(f.path).catch((e) => console.error('[LifeWorld] notes file not saved', e)); } }));
+    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => { if (f instanceof TFile && oldPath === this.notesFile && cleanNotesFile(f.path) === f.path) { this.notesFile = f.path; this.saveNotesFile(f.path).catch((e) => console.error('[LifeWorld] notes file not saved', e)); } }));
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
     // The Today page off with pop-ups on (LifeWorld sets popupsOnly, 2026-11-07 mockup): the pop-ups only, nothing of the page.
     if (this.popupsOnly) return;
@@ -2069,9 +2069,9 @@ class TodaySettingTab extends PluginSettingTab {
         t.setPlaceholder('Today notes.md').setValue(this.plugin.notesFile);
         t.inputEl.setAttr('aria-label', 'Notes file');
         t.inputEl.addEventListener('change', async () => {
-          try { await this.plugin.saveNotesFile(t.getValue()); } catch (e) { console.error('[LifeWorld] notes file not saved', e); new Notice('The notes file could not be saved.'); }
-          const want = t.getValue().trim().replace(/^\/+|\/+$/g, '');
-          if (want && this.plugin.notesFile !== (want.toLowerCase().endsWith('.md') ? want : `${want}.md`)) new Notice(`That name cannot be used for a note, so ${this.plugin.notesFile} is used.`);
+          // A name that cannot be a note keeps the file you had (empty = the default).
+          if (t.getValue().trim() && !cleanNotesFile(t.getValue())) new Notice('That name cannot be used for a note. The notes file stays as it was.');
+          else try { await this.plugin.saveNotesFile(t.getValue()); } catch (e) { console.error('[LifeWorld] notes file not saved', e); new Notice('The notes file could not be saved.'); }
           t.setValue(this.plugin.notesFile);
         });
       }) },
@@ -3142,15 +3142,14 @@ class TodayView extends ItemView {
     this.notesSeq = seq;
     const path = this.plugin.notesFile;
     const f = this.app.vault.getAbstractFileByPath(path);
-    let text = '';
-    let notes = { pinned: /** @type {ReturnType<typeof readNotes>['pinned']} */ ([]), open: /** @type {ReturnType<typeof readNotes>['open']} */ ([]) };
-    try { if (f instanceof TFile) { text = await this.app.vault.cachedRead(f); notes = readNotes(text); } }
-    catch (e) { console.error('[LifeWorld] notes read failed', e); this.notesDrawn = ''; list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
-    if (seq !== this.notesSeq || list !== this.notesList) return; // a newer draw is on its way
-    // The same text in the same file: nothing to redraw (a page refresh keeps focus and hover on the card).
-    const today = dayOf(new Date());
-    const key = `${today}\n${path}\n${text}`;
+    // Same day, file and file version as last time: nothing to redraw (a page refresh keeps focus and hover).
+    const key = `${dayOf(new Date())}\n${path}\n${f instanceof TFile ? `${f.stat.mtime}:${f.stat.size}` : '-'}`;
     if (!force && key === this.notesDrawn && list.hasChildNodes()) return;
+    let notes = { pinned: /** @type {ReturnType<typeof readNotes>['pinned']} */ ([]), open: /** @type {ReturnType<typeof readNotes>['open']} */ ([]) };
+    try { if (f instanceof TFile) notes = readNotes(await this.app.vault.cachedRead(f)); }
+    catch (e) { console.error('[LifeWorld] notes read failed', e); if (seq !== this.notesSeq) return; this.notesDrawn = ''; list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
+    if (seq !== this.notesSeq || list !== this.notesList) return; // a newer draw is on its way
+    const today = dayOf(new Date());
     this.notesDrawn = key;
     list.empty();
     if (this.notesCount) this.notesCount.setText(String(notes.pinned.length + notes.open.length));

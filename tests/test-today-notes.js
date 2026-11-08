@@ -60,7 +60,11 @@ assert.strictEqual(ticked.replace('- [[2026-11-01]] Old one\n', '').replace('\n#
 // 5b. Review round 1: a fenced copy of a note is never the one moved; indented sub-lines are not notes.
 const fenced = '## Notes\n```\n- [[2026-11-01]] Old one\n```\n- [[2026-11-01]] Old one\n  - sub line\n';
 assert.deepStrictEqual(T.readNotes(fenced).open.map((n) => n.text), ['Old one']);
-assert.strictEqual(T.moveNote(fenced, 'Notes', '- [[2026-11-01]] Old one', 'Done'), '## Notes\n```\n- [[2026-11-01]] Old one\n```\n  - sub line\n\n## Done\n- [[2026-11-01]] Old one\n');
+assert.strictEqual(T.moveNote(fenced, 'Notes', '- [[2026-11-01]] Old one', 'Done'), '## Notes\n```\n- [[2026-11-01]] Old one\n```\n\n## Done\n- [[2026-11-01]] Old one\n  - sub line\n', 'sub-lines move with their note');
+// Review round 2: one stray leading space is still a note; a date that is not one shows as typed; a refused name is ''.
+assert.deepStrictEqual(T.readNotes('## Notes\n - [[2026-11-05]] Call Ana\n- [[2026-13-45]] odd\n').open.map((n) => [n.text, T.noteDay(n.day, '2026-11-08')]), [['odd', '2026-13-45'], ['Call Ana', 'Thu, Nov 5']]);
+assert.strictEqual(T.cleanNotesFile('Plans: 2026'), '');
+assert.strictEqual(T.cleanNotesFile('Work/Notes'), 'Work/Notes.md');
 
 // 6. Dates and the file setting.
 assert.strictEqual(T.noteDay('2026-11-08', '2026-11-08'), 'Today');

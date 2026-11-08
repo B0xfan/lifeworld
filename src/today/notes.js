@@ -7,8 +7,10 @@
 
 import { MONTHS_SHORT, WEEKDAYS_SHORT, weekdayOf, partsOf } from '../core/dates';
 
-// Top-level list lines only: an indented sub-line stays with the note above it.
-const LINE = /^[-*+][ \t]+(?!\[[ xX]\])(.*)$/;
+// List lines at the left edge (one stray space allowed, as pasting leaves); more indented lines are a
+// note's sub-lines: not notes, and they move with the note above them.
+const LINE = /^ ?[-*+][ \t]+(?!\[[ xX]\])(.*)$/;
+const SUB = /^(\t| {2,})\S/;
 const DATED = /^\[\[(\d{4}-\d{2}-\d{2})(?:\|[^\]]*)?\]\][ \t]*/;
 
 // The "## <name>" section: from the end of its heading line to the next # or ## heading, code blocks
@@ -91,9 +93,12 @@ function moveNote(s, from, raw, to) {
   let fence = false;
   const i = lines.findIndex((l, k) => { if (/^\s*(```|~~~)/.test(l)) { fence = !fence; return false; } return k > 0 && !fence && l.replace(/\r$/, '') === raw; });
   if (i < 0) return null;
-  lines.splice(i, 1);
+  let n = 1;
+  while (i + n < lines.length && SUB.test(lines[i + n])) n++;
+  const moved = lines.splice(i, n).map((l) => l.replace(/\r$/, ''));
+  moved[0] = moved[0].trim();
   const without = t.slice(0, r.start) + lines.join('\n') + t.slice(r.end);
-  return appendToSection(without, to, raw.trim());
+  return appendToSection(without, to, moved.join('\n'));
 }
 
 // A note's date as the card shows it: 'Today', else 'Fri, Nov 6'.
@@ -102,19 +107,23 @@ function noteDay(day, today) {
   if (!day) return '';
   if (day === today) return 'Today';
   const { m, d } = partsOf(day);
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return day; // a hand-typed date that is not one
   return `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}`;
 }
 
 // The notes file setting: a note path ending in .md, else the default (also for a name Obsidian or the
 // disk refuses, or a hidden or config folder).
 const NOTES_FILE = 'Today notes.md';
+// -> the path, or '' when it cannot be one.
 /** @param {unknown} v */
-function normalizeNotesFile(v) {
+function cleanNotesFile(v) {
   const p = typeof v === 'string' ? v.trim().replace(/^\/+|\/+$/g, '') : '';
-  if (!p || /[\\:*?"<>|#^[\]]/.test(p) || p.split('/').some((x) => !x || x.startsWith('.'))) return NOTES_FILE;
+  if (!p || /[\\:*?"<>|#^[\]]/.test(p) || p.split('/').some((x) => !x || x.startsWith('.'))) return '';
   return p.toLowerCase().endsWith('.md') ? p : `${p}.md`;
 }
+/** @param {unknown} v */
+const normalizeNotesFile = (v) => cleanNotesFile(v) || NOTES_FILE;
 
 const NOTES_PREVIEW = 3;
 
-export { sectionRange, noteLine, addNote, readNotes, moveNote, noteDay, normalizeNotesFile, NOTES_FILE, NOTES_PREVIEW };
+export { sectionRange, noteLine, addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, NOTES_FILE, NOTES_PREVIEW };

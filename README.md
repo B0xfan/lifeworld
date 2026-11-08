@@ -28,6 +28,7 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - Mood: a short check-in and a page that shows how your weeks went
 - World clock: your time and any places you add, on a 24-hour sun ring or a classic dial
 - Active projects, recent notes, pinned shortcuts
+- Notes: short notes that stay on the Today page until you tick them off. Pin one to keep it at the top; links to other notes open them. They live in one ordinary note (Settings, Notes file), so you can edit them by hand too
 - Latest journal entry, and a journal box that writes a line into today's daily note
 - Activity heatmap: a year of active days and your current streak
 - News feeds: the newest headlines from feeds you add, off until you turn it on
