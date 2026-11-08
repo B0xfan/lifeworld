@@ -17,15 +17,15 @@ const T = part('a4-today').logic;
 const strip = (s, line) => s.split('\n').filter((l) => l.trim() !== line.trim()).join('\n').replace(/\n{2,}/g, '\n').trim();
 
 // 1. First note into an empty file, then a second; both under ## Notes, dated, one line each.
-let s = T.addNote('', '2026-11-06', 'Waiting on [[Karla]]\nfor the photos ');
-assert.strictEqual(s, '## Notes\n- [[2026-11-06]] Waiting on [[Karla]] for the photos\n');
+let s = T.addNote('', '2026-11-06', 'Waiting on [[Sam]]\nfor the photos ');
+assert.strictEqual(s, '## Notes\n- [[2026-11-06]] Waiting on [[Sam]] for the photos\n');
 s = T.addNote(s, '2026-11-08', 'Call the bank');
-assert.strictEqual(s, '## Notes\n- [[2026-11-06]] Waiting on [[Karla]] for the photos\n- [[2026-11-08]] Call the bank\n');
+assert.strictEqual(s, '## Notes\n- [[2026-11-06]] Waiting on [[Sam]] for the photos\n- [[2026-11-08]] Call the bank\n');
 assert.strictEqual(T.addNote(s, '2026-11-08', '  \n '), null, 'an empty box saves nothing');
 
 // 2. Read: open notes newest first.
 let r = T.readNotes(s);
-assert.deepStrictEqual(r.open.map((n) => n.text), ['Call the bank', 'Waiting on [[Karla]] for the photos']);
+assert.deepStrictEqual(r.open.map((n) => n.text), ['Call the bank', 'Waiting on [[Sam]] for the photos']);
 assert.deepStrictEqual(r.pinned, []);
 
 // 3. Pin, unpin, tick off: the line moves, nothing else changes.
@@ -37,7 +37,7 @@ r = T.readNotes(p);
 assert.deepStrictEqual(r.pinned.map((n) => n.text), ['Call the bank']);
 assert.strictEqual(r.open.length, 1);
 const back = T.moveNote(p, 'Pinned', r.pinned[0].raw, 'Notes');
-assert.deepStrictEqual(T.readNotes(back).open.map((n) => n.text).sort(), ['Call the bank', 'Waiting on [[Karla]] for the photos']);
+assert.deepStrictEqual(T.readNotes(back).open.map((n) => n.text).sort(), ['Call the bank', 'Waiting on [[Sam]] for the photos']);
 const done = T.moveNote(s, 'Notes', bank, 'Done');
 assert.ok(/## Done\n- \[\[2026-11-08\]\] Call the bank\n$/.test(done));
 assert.strictEqual(T.readNotes(done).open.length, 1, 'a ticked note leaves the card');

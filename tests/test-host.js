@@ -981,7 +981,7 @@ const start = async (data) => {
       const wrows = () => wh.kids.filter((k) => k.rec);
       const row = (name) => wrows().find((r) => r.rec.name === name);
       eq(groups(), ['Top strip', 'Left', 'Middle', 'Right'], 'widget list grouped Top, Left, Middle, Right');
-      eq(wrows().map((r) => [r.rec.name, r.rec.on]), [['Quick capture', true], ['Weather', false], ['Morning tasks', true], ['Afternoon tasks', true], ['Overdue', true], ['Planner shortcut', false],
+      eq(wrows().map((r) => [r.rec.name, r.rec.on]), [['Quick capture', true], ['Weather', false], ['Morning tasks', true], ['Afternoon tasks', true], ['Overdue', true], ['Planner shortcut', false], ['Notes', false],
         ['Calendar', true], ['Recent notes', true], ['Mood', true], ['Habits', true], ['World clock', false], ['Activity heatmap', false], ['Active projects', false], ['Latest journal', false], ['Pinned shortcuts', false], ['Journal box', false], ['News feeds', false]], 'every launch widget listed with its switch; the starter set on; the checkbox card left out for note tasks');
       const pj = row('Active projects');
       eq([pj.rec.desc, pj.rec.disabled, pj.settingEl.cls.includes('lw-dim')], ['Needs Projects (off under Parts)', true, true], 'a widget whose part is off: greyed, says which part, cannot be switched on');
