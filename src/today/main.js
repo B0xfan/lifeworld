@@ -110,6 +110,7 @@ import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTi
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
+import { addNote, readNotes, moveNote, noteDay, normalizeNotesFile, NOTES_PREVIEW } from './notes.js'; // the Notes card (1.5.0)
 import { SG_KEY, normalizeWeather, findPlaces, weatherFor, weatherError, refreshWeather } from '../core/weather'; // the forecast for a town (launch section 7)
 import { keyOf, setKey, errField } from '../core/sources'; // the Stormglass key, kept on this device
 import { drawRows, blockRow } from '../core/settings';
@@ -823,6 +824,7 @@ const WIDGETS = [
   { id: 'todaytasks', name: "Today's tasks", desc: 'Checkbox tasks for today', zone: 'c1', tasks: 'checkbox' },
   { id: 'overdue', name: 'Overdue', desc: 'Everything left on a day that has passed', zone: 'c1' },
   { id: 'plannerlink', name: 'Planner shortcut', desc: 'One button to the Planner', zone: 'c1', needs: 'planner' },
+  { id: 'notes', name: 'Notes', desc: 'Notes that stay on the Today page', zone: 'c1' },
   { id: 'calendar', name: 'Calendar', desc: 'Today and the next 7 days', zone: 'c2' },
   { id: 'recent', name: 'Recent notes', desc: 'The notes you edited last', zone: 'c2' },
   { id: 'mood', name: 'Mood', desc: 'Last check-in', zone: 'c2' },
@@ -836,10 +838,10 @@ const WIDGETS = [
   { id: 'news', name: 'News feeds', desc: 'Headlines from feeds you add', zone: 'c3' },
 ];
 // A new install starts with the decided starter set (decision 10): everything else starts off.
-const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news'];
+const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news', 'notes'];
 // Widgets added at launch that a layout saved before them has never seen: they start off there, so an
 // existing Today page looks as before (criterion 43). Today's tasks only shows for checkbox tasks.
-const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox', 'heatmap', 'news'];
+const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox', 'heatmap', 'news', 'notes'];
 // Settings wording for a part that is off.
 /** @type {Record<string, string>} */
 const NEEDS_TEXT = { planner: 'Needs the Planner (off under Parts)', projects: 'Needs Projects (off under Parts)' };
@@ -1099,6 +1101,7 @@ const logic = {
   normalizeCalSel, normalizeUserName, calendarListFrom, groupCalendars, calendarNote, listUpdatedText, remindersFooter, CAL_GROUP_ORDER,
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
+  addNote, readNotes, moveNote, noteDay, normalizeNotesFile,
 };
 
 /* ========================================================================== *
@@ -1124,6 +1127,7 @@ class TodayPlugin extends Plugin {
     this.calSel = normalizeCalSel(saved.calendars);
     this.openOnStartup = normalizeOpenOnStartup(saved.openOnStartup);
     this.userName = normalizeUserName(saved.userName);
+    this.notesFile = normalizeNotesFile(saved.notesFile);
     this.pins = normalizePins(saved.pins);
     this.places = normalizePlaces(saved.places);
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
@@ -1147,6 +1151,8 @@ class TodayPlugin extends Plugin {
       this.app.saveLocalStorage(REMINDERS_SEEN, seen);
     }));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
+    // The Notes card's file renamed in Obsidian: the setting follows it.
+    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => { if (f instanceof TFile && oldPath === this.notesFile) this.saveNotesFile(f.path).catch((e) => console.error('[LifeWorld] notes file not saved', e)); }));
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
     // The Today page off with pop-ups on (LifeWorld sets popupsOnly, 2026-11-07 mockup): the pop-ups only, nothing of the page.
     if (this.popupsOnly) return;
@@ -1191,6 +1197,7 @@ class TodayPlugin extends Plugin {
     this.calSel = normalizeCalSel(saved.calendars);
     this.openOnStartup = normalizeOpenOnStartup(saved.openOnStartup);
     this.userName = normalizeUserName(saved.userName);
+    this.notesFile = normalizeNotesFile(saved.notesFile);
     this.pins = normalizePins(saved.pins);
     this.places = normalizePlaces(saved.places);
     this.clockStyle = normalizeClockStyle(saved.clockStyle);
@@ -1452,6 +1459,32 @@ class TodayPlugin extends Plugin {
     await this.saveData(data);
     this.userName = userName; // only once saved: a failed write leaves the name as it was
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.data && v.renderHeader) v.renderHeader(); });
+  }
+
+  /** @param {unknown} path */
+  async saveNotesFile(path) {
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
+    const file = normalizeNotesFile(path);
+    data.notesFile = file;
+    await this.saveData(data);
+    this.notesFile = file; // only once saved
+    this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.drawNotes) v.drawNotes(); });
+  }
+
+  // The Notes card's file changed by fn(text) -> text, or null for no change (made, folders too, when missing).
+  // -> false when fn made no change.
+  /** @param {(text: string) => string | null} fn */
+  async editNotes(fn) {
+    const path = this.notesFile;
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (f instanceof TFile) { let changed = false; await this.app.vault.process(f, (t) => { const n = fn(t); changed = n !== null; return n === null ? t : n; }); return changed; }
+    if (f) throw new Error(`${path} is a folder`);
+    const content = fn('');
+    if (content === null) return false;
+    const steps = path.split('/').slice(0, -1);
+    for (let i = 1; i <= steps.length; i++) { const dir = steps.slice(0, i).join('/'); if (!this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir); }
+    await this.app.vault.create(path, content);
+    return true;
   }
 
   /** @param {unknown} look */
@@ -2032,6 +2065,14 @@ class TodaySettingTab extends PluginSettingTab {
         });
         s.settingEl.addClass('a4t-startup');
       } },
+      { name: 'Notes file', desc: 'The note that holds the Notes card. Made when you add the first note.', render: (s) => s.addText((t) => {
+        t.setPlaceholder('Today notes.md').setValue(this.plugin.notesFile);
+        t.inputEl.setAttr('aria-label', 'Notes file');
+        t.inputEl.addEventListener('change', async () => {
+          try { await this.plugin.saveNotesFile(t.getValue()); } catch (e) { console.error('[LifeWorld] notes file not saved', e); new Notice('The notes file could not be saved.'); }
+          t.setValue(this.plugin.notesFile);
+        });
+      }) },
       { name: 'Widgets', aliases: allWidgets().map((w) => w.name), render: (s) => { this.widgetsHost = blockRow(s, 'a4t-widget-list', true); this.renderWidgetList(); } },
       { name: 'Banner scene', desc: 'A picture behind the top of the Today page. It follows the time of day by itself, from dawn to night. While it is on, the greeting takes its colours from the scene.', render: (s) => s.addDropdown((d) => {
         SCENES.forEach((o) => d.addOption(o.id, o.name));
@@ -2394,6 +2435,11 @@ class TodayView extends ItemView {
     this.registerEvent(this.app.vault.on('create', recentChanged));
     this.registerEvent(this.app.vault.on('delete', recentChanged));
     this.registerEvent(this.app.vault.on('rename', recentChanged));
+    // The Notes card follows its file: edited by hand, synced from another device, made, deleted or renamed.
+    /** @param {import('obsidian').TAbstractFile} f @param {string} [oldPath] */
+    const notesChanged = (f, oldPath) => { const p = this.plugin.notesFile; if (f.path === p || oldPath === p) this.drawNotes(); };
+    for (const ev of /** @type {const} */ (['modify', 'create', 'delete'])) this.registerEvent(this.app.vault.on(ev, (f) => notesChanged(f)));
+    this.registerEvent(this.app.vault.on('rename', notesChanged));
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.updateWidth());
       this.ro.observe(root);
@@ -2878,6 +2924,7 @@ class TodayView extends ItemView {
         const wb = /** @type {HTMLElement} */ (el.querySelector('.a4t-wbody'));
         if (id === 'capture') { if (!el.dataset.built) this.renderCapture(wb); el.dataset.built = '1'; }
         else if (id === 'journalbox') { if (!el.dataset.built) this.renderJournalBox(wb, el); el.dataset.built = '1'; }
+        else if (id === 'notes') { if (!el.dataset.built) this.renderNotes(wb, el); else this.drawNotes(); el.dataset.built = '1'; }
         else this.renderWidget(id, wb, el);
       });
     }
@@ -2911,6 +2958,7 @@ class TodayView extends ItemView {
       if (id === 'projects') return this.renderProjects(body, el);
       if (id === 'journal') return this.renderJournal(body, el);
       if (id === 'journalbox') return this.renderJournalBox(body, el);
+      if (id === 'notes') return this.renderNotes(body, el);
       if (id === 'recent') return this.renderRecent(body, el);
       if (id === 'pinned') return this.renderPinned(body, el);
       if (id === 'clock') return this.renderClockWidget(body, el);
@@ -3053,6 +3101,89 @@ class TodayView extends ItemView {
     this.registerDomEvent(send, 'pointerdown', (e) => e.preventDefault());
     this.registerDomEvent(send, 'click', (e) => { e.preventDefault(); submit(); });
     this.registerDomEvent(send, 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); submit(); } });
+  }
+
+  // Notes card (1.5.0, mockup A approved 2026-11-08): an add box, the pinned notes on top in the accent
+  // wash, then the open notes newest first. The box is drawn once; drawNotes redraws the list alone.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderNotes(body, el) {
+    el.addClass('a4t-card');
+    const head = this.cardHead(body, 'Notes', 'Keep in mind', 0);
+    this.notesCount = /** @type {HTMLElement} */ (head.querySelector('.a4t-count'));
+    const box = body.createDiv({ cls: 'a4t-capture a4t-notes-add' });
+    setIcon(box.createSpan({ cls: 'a4t-ic' }), 'pencil');
+    const input = box.createEl('textarea', { cls: 'a4t-capture-text', attr: { rows: '1', placeholder: 'Add a note that stays here', autocomplete: 'off', 'aria-label': 'Add a note that stays here' } });
+    const send = box.createEl('kbd', { text: 'Enter', cls: 'a4t-capture-send', attr: { role: 'button', tabindex: '0', 'aria-label': 'Save the note', title: 'Save the note' } });
+    const submit = async () => {
+      if (!input.value.trim() || input.disabled) return;
+      input.disabled = true;
+      try { await this.plugin.editNotes((t) => addNote(t, dayOf(new Date()), input.value)); input.value = ''; }
+      catch (err) { console.error('[LifeWorld] note not saved', err); new Notice('Could not save that note. Your text is still in the box.'); }
+      finally { input.disabled = false; input.focus(); }
+    };
+    this.registerDomEvent(input, 'keydown', (e) => { if (e.key !== 'Enter' || e.isComposing) return; e.preventDefault(); submit(); });
+    this.registerDomEvent(send, 'pointerdown', (e) => e.preventDefault());
+    this.registerDomEvent(send, 'click', (e) => { e.preventDefault(); submit(); });
+    this.registerDomEvent(send, 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); submit(); } });
+    this.notesList = body.createDiv({ cls: 'a4t-notes' });
+    this.drawNotes();
+  }
+
+  async drawNotes() {
+    const list = this.notesList;
+    if (!list || !list.isConnected) return;
+    const path = this.plugin.notesFile;
+    const f = this.app.vault.getAbstractFileByPath(path);
+    let notes = { pinned: /** @type {ReturnType<typeof readNotes>['pinned']} */ ([]), open: /** @type {ReturnType<typeof readNotes>['open']} */ ([]) };
+    try { if (f instanceof TFile) notes = readNotes(await this.app.vault.cachedRead(f)); }
+    catch (e) { console.error('[LifeWorld] notes read failed', e); list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
+    if (list !== this.notesList) return; // the card was drawn again meanwhile
+    list.empty();
+    if (this.notesCount) this.notesCount.setText(String(notes.pinned.length + notes.open.length));
+    if (!notes.pinned.length && !notes.open.length) { list.createDiv({ cls: 'a4t-empty', text: 'nothing here yet' }); return; }
+    const today = dayOf(new Date());
+    const shown = this.notesExpanded ? notes.open : notes.open.slice(0, NOTES_PREVIEW);
+    for (const n of [...notes.pinned, ...shown]) {
+      const pinned = n.section === 'Pinned';
+      const row = list.createDiv({ cls: `a4t-note${pinned ? ' is-pinned' : ''}` });
+      const top = row.createDiv({ cls: 'a4t-note-top' });
+      top.createSpan({ cls: 'a4t-note-day', text: noteDay(n.day, today) });
+      const acts = top.createSpan({ cls: 'a4t-note-acts' });
+      const pin = acts.createEl('button', { cls: 'a4t-note-pin', attr: { 'aria-label': pinned ? 'Unpin' : 'Pin to the top', title: pinned ? 'Unpin' : 'Pin to the top' } });
+      setIcon(pin, 'pin');
+      pin.addEventListener('click', () => this.moveNote(n.section, n.raw, pinned ? 'Notes' : 'Pinned'));
+      if (!pinned) {
+        const done = acts.createEl('button', { cls: 'a4t-note-done', attr: { 'aria-label': 'Done, take it off Today', title: 'Done' } });
+        setIcon(done, 'check');
+        done.addEventListener('click', () => this.moveNote('Notes', n.raw, 'Done'));
+      }
+      this.noteText(row.createDiv({ cls: 'a4t-note-text' }), n.text, path);
+    }
+    const rest = notes.open.length - shown.length;
+    if (rest > 0) {
+      const more = list.createEl('button', { cls: 'a4t-more', text: `Show all ${notes.open.length}` });
+      more.addEventListener('click', () => { this.notesExpanded = true; this.drawNotes(); });
+    }
+  }
+
+  /** @param {string} from @param {string} raw @param {string} to */
+  async moveNote(from, raw, to) {
+    try { if (!(await this.plugin.editNotes((t) => moveNote(t, from, raw, to)))) { new Notice('That note changed in the meantime. The card shows it as it is now.'); this.drawNotes(); } }
+    catch (e) { console.error('[LifeWorld] note not moved', e); new Notice('Could not change that note.'); }
+  }
+
+  // A note's words, its [[links]] clickable (they open the note, a new tab on Cmd/Ctrl-click).
+  /** @param {HTMLElement} parent @param {string} text @param {string} from */
+  noteText(parent, text, from) {
+    for (const part of text.split(/(\[\[[^\]]+\]\])/)) {
+      if (!part.startsWith('[[')) { if (part) parent.appendText(part); continue; }
+      const inner = part.slice(2, -2);
+      const target = inner.split('|')[0];
+      const a = parent.createEl('a', { cls: 'a4t-note-link', text: inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target.split('#')[0], attr: { tabindex: '0', role: 'link' } });
+      const open = (/** @type {MouseEvent | KeyboardEvent} */ e) => { this.app.workspace.openLinkText(target, from, Keymap.isModEvent(e)); };
+      a.addEventListener('click', open);
+      a.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(e); });
+    }
   }
 
   // A task source that could not be read: one short plain line in the task card (criterion 28).

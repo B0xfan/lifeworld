@@ -494,3 +494,24 @@ html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-z
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top .a4t-w-upd:not(.is-stale) { color: var(--a4t-paper); }
 /* Some themes colour bold text themselves. */
 html:not(#a4t-guard) .a4t-root[data-a4t-scene] .a4t-page:not(.is-editing) .a4t-zone-top .a4t-w-main b { color: var(--a4t-paper); }
+
+/* Notes card (1.5.0, mockup A approved 2026-11-08): pinned notes on top in the accent wash, open notes
+ * newest first; each open note's check always faint, the pin only on hover or keyboard focus
+ * (always faint on a touch screen, which has no hover). */
+html:not(#a4t-guard) .a4t-root .a4t-notes-add { margin: 2px 0 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-notes { display: flex; flex-direction: column; gap: 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-note { padding: 5px 8px 6px; border-left: 3px solid transparent; border-radius: 0 var(--a4t-r-control) var(--a4t-r-control) 0; }
+html:not(#a4t-guard) .a4t-root .a4t-note:hover, html:not(#a4t-guard) .a4t-root .a4t-note:focus-within { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-note.is-pinned { background: var(--a4t-marker-soft); border-left-color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-note-top { display: flex; align-items: center; gap: 8px; min-height: 18px; }
+html:not(#a4t-guard) .a4t-root .a4t-note-day { flex: 1; font: 500 10px var(--a4t-f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-note-acts { display: flex; gap: 2px; }
+html:not(#a4t-guard) .a4t-root .a4t-note-acts button { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: var(--a4t-r-control); color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-note-acts button:hover { background: var(--a4t-bg3); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-note-acts svg { width: 14px; height: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-note-done { opacity: .55; }
+html:not(#a4t-guard) .a4t-root .a4t-note-pin { opacity: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-note:hover .a4t-note-pin, html:not(#a4t-guard) .a4t-root .a4t-note:focus-within .a4t-note-pin { opacity: 1; }
+html:not(#a4t-guard) body.is-mobile .a4t-root .a4t-note-pin { opacity: .45; }
+html:not(#a4t-guard) .a4t-root .a4t-note-text { font-size: 14px; line-height: 1.45; color: var(--a4t-paper); overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-note-link { color: inherit; border-bottom: 1px solid var(--a4t-faint); cursor: pointer; }
