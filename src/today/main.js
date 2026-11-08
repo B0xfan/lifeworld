@@ -3145,7 +3145,7 @@ class TodayView extends ItemView {
     let text = '';
     let notes = { pinned: /** @type {ReturnType<typeof readNotes>['pinned']} */ ([]), open: /** @type {ReturnType<typeof readNotes>['open']} */ ([]) };
     try { if (f instanceof TFile) { text = await this.app.vault.cachedRead(f); notes = readNotes(text); } }
-    catch (e) { console.error('[LifeWorld] notes read failed', e); list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
+    catch (e) { console.error('[LifeWorld] notes read failed', e); this.notesDrawn = ''; list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
     if (seq !== this.notesSeq || list !== this.notesList) return; // a newer draw is on its way
     // The same text in the same file: nothing to redraw (a page refresh keeps focus and hover on the card).
     const today = dayOf(new Date());
