@@ -1152,7 +1152,7 @@ class TodayPlugin extends Plugin {
     }));
     this.app.workspace.onLayoutReady(() => this.checkReminders());
     // The Notes card's file renamed in Obsidian: the setting follows it.
-    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => { if (f instanceof TFile && oldPath === this.notesFile) this.saveNotesFile(f.path).catch((e) => console.error('[LifeWorld] notes file not saved', e)); }));
+    this.registerEvent(this.app.vault.on('rename', (f, oldPath) => { if (f instanceof TFile && oldPath === this.notesFile) { this.notesFile = f.path; this.saveNotesFile(f.path).catch((e) => console.error('[LifeWorld] notes file not saved', e)); } }));
     this.register(() => { if (this.reminderStack) this.reminderStack.remove(); });
     // The Today page off with pop-ups on (LifeWorld sets popupsOnly, 2026-11-07 mockup): the pop-ups only, nothing of the page.
     if (this.popupsOnly) return;
@@ -2065,11 +2065,13 @@ class TodaySettingTab extends PluginSettingTab {
         });
         s.settingEl.addClass('a4t-startup');
       } },
-      { name: 'Notes file', desc: 'The note that holds the Notes card. Made when you add the first note.', render: (s) => s.addText((t) => {
+      { name: 'Notes file', desc: 'The note that holds the Notes card, made when you add the first note. Changing this switches to another note; to move your notes, rename the note itself.', render: (s) => s.addText((t) => {
         t.setPlaceholder('Today notes.md').setValue(this.plugin.notesFile);
         t.inputEl.setAttr('aria-label', 'Notes file');
         t.inputEl.addEventListener('change', async () => {
           try { await this.plugin.saveNotesFile(t.getValue()); } catch (e) { console.error('[LifeWorld] notes file not saved', e); new Notice('The notes file could not be saved.'); }
+          const want = t.getValue().trim().replace(/^\/+|\/+$/g, '');
+          if (want && this.plugin.notesFile !== (want.toLowerCase().endsWith('.md') ? want : `${want}.md`)) new Notice(`That name cannot be used for a note, so ${this.plugin.notesFile} is used.`);
           t.setValue(this.plugin.notesFile);
         });
       }) },
@@ -2381,6 +2383,8 @@ class TodayView extends ItemView {
     this.editing = false;
     this.panelOpen = false;
     this.overdueExpanded = false;
+    this.notesSeq = 0; // the Notes card: its newest draw, and the text it last drew
+    this.notesDrawn = '';
     /** @type {string | null} */
     this.renderedDay = null;
     /** @type {TodayData | null} */
@@ -3129,19 +3133,28 @@ class TodayView extends ItemView {
     this.drawNotes();
   }
 
-  async drawNotes() {
+  // force: draw even when the file text is the same as last time (Show all).
+  /** @param {boolean} [force] */
+  async drawNotes(force) {
     const list = this.notesList;
     if (!list || !list.isConnected) return;
+    const seq = this.notesSeq + 1;
+    this.notesSeq = seq;
     const path = this.plugin.notesFile;
     const f = this.app.vault.getAbstractFileByPath(path);
+    let text = '';
     let notes = { pinned: /** @type {ReturnType<typeof readNotes>['pinned']} */ ([]), open: /** @type {ReturnType<typeof readNotes>['open']} */ ([]) };
-    try { if (f instanceof TFile) notes = readNotes(await this.app.vault.cachedRead(f)); }
+    try { if (f instanceof TFile) { text = await this.app.vault.cachedRead(f); notes = readNotes(text); } }
     catch (e) { console.error('[LifeWorld] notes read failed', e); list.empty(); list.createDiv({ cls: 'a4t-empty', text: 'this part could not be drawn' }); return; }
-    if (list !== this.notesList) return; // the card was drawn again meanwhile
+    if (seq !== this.notesSeq || list !== this.notesList) return; // a newer draw is on its way
+    // The same text in the same file: nothing to redraw (a page refresh keeps focus and hover on the card).
+    const today = dayOf(new Date());
+    const key = `${today}\n${path}\n${text}`;
+    if (!force && key === this.notesDrawn && list.hasChildNodes()) return;
+    this.notesDrawn = key;
     list.empty();
     if (this.notesCount) this.notesCount.setText(String(notes.pinned.length + notes.open.length));
     if (!notes.pinned.length && !notes.open.length) { list.createDiv({ cls: 'a4t-empty', text: 'nothing here yet' }); return; }
-    const today = dayOf(new Date());
     const shown = this.notesExpanded ? notes.open : notes.open.slice(0, NOTES_PREVIEW);
     for (const n of [...notes.pinned, ...shown]) {
       const pinned = n.section === 'Pinned';
@@ -3162,24 +3175,24 @@ class TodayView extends ItemView {
     const rest = notes.open.length - shown.length;
     if (rest > 0) {
       const more = list.createEl('button', { cls: 'a4t-more', text: `Show all ${notes.open.length}` });
-      more.addEventListener('click', () => { this.notesExpanded = true; this.drawNotes(); });
+      more.addEventListener('click', () => { this.notesExpanded = true; this.drawNotes(true); });
     }
   }
 
   /** @param {string} from @param {string} raw @param {string} to */
   async moveNote(from, raw, to) {
-    try { if (!(await this.plugin.editNotes((t) => moveNote(t, from, raw, to)))) { new Notice('That note changed in the meantime. The card shows it as it is now.'); this.drawNotes(); } }
+    try { if (!(await this.plugin.editNotes((t) => moveNote(t, from, raw, to)))) { new Notice('That note changed in the meantime. The card shows it as it is now.'); this.drawNotes(true); } }
     catch (e) { console.error('[LifeWorld] note not moved', e); new Notice('Could not change that note.'); }
   }
 
   // A note's words, its [[links]] clickable (they open the note, a new tab on Cmd/Ctrl-click).
   /** @param {HTMLElement} parent @param {string} text @param {string} from */
   noteText(parent, text, from) {
-    for (const part of text.split(/(\[\[[^\]]+\]\])/)) {
+    for (const part of text.replace(/!\[\[/g, '[[').split(/(\[\[[^\]]+\]\])/)) {
       if (!part.startsWith('[[')) { if (part) parent.appendText(part); continue; }
       const inner = part.slice(2, -2);
       const target = inner.split('|')[0];
-      const a = parent.createEl('a', { cls: 'a4t-note-link', text: inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target.split('#')[0], attr: { tabindex: '0', role: 'link' } });
+      const a = parent.createEl('a', { cls: 'a4t-note-link', text: inner.includes('|') ? inner.slice(inner.indexOf('|') + 1) : target.split('#')[0] || target, attr: { tabindex: '0', role: 'link' } });
       const open = (/** @type {MouseEvent | KeyboardEvent} */ e) => { this.app.workspace.openLinkText(target, from, Keymap.isModEvent(e)); };
       a.addEventListener('click', open);
       a.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(e); });

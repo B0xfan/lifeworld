@@ -5,7 +5,10 @@
 // the card writes through app.vault.process, so the whole read-change-write is one step.
 'use strict';
 
-const LINE = /^[ \t]*[-*+][ \t]+(?!\[[ xX]\])(.*)$/;
+import { MONTHS_SHORT, WEEKDAYS_SHORT, weekdayOf, partsOf } from '../core/dates';
+
+// Top-level list lines only: an indented sub-line stays with the note above it.
+const LINE = /^[-*+][ \t]+(?!\[[ xX]\])(.*)$/;
 const DATED = /^\[\[(\d{4}-\d{2}-\d{2})(?:\|[^\]]*)?\]\][ \t]*/;
 
 // The "## <name>" section: from the end of its heading line to the next # or ## heading, code blocks
@@ -85,7 +88,8 @@ function moveNote(s, from, raw, to) {
   if (!r) return null;
   const body = t.slice(r.start, r.end);
   const lines = body.split('\n');
-  const i = lines.findIndex((l, k) => k > 0 && l.replace(/\r$/, '') === raw);
+  let fence = false;
+  const i = lines.findIndex((l, k) => { if (/^\s*(```|~~~)/.test(l)) { fence = !fence; return false; } return k > 0 && !fence && l.replace(/\r$/, '') === raw; });
   if (i < 0) return null;
   lines.splice(i, 1);
   const without = t.slice(0, r.start) + lines.join('\n') + t.slice(r.end);
@@ -97,17 +101,17 @@ function moveNote(s, from, raw, to) {
 function noteDay(day, today) {
   if (!day) return '';
   if (day === today) return 'Today';
-  const [y, m, d] = day.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()]}, ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]} ${d}`;
+  const { m, d } = partsOf(day);
+  return `${WEEKDAYS_SHORT[weekdayOf(day)]}, ${MONTHS_SHORT[m - 1]} ${d}`;
 }
 
-// The notes file setting: a note path ending in .md, else the default.
+// The notes file setting: a note path ending in .md, else the default (also for a name Obsidian or the
+// disk refuses, or a hidden or config folder).
 const NOTES_FILE = 'Today notes.md';
 /** @param {unknown} v */
 function normalizeNotesFile(v) {
   const p = typeof v === 'string' ? v.trim().replace(/^\/+|\/+$/g, '') : '';
-  if (!p || p.split('/').some((x) => x === '..' || x === '.')) return NOTES_FILE;
+  if (!p || /[\\:*?"<>|#^[\]]/.test(p) || p.split('/').some((x) => !x || x.startsWith('.'))) return NOTES_FILE;
   return p.toLowerCase().endsWith('.md') ? p : `${p}.md`;
 }
 

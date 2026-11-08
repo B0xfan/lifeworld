@@ -57,6 +57,11 @@ assert.ok(added.indexOf('- [[2026-11-08]] New') < added.indexOf('## Other'), 'ad
 const ticked = T.moveNote(hand, 'Notes', '- [[2026-11-01]] Old one', 'Done');
 assert.strictEqual(ticked.replace('- [[2026-11-01]] Old one\n', '').replace('\n## Done\n', ''), hand.replace('- [[2026-11-01]] Old one\n', ''), 'tick only moves the line and adds ## Done');
 
+// 5b. Review round 1: a fenced copy of a note is never the one moved; indented sub-lines are not notes.
+const fenced = '## Notes\n```\n- [[2026-11-01]] Old one\n```\n- [[2026-11-01]] Old one\n  - sub line\n';
+assert.deepStrictEqual(T.readNotes(fenced).open.map((n) => n.text), ['Old one']);
+assert.strictEqual(T.moveNote(fenced, 'Notes', '- [[2026-11-01]] Old one', 'Done'), '## Notes\n```\n- [[2026-11-01]] Old one\n```\n  - sub line\n\n## Done\n- [[2026-11-01]] Old one\n');
+
 // 6. Dates and the file setting.
 assert.strictEqual(T.noteDay('2026-11-08', '2026-11-08'), 'Today');
 assert.strictEqual(T.noteDay('2026-11-06', '2026-11-08'), 'Fri, Nov 6');
@@ -65,6 +70,7 @@ assert.strictEqual(T.normalizeNotesFile(''), 'Today notes.md');
 assert.strictEqual(T.normalizeNotesFile(' 02 Planner/Today Notes '), '02 Planner/Today Notes.md');
 assert.strictEqual(T.normalizeNotesFile('../x.md'), 'Today notes.md');
 assert.strictEqual(T.normalizeNotesFile(42), 'Today notes.md');
+for (const bad of ['Plans: 2026', '.obsidian/x.md', 'a/.hidden/b', 'x#y', 'a//b']) assert.strictEqual(T.normalizeNotesFile(bad), 'Today notes.md', bad);
 
 // 7. The widget is listed, and off until added on a new install and on a saved layout.
 assert.ok(T.WIDGETS.some((w) => w.id === 'notes' && w.zone === 'c1'));
