@@ -139,7 +139,7 @@ function buildTaskLists(items, today, completedStatuses, carry) {
   // Newest first, as drawn; ties keep planned order.
   /** @param {TodayItem} t */
   const lateDay = (t) => /** @type {string} */ (t.missedDay || t.due || t.plannedDay);
-  const missed = items.flatMap((t) => { const d = lastMissedDay(t, today); return d ? [{ ...t, missedDay: d, optimistic: undefined }] : []; });
+  const missed = items.flatMap((t) => { const d = lastMissedDay(t, today, completedStatuses); return d ? [{ ...t, missedDay: d, optimistic: undefined }] : []; });
   const overdue = items
     .filter((t) => isOverdue(t, today, completedStatuses))
     .concat(missed)
@@ -3406,10 +3406,13 @@ class TodayView extends ItemView {
         this.scheduleRefresh();
       }
     });
-    const more = row.createEl('button', { cls: 'a4t-t-more', attr: { 'aria-label': 'Move to' } });
-    setIcon(more, 'more-horizontal');
-    more.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.openMoveMenu(t, more, lane); });
-    this.registerDomEvent(main, 'pointerdown', (e) => this.startTaskDrag(e, t, row, lane));
+    // A missed repeat's day is set by its rule: only the tick acts on it, no Move menu or drag.
+    if (!t.missedDay) {
+      const more = row.createEl('button', { cls: 'a4t-t-more', attr: { 'aria-label': 'Move to' } });
+      setIcon(more, 'more-horizontal');
+      more.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.openMoveMenu(t, more, lane); });
+      this.registerDomEvent(main, 'pointerdown', (e) => this.startTaskDrag(e, t, row, lane));
+    }
     main.addEventListener('click', () => { if (row._justDragged) return; this.plugin.openTask(t); });
   }
 

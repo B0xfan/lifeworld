@@ -152,16 +152,19 @@ function isOverdue(item, today, completedStatuses) {
 
 // A repeating task's most recent day before today, when that day was neither done nor skipped; else null.
 // Only the latest day counts: an older miss is not nagged about once a later day was done (2026-11-09).
-// shortcut: walks back a day at a time (a COUNT rule rescans from its start each step), fine for task rules; index the days if a page ever lists hundreds.
-/** @param {TaskItem} item @param {string} today @returns {string | null} */
-function lastMissedDay(item, today) {
+// Walks back at most 366 days, so a rule that never matches cannot freeze the page; occursOn checks the pattern
+// before any COUNT scan, so that scan runs once, on the first matching day.
+/** @param {TaskItem} item @param {string} today @param {string[] | null} [completedStatuses] @returns {string | null} */
+function lastMissedDay(item, today, completedStatuses) {
   const r = item.recurrenceRaw ? item.recurrence : null;
-  if (!r || isSomeday(item)) return null;
+  if (!r || isSomeday(item) || (completedStatuses || DEFAULT_COMPLETED_STATUSES).includes(item.status)) return null; // a retired series is not nagged about
   const last = addDays(today, -1);
-  for (let d = r.until && r.until < last ? r.until : last; d >= r.dtstart; d = addDays(d, -1)) {
-    // A turn moved to a later day (Starts after it) is not missed, as Dateline reads it.
+  const stop = addDays(today, -366) > r.dtstart ? addDays(today, -366) : r.dtstart;
+  for (let d = r.until && r.until < last ? r.until : last; d >= stop; d = addDays(d, -1)) {
+    // A turn moved to a later day (Starts after it, off the rule) is not missed, as Dateline reads it. Starts on a
+    // rule day is only the engine's next turn after a tick (applyRecurringToggle), so it hides nothing.
     // shortcut: a moved turn left undone past its new day is not listed until the next rule day is missed; read Starts as a day of its own if that matters.
-    if (occursOn(r, d)) return item.completeInstances.includes(d) || item.skippedInstances.includes(d) || (item.scheduledDay && item.scheduledDay > d) ? null : d;
+    if (occursOn(r, d)) return item.completeInstances.includes(d) || item.skippedInstances.includes(d) || (item.scheduledDay && item.scheduledDay > d && !occursOn(r, item.scheduledDay)) ? null : d;
   }
   return null;
 }

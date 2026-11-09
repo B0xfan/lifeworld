@@ -156,6 +156,10 @@ ok(!lists.overdue.some((t) => /done|closed|rec-today/.test(t.title)), 'overdue e
   eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:20261101;FREQ=DAILY;UNTIL=20261103' }, 'ended'), '2026-11-09'), '2026-11-03', 'missed repeat: an ended rule still counts its last day');
   eq(L.lastMissedDay(T({ tags: ['task'], due: '2026-11-01' }, 'one-off'), '2026-11-09'), null, 'missed repeat: one-off tasks are not repeats');
   const moved = T({ tags: ['task'], recurrence: 'DTSTART:20260904;FREQ=WEEKLY;INTERVAL=1', scheduled: '2026-11-09', due: '2026-11-09', complete_instances: ['2026-10-30'] }, 'weekly-moved');
+  eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:19000101;FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30' }, 'never'), '2026-11-09'), null, 'missed repeat: a rule that never matches ends (walk capped at 366 days)');
+  eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:20241101;FREQ=DAILY;UNTIL=20241105' }, 'long-ended'), '2026-11-09'), null, 'missed repeat: a miss over a year ago is not listed');
+  eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:20261101;FREQ=DAILY', scheduled: '2026-11-10', complete_instances: ['2026-11-07', '2026-11-09'] }, 'ticked-today'), '2026-11-09'), '2026-11-08', 'missed repeat: ticking today (Starts moves to the next rule day) keeps yesterday\'s miss');
+  eq(L.lastMissedDay(T({ tags: ['task'], status: 'done', recurrence: 'DTSTART:20261101;FREQ=DAILY' }, 'retired'), '2026-11-09', ['done']), null, 'missed repeat: a series marked done is not listed');
   eq(L.lastMissedDay(moved, '2026-11-09'), null, 'missed repeat: a turn moved on to today (Starts) is not missed');
   eq(L.lastMissedDay(moved, '2026-11-10'), null, 'missed repeat: a moved turn left undone shows again only from its next rule day (known limit)');
   const row = od[0];
