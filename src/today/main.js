@@ -106,7 +106,7 @@ import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseR
 import { asList } from '../core/lists';
 import { parseClock } from '../core/quickadd';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
-import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, propNames, feedNotes, planning, dailyNotes, inTaskFolders, readable, writable, BAD_NAME, isReserved } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { MOOD_VIEW, MoodCheckinModal, MoodView } from './mood.js'; // the mood check-in and the Mood page (launch section 9)
@@ -134,11 +134,16 @@ function buildTaskLists(items, today, completedStatuses, carry) {
   const onToday = items.filter((t) => taskOnDay(t, today) || slipped(t));
   const morning = sortByOrder(onToday.filter((t) => t.plannedHalf !== 'pm'));
   const afternoon = sortByOrder(onToday.filter((t) => t.plannedHalf === 'pm'));
-  // Overdue: the shared rule (isOverdue), the Planner's too. No cap (the mockup's Show more).
+  // Overdue: the shared rule (isOverdue), the Planner's too, plus a repeating task's last missed day
+  // (Today only, 2026-11-09), as a copy carrying `missedDay` so its tick writes that day. No cap (the mockup's Show more).
   // Newest first, as drawn; ties keep planned order.
+  /** @param {TodayItem} t */
+  const lateDay = (t) => /** @type {string} */ (t.missedDay || t.due || t.plannedDay);
+  const missed = items.flatMap((t) => { const d = lastMissedDay(t, today); return d ? [{ ...t, missedDay: d, optimistic: undefined }] : []; });
   const overdue = items
     .filter((t) => isOverdue(t, today, completedStatuses))
-    .sort((a, b) => /** @type {string} */ (b.due || b.plannedDay).localeCompare(/** @type {string} */ (a.due || a.plannedDay)) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
+    .concat(missed)
+    .sort((a, b) => lateDay(b).localeCompare(lateDay(a)) || a.plannedOrder - b.plannedOrder || a.path.localeCompare(b.path));
   const total = morning.length + afternoon.length;
   const open = [...morning, ...afternoon].filter((t) => !done(t)).length;
   return { morning, afternoon, overdue, open, total };
@@ -1090,7 +1095,7 @@ const MAX_REMINDER_CARDS = 3;
 const logic = {
   ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen,
   normalizeOpenOnStartup, startupOpensToday, projectLines, recentNotes, normalizePins, normalizePlaces, placeFromMatch, clockAt, handAngles, normalizeClockStyle, sunFrom, sunHere, ringColour, hourLabel,
-  ACCENTS, HAND_FONTS, SCENES, sceneTime, sceneWeather, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
+  ACCENTS, HAND_FONTS, SCENES, sceneTime, sceneWeather, DEFAULT_LOOK, normalizeLook, contrastRatio, readableShade, accentShade, SCHEMES, schemeOf, orderForInsert, applyMove, planInsert, dueOnDay, planOverdueMove, applyOverdueMove, lastMissedDay, pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, parseRRule, occursOn, taskFromFrontmatter, taskTitleOf, isTaskDone, openProjectPage,
   taskOnDay, isSomeday, applySomeday, sortByOrder, buildTaskLists, plateText, greeting, findLogSpan, parseDoneSet, computeStreak, toggleHabitLog,
   normalizeHabits, habitNameProblem, propStreak,
   normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords,
@@ -2393,7 +2398,7 @@ class TodayView extends ItemView {
     this.drag = null;
     this.seq = 0;
     /** @type {Map<string, { done: boolean, day: string, until: number }>} */
-    this.pending = new Map(); // path -> { done, until } so a just-ticked row never flickers back
+    this.pending = new Map(); // path + day -> { path, done, day, until } so a just-ticked row never flickers back
     /** @type {Map<string, TodayItem>} */
     this.lastItems = new Map(); // path -> last good task (frontmatter can read empty right after a write)
     /** @type {Map<string, HTMLElement>} */
@@ -2541,13 +2546,20 @@ class TodayView extends ItemView {
     for (const p of [...this.lastItems.keys()]) if (!seenPaths.has(p)) this.lastItems.delete(p);
     // Keep a just-ticked state until the cache agrees (or 4 s pass).
     const now = Date.now();
-    for (const [path, st] of [...this.pending]) {
-      const it = items.find((x) => x.path === path);
-      if (!it || now > st.until) { this.pending.delete(path); continue; }
-      if (isTaskDone(it, st.day, completed) === st.done) { this.pending.delete(path); continue; }
-      /** @type {TodayRowItem} */ (it).optimistic = st.done;
+    /** @type {Array<[string, { path: string, done: boolean, day: string, until: number }]>} */
+    const missedTicks = [];
+    for (const [key, st] of [...this.pending]) {
+      const it = items.find((x) => x.path === st.path);
+      if (!it || now > st.until) { this.pending.delete(key); continue; }
+      if (isTaskDone(it, st.day, completed) === st.done) { this.pending.delete(key); continue; }
+      if (st.day === today) /** @type {TodayRowItem} */ (it).optimistic = st.done;
+      else missedTicks.push([key, st]); // a missed day ticked on the Overdue card: only that row's copy
     }
     const lists = buildTaskLists(items, today, completed, true);
+    for (const [, st] of missedTicks) {
+      const row = lists.overdue.find((x) => x.path === st.path && x.missedDay === st.day);
+      if (row) /** @type {TodayRowItem} */ (row).optimistic = st.done;
+    }
 
     // Weather: the weather note when one is set (unchanged), else the forecast for the town in Settings.
     /** @type {Fm | null} */
@@ -2872,7 +2884,7 @@ class TodayView extends ItemView {
   }
 
   /** @param {TodayRowItem} t */
-  doneOf(t) { const d = /** @type {TodayData} */ (this.data); return t.optimistic != null ? t.optimistic : isTaskDone(t, d.today, d.completed); }
+  doneOf(t) { const d = /** @type {TodayData} */ (this.data); return t.optimistic != null ? t.optimistic : isTaskDone(t, t.missedDay || d.today, d.completed); }
 
   renderClock() { if (this.clockEl) this.clockEl.setText(`it's ${clockText(new Date())}, one thing at a time.`); }
 
@@ -3249,10 +3261,13 @@ class TodayView extends ItemView {
     if (done) this.renderOverdueUndo(body, done);
     // Option A (approved 2026-10-05): a small button under the list. Moves
     // every task the card lists, the "Show more" ones included.
+    // A missed repeat is never moved (its rule places it), so it is not counted either.
+    const movable = list.filter((t) => !t.recurrenceRaw);
+    if (!movable.length) return;
     const btn = body.createEl('button', { cls: 'a4t-btn a4t-small a4t-od-move', attr: { 'data-testid': 'a4t-overdue-move' } });
     setIcon(btn.createSpan({ cls: 'a4t-ic' }), 'calendar-check');
-    btn.appendText(list.length === 1 ? 'Move it to today' : `Move all ${list.length} to today`);
-    btn.addEventListener('click', () => this.moveAllOverdue(list, btn));
+    btn.appendText(movable.length === 1 ? 'Move it to today' : `Move all ${movable.length} to today`);
+    btn.addEventListener('click', () => this.moveAllOverdue(movable, btn));
   }
 
   /** @typedef {{ count: number, paths: Set<string>, undo: () => Promise<number>, timer: number | null }} OverdueMoved */
@@ -3359,7 +3374,7 @@ class TodayView extends ItemView {
         openProjectPage(this.app, t.projectLink || t.project, e, t.path);
       });
     }
-    if (overdue) chip(t.due ? `due ${shortDue(t.due)}` : `planned ${shortDue(/** @type {string} */ (t.plannedDay))}`, 'is-warn');
+    if (overdue) chip(t.missedDay || t.due ? `due ${shortDue(/** @type {string} */ (t.missedDay || t.due))}` : `planned ${shortDue(/** @type {string} */ (t.plannedDay))}`, 'is-warn');
     else if (!t.recurrenceRaw && t.due === today) chip('due today');
     else if (!t.recurrenceRaw && t.due && t.due !== t.plannedDay) chip(`due ${shortDue(t.due)}`, t.due < today ? 'is-warn' : ''); // "Just plan it": the deadline of a task planned for another day
     if (blockers.length) blockedChip(meta, blockers, (p) => this.plugin.openPath(p, true), 'a4t');
@@ -3378,8 +3393,9 @@ class TodayView extends ItemView {
       tick.setAttr('aria-label', want ? 'Mark not done' : 'Mark done');
       this.plateEl.setText(plateText(this.openCount() + (overdue ? 0 : (want ? -1 : 1)), /** @type {TodayData} */ (this.data).lists.total));
       try {
-        const now = await this.plugin.toggleTask(t, today);
-        this.pending.set(t.path, { done: now, day: today, until: Date.now() + 4000 });
+        const day = t.missedDay || today; // a missed repeat on the Overdue card ticks its missed day
+        const now = await this.plugin.toggleTask(t, day);
+        this.pending.set(`${t.path}\n${day}`, { path: t.path, done: now, day, until: Date.now() + 4000 });
         t.optimistic = now;
       } catch (err) {
         console.error('[LifeWorld] tick failed', err);

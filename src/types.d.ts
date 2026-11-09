@@ -16,7 +16,7 @@ interface TaskItem {
   path: string; title: string; status: string; priority: string; due: string | null;
   plannedDay: string | null; plannedHalf: 'am' | 'pm' | null; plannedOrder: number; time: string | null;
   reminder: number | null; project: string | null; recurrenceRaw: string | null; recurrence: RRule | null;
-  completeInstances: string[]; skippedInstances: string[]; blockedBy: string[];
+  completeInstances: string[]; skippedInstances: string[]; blockedBy: string[]; scheduledDay?: string | null;
 }
 
 /** The four parts by their old plugin ids (src/core/parts.js). */
@@ -152,7 +152,7 @@ interface SortSettings { dates: 'first' | 'last'; text: 'az' | 'za'; folders: bo
 interface SidebarExtra { id?: string; item?: string; command?: string; label?: string; icon?: string; before?: string; onClick?: () => unknown; draw?: (el: HTMLElement) => unknown }
 
 /** A task as the Today page draws it (taskFromFrontmatter's item, or a source's). */
-interface TodayItem extends TaskItem { projectLink?: unknown; projectKey?: string | null; ext?: ExtInfo; repeats?: boolean; blockers?: { path: string; title: string }[] }
+interface TodayItem extends TaskItem { missedDay?: string; projectLink?: unknown; projectKey?: string | null; ext?: ExtInfo; repeats?: boolean; blockers?: { path: string; title: string }[] }
 /** The Today page's look (accent colour and handwriting font). */
 interface TodayLook { accent: string; font: string; scene: string }
 

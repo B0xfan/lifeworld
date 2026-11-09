@@ -5,7 +5,7 @@
 // do the writing.
 'use strict';
 
-import { toDayStr, parseRRule, occursOn, halfOfTime } from './dates';
+import { toDayStr, parseRRule, occursOn, halfOfTime, addDays } from './dates';
 import { asList } from './lists';
 import { reminderOf } from './reminders';
 import { vaultFolders, planning, readable } from './vault';
@@ -128,6 +128,8 @@ function taskFromFrontmatter(fm, path, basename) {
     project: projectLink ? wikilinkLabel(projectLink) : null,
     recurrenceRaw,
     recurrence: recurrenceRaw ? parseRRule(recurrenceRaw, fm.scheduled || fm.due || fm.dateCreated) : null,
+    // A repeating task's current turn (TaskNotes' Starts); later than a missed day when that turn was moved on.
+    scheduledDay: recurrenceRaw ? toDayStr(fm.scheduled) : null,
     completeInstances: asList(fm.complete_instances).map(toDayStr).filter(Boolean),
     skippedInstances: asList(fm.skipped_instances).map(toDayStr).filter(Boolean),
     blockedBy: blockerLinks(fm),
@@ -146,6 +148,22 @@ function isTaskDone(item, day, completedStatuses) {
 function isOverdue(item, today, completedStatuses) {
   const day = item.due || item.plannedDay;
   return !item.recurrenceRaw && !!day && day < today && !isSomeday(item) && !isTaskDone(item, today, completedStatuses);
+}
+
+// A repeating task's most recent day before today, when that day was neither done nor skipped; else null.
+// Only the latest day counts: an older miss is not nagged about once a later day was done (2026-11-09).
+// shortcut: walks back a day at a time (a COUNT rule rescans from its start each step), fine for task rules; index the days if a page ever lists hundreds.
+/** @param {TaskItem} item @param {string} today @returns {string | null} */
+function lastMissedDay(item, today) {
+  const r = item.recurrenceRaw ? item.recurrence : null;
+  if (!r || isSomeday(item)) return null;
+  const last = addDays(today, -1);
+  for (let d = r.until && r.until < last ? r.until : last; d >= r.dtstart; d = addDays(d, -1)) {
+    // A turn moved to a later day (Starts after it) is not missed, as Dateline reads it.
+    // shortcut: a moved turn left undone past its new day is not listed until the next rule day is missed; read Starts as a day of its own if that matters.
+    if (occursOn(r, d)) return item.completeInstances.includes(d) || item.skippedInstances.includes(d) || (item.scheduledDay && item.scheduledDay > d) ? null : d;
+  }
+  return null;
 }
 
 /** @param {TaskItem} item @param {string} day */
@@ -291,4 +309,4 @@ function openBlockersOf(app, item, completedStatuses) {
   return out;
 }
 
-export { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, blockerLinks, blockerHolds, openBlockersOf };
+export { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, blockerLinks, blockerHolds, openBlockersOf };

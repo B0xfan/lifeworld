@@ -137,9 +137,32 @@ items.push(T({ tags: ['task'], due: '2026-09-01', status: 'in-progress' }, 'od-p
 const lists = L.buildTaskLists(items, today, ['done', 'closed']);
 eq(lists.morning.map((t) => t.title), ['rec-today', 'no-half', 'a-am10', 'b-am20'], 'morning: planned order, no-half counts as morning');
 eq(lists.afternoon.map((t) => t.title), ['pm1', 'pm-done'], 'afternoon: planned order, done stays visible');
-eq(lists.overdue.length, 13, 'overdue: all 13, no cap');
-eq(lists.overdue[0].title, 'od01', 'overdue newest first');
-ok(!lists.overdue.some((t) => /done|closed|rec/.test(t.title)), 'overdue excludes done, closed and repeating');
+eq(lists.overdue.length, 15, 'overdue: all 13 one-offs plus 2 missed repeating, no cap');
+eq(lists.overdue.slice(0, 3).map((t) => t.title).sort(), ['od01', 'rec-not-today', 'rec-skipped'], 'overdue newest first (yesterday: one-off and the two missed repeats)');
+ok(!lists.overdue.some((t) => /done|closed|rec-today/.test(t.title)), 'overdue excludes done, closed and a repeat whose last day was done');
+
+// A missed repeating task (2026-11-09: an every-other-day task missed on Sun 11-08 was not on the Overdue card).
+{
+  const mood = T({ tags: ['task'], status: 'in-progress', recurrence: 'DTSTART:20260905;FREQ=DAILY;INTERVAL=2', scheduled: '2026-11-08', due: '2026-10-31', complete_instances: ['2026-11-04', '2026-11-06'] }, 'every-other-day');
+  const dailyDone = T({ tags: ['task'], recurrence: 'DTSTART:20260904;FREQ=DAILY;INTERVAL=1', due: '2026-11-04', complete_instances: ['2026-11-08', '2026-11-09'] }, 'daily-done');
+  const od = L.buildTaskLists([mood, dailyDone], '2026-11-09', ['done']).overdue;
+  eq(od.map((t) => [t.title, t.missedDay]), [['every-other-day', '2026-11-08']], 'missed repeat: most recent missed day listed once; a repeat done yesterday is not');
+  eq(L.lastMissedDay(mood, '2026-11-10'), '2026-11-08', 'missed repeat: still listed on its next day (today is also one of its days)');
+  eq(L.lastMissedDay({ ...mood, completeInstances: ['2026-11-06'] }, '2026-11-11'), '2026-11-10', 'missed repeat: only the most recent past day counts');
+  eq(L.lastMissedDay({ ...mood, completeInstances: ['2026-11-10'] }, '2026-11-11'), null, 'missed repeat: an older miss is ignored when the latest day was done');
+  eq(L.lastMissedDay({ ...mood, skippedInstances: ['2026-11-08'] }, '2026-11-09'), null, 'missed repeat: a skipped day is not missed');
+  eq(L.lastMissedDay({ ...mood, status: 'someday' }, '2026-11-09'), null, 'missed repeat: someday never overdue');
+  eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:20261201;FREQ=DAILY' }, 'later'), '2026-11-09'), null, 'missed repeat: no day before today');
+  eq(L.lastMissedDay(T({ tags: ['task'], recurrence: 'DTSTART:20261101;FREQ=DAILY;UNTIL=20261103' }, 'ended'), '2026-11-09'), '2026-11-03', 'missed repeat: an ended rule still counts its last day');
+  eq(L.lastMissedDay(T({ tags: ['task'], due: '2026-11-01' }, 'one-off'), '2026-11-09'), null, 'missed repeat: one-off tasks are not repeats');
+  const moved = T({ tags: ['task'], recurrence: 'DTSTART:20260904;FREQ=WEEKLY;INTERVAL=1', scheduled: '2026-11-09', due: '2026-11-09', complete_instances: ['2026-10-30'] }, 'weekly-moved');
+  eq(L.lastMissedDay(moved, '2026-11-09'), null, 'missed repeat: a turn moved on to today (Starts) is not missed');
+  eq(L.lastMissedDay(moved, '2026-11-10'), null, 'missed repeat: a moved turn left undone shows again only from its next rule day (known limit)');
+  const row = od[0];
+  ok(row !== mood && mood.missedDay === undefined, 'missed repeat: the card row is a copy, the shared item is untouched');
+  ok(!L.isTaskDone(mood, '2026-11-09') && L.isTaskDone({ ...mood, completeInstances: ['2026-11-08'] }, '2026-11-08'), 'missed repeat: done per day');
+  eq(L.planOverdueMove({ morning: [], afternoon: [], overdue: od }), [], 'missed repeat: Move all never moves a repeating task');
+}
 eq(lists.total, 6, 'today total');
 eq(lists.open, 5, 'open count (pm-done excluded)');
 ok(!lists.morning.concat(lists.afternoon).some((t) => t.title === 'rec-skipped'), 'skipped occurrence hidden');
@@ -257,13 +280,13 @@ eq(L.greeting(17), 'Good evening', 'greeting evening');
     'T/bake.md': { tags: ['task'], due: '2026-09-30', planned_half: 'pm', planned_order: 5 },
     'T/dentist.md': { tags: ['task'], due: '2026-09-29T09:30', planned_order: 40 },
     'T/planned-undated.md': { tags: ['task'], planned_day: '2026-10-01', planned_half: 'pm' }, // no due: its planned day counts (2026-10-18)
-    // never on the card, so never moved:
+    // repeating: listed by their last missed day (1.5.4) but never moved; done: never on the card:
     'T/rep-old.md': { tags: ['task'], recurrence: 'DTSTART:20260901;FREQ=WEEKLY', due: '2026-09-01' },
     'T/done-old.md': { tags: ['task'], due: '2026-09-28', status: 'done' },
   };
   const load = (m) => Object.entries(m).map(([p, fm]) => L.taskFromFrontmatter(fm, p, p.slice(2, -3)));
   const lists0 = L.buildTaskLists(load(fms), day);
-  eq(lists0.overdue.map((t) => t.path), ['T/car.md', 'T/internet.md', 'T/planned-undated.md', 'T/bake.md', 'T/dentist.md'], 'card lists the five overdue (one undated, by its planned day), newest first');
+  eq(lists0.overdue.map((t) => t.path), ['T/water.md', 'T/car.md', 'T/internet.md', 'T/planned-undated.md', 'T/bake.md', 'T/rep-old.md', 'T/dentist.md'], 'card lists the five overdue (one undated, by its planned day) and the two missed repeats, newest first');
   const plan = L.planOverdueMove(lists0);
   eq(plan, [
     { path: 'T/dentist.md', lane: 'am', order: 30 },
@@ -275,7 +298,7 @@ eq(L.greeting(17), 'Good evening', 'greeting evening');
   const out = JSON.parse(JSON.stringify(fms));
   for (const s of plan) ok(L.applyOverdueMove(out[s.path], day, s.order), `move writes ${s.path}`);
   const lists1 = L.buildTaskLists(load(out), day);
-  eq(lists1.overdue.length, 0, 'after the move nothing is overdue');
+  eq(lists1.overdue.map((t) => t.path), ['T/water.md', 'T/rep-old.md'], 'after the move only the missed repeats are left (never moved)');
   // Task times (1.2.5): a timed task sits first in its lane, in clock order
   // (dentist is due at 9:30 AM); the untimed moved ones go to the bottom, oldest first.
   eq(lists1.morning.map((t) => t.path), ['T/dentist.md', 'T/review.md', 'T/water.md', 'T/internet.md', 'T/car.md'], 'Morning as in the mockup (moved at the bottom, oldest first; timed first)');
