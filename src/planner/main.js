@@ -109,7 +109,7 @@ import { pad2, dayOf, isDayStr, toDayStr, utcOf, addDays, daysBetween, weekdayOf
 import { asList } from '../core/lists';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { understand, parseClock, quickAddChips, quickAddPlan } from '../core/quickadd';
-import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, openBlockersOf } from '../core/tasks';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, lastMissedDay, isLate, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, openBlockersOf } from '../core/tasks';
 import { errField } from '../core/sources';
 import { partOf } from '../core/parts'; // the other parts, through LifeWorld (phase 2)
 import { calendarEvents } from '../core/calendars'; // calendar links (launch section 6)
@@ -309,11 +309,12 @@ function isUnscheduled(it, completed) { return !it.recurrenceRaw && !it.plannedD
 /** @param {PlanItem[]} items @param {string[]} completed */
 function unscheduledOf(items, completed) { return items.filter((it) => isUnscheduled(it, completed)); }
 // Overdue: a one-off task that is not done and sits on a past day (its due
-// date, or the day it was planned for). Oldest first.
+// date, or the day it was planned for), and a repeating task's missed last day (isLate). Oldest first.
 /** @param {PlanItem[]} items @param {string} today @param {string[]} completed */
 function overdueOf(items, today, completed) {
-  return items.filter((it) => isOverdue(it, today, completed))
-    .sort((a, b) => /** @type {string} */ (a.due || a.plannedDay).localeCompare(/** @type {string} */ (b.due || b.plannedDay)) || a.title.localeCompare(b.title));
+  /** @param {PlanItem} it */
+  const day = (it) => /** @type {string} */ (lastMissedDay(it, today, completed) || it.due || it.plannedDay);
+  return items.filter((it) => isLate(it, today, completed)).sort((a, b) => day(a).localeCompare(day(b)) || a.title.localeCompare(b.title));
 }
 /** @param {PlanItem[]} items @param {string} today @param {string[]} completed */
 function weeklyGoalsOf(items, today, completed) {
@@ -764,7 +765,7 @@ const h = (parent, tag, cls, text) => { const e = (parent ? parent.createEl(tag)
 
 /** @typedef {HTMLElement & { _dragged?: boolean }} PlanRow */
 /** @typedef {{ item?: PlanItem, ev?: PlanEvent, row: PlanRow, x0: number, y0: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
-/** @typedef {{ day?: string | null, side?: boolean, drag?: boolean, compact?: boolean, hideProject?: boolean }} PlanRowOpts */
+/** @typedef {{ day?: string | null, side?: boolean, drag?: boolean, compact?: boolean, hideProject?: boolean, missed?: string | null }} PlanRowOpts */
 class PlannerView extends ItemView {
   // Set on every render (no value before the first one).
   /** @type {string} */ renderedToday;
@@ -1018,7 +1019,11 @@ class PlannerView extends ItemView {
     if (folded) return;
     const l = h(s, 'div', 'a4pl-sec-list');
     if (!list.length) h(l, 'div', 'a4pl-empty', warn ? 'nothing overdue' : 'no weekly goals pinned');
-    for (const it of list) l.appendChild(this.taskRow(it, { side: true, drag: true, day: it.plannedDay || today }));
+    for (const it of list) {
+      // A missed repeat ticks its missed day and is never dragged (its day is set by its rule).
+      const missed = warn ? lastMissedDay(it, today, this.completed) : null;
+      l.appendChild(this.taskRow(it, { side: true, drag: !missed, day: missed || it.plannedDay || today, missed }));
+    }
   }
 
   /** @param {HTMLElement} host @param {string} today */
@@ -1214,7 +1219,7 @@ class PlannerView extends ItemView {
       const fm = /** @type {Fm} */ ((this.app.metadataCache.getFileCache(f) || {}).frontmatter || {});
       const linked = this.items.filter((it) => it.projectKey && projectGoal[it.projectKey] === f.basename);
       const open = linked.filter((it) => !isTaskDone(it, today, this.completed)).length;
-      const late = linked.filter((it) => isOverdue(it, today, this.completed)).length;
+      const late = linked.filter((it) => isLate(it, today, this.completed)).length;
       const row = h(side, 'div', 'a4pl-goal'); row.setAttr('role', 'button'); row.tabIndex = 0;
       const top = h(row, 'div', 'a4pl-goal-top');
       h(top, 'span', 'a4pl-goal-name', f.basename);
@@ -1408,6 +1413,7 @@ class PlannerView extends ItemView {
       pc.addEventListener('click', (e) => { e.stopPropagation(); if (r._dragged) return; openProjectPage(this.app, it.projectLink || it.projectKey, e, it.path); });
     }
     if (it.recurrenceRaw || it.repeats) h(meta, 'span', 'a4pl-chip', 'repeats');
+    if (o.missed) h(meta, 'span', 'a4pl-chip is-warn', `${daysBetween(o.missed, this.today())}D OVER`);
     const due = dueChipOf(it, this.today(), this.completed);
     if (due && !(due.cls === '' && !o.side && it.plannedDay === it.due)) h(meta, 'span', 'a4pl-chip' + (due.cls ? ' is-' + due.cls : ''), due.text);
     if (o.side && it.plannedDay && it.plannedDay !== it.due) h(meta, 'span', 'a4pl-chip', fmtDay(it.plannedDay, { weekday: 'short', day: 'numeric' }));

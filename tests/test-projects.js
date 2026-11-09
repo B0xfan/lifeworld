@@ -522,6 +522,13 @@ if (VAULT) {
   ok(L.isOpenTask(sA, cfg), 'someday: still open (not finished)');
   const st = L.projectStats({ key: 'P' }, [sB, sC, sD, oE, oF], TDs, cfg);
   eq([st.open, st.later, st.someday, st.overdue, st.next && st.next.title], [1, 1, 3, 0, 'oE'], 'project counts: someday tasks counted apart, never "next"');
+  // 1.5.5: a missed repeat counts as overdue everywhere, but "Move N overdue to today" only moves one-offs.
+  const rep = L.readTask({ tags: ['task'], status: 'open', recurrence: 'DTSTART:20260901;FREQ=DAILY', projects: ['[[P]]'] }, 'T/rep.md', 'rep', cfg, false);
+  const late1 = L.readTask({ tags: ['task'], status: 'open', due: '2026-09-01', projects: ['[[P]]'] }, 'T/late.md', 'late', cfg, false);
+  if (rep && late1) { rep.projectKey = 'P'; late1.projectKey = 'P'; }
+  ok(!!rep && L.isLateTask(rep, TDs, cfg) && !L.isOverdueTask(rep, TDs, cfg), 'missed repeat: late (counted), not movable');
+  const st2 = L.projectStats({ key: 'P' }, [/** @type {any} */ (rep), late1], TDs, cfg);
+  eq([st2.overdue, st2.movable], [2, 1], 'project counts: overdue 2 (one-off + missed repeat), Move button 1');
   // Source: the Schedule box line and the project page tick box.
   const src = fs.readFileSync(SRC, 'utf8');
   ok(/'Someday'\); el\(sd, 'span', 'a4pj-k', 'no day, kept for later'\)/.test(src), 'Schedule box: "Someday · no day, kept for later"');

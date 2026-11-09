@@ -146,7 +146,7 @@ import { pad2, dayOf, isDayStr, toDayStr, addDays, daysBetween, weekdayOf, parts
 import { asList } from '../core/lists';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } from '../core/quickadd';
-import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
+import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, isLate, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
 import { partOf, ADDON } from '../core/parts'; // the other parts, and what an add-on handed LifeWorld (phase 2)
 import { vaultFolders, planning, inTaskFolders, readable, writable, toNote, isRenamed } from '../core/vault'; // Settings › Your vault (phase 2 section 4)
 import { drawRows, blockRow } from '../core/settings';
@@ -708,6 +708,9 @@ function isLaterTask(t, today) { return !t.recurrenceRaw && !!t.start && t.start
 // The shared rule (isOverdue): a one-off, unfinished task on a past day (due or planned).
 /** @param {ProjTask} t @param {string} today @param {EngineCfg} cfg */
 function isOverdueTask(t, today, cfg) { return !t.archived && isOverdue(t, today, completedStatusesOf(cfg)); }
+// What the overdue counts show: also a repeating task's missed last day (isLate), which Move to today leaves alone.
+/** @param {ProjTask} t @param {string} today @param {EngineCfg} cfg */
+function isLateTask(t, today, cfg) { return !t.archived && isLate(t, today, completedStatusesOf(cfg)); }
 /** @param {ProjTask} t @param {EngineCfg} cfg */
 function isInboxTask(t, cfg) { return !t.archived && !t.recurrenceRaw && !t.projectLink && !t.plannedDay && !isSomeday(t) && isOpenTask(t, cfg); }
 
@@ -824,7 +827,8 @@ function projectStats(project, tasks, today, cfg) {
     open: open.filter((t) => !isLaterTask(t, today) && !isSomeday(t)).length,
     later: open.filter((t) => isLaterTask(t, today)).length,
     someday: open.filter((t) => isSomeday(t)).length,
-    overdue: open.filter((t) => isOverdueTask(t, today, cfg)).length,
+    overdue: open.filter((t) => isLateTask(t, today, cfg)).length,
+    movable: open.filter((t) => isOverdueTask(t, today, cfg)).length, // what "Move N overdue to today" moves
     next: sortOpenTasks(open.filter((t) => !isLaterTask(t, today) && !isSomeday(t) && !isBlockedTask(t)), today, cfg)[0] || null,
   };
 }
@@ -1419,7 +1423,7 @@ const logic = {
   depPickGroups, depCreateOffer, projectPickGroups,
   engineConfig, snapshotTaskNotes, isCompletedIn, completedStatusesOf, tnTimestamp, tnDatePart, tnTaskOf, ruleOfTask, instancesBetween, nextUncompleted, nextDates,
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
-  sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, readArea, linkAreas, areaList, areaStats, areaNote, applyToArea, applyToProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
+  sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isLateTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, readArea, linkAreas, areaList, areaStats, areaNote, applyToArea, applyToProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
   ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, TASK_COLUMNS, taskColumn, taskColumns, taskBoardRows, taskColumnCards, firstBodyLine, plainLine, appendProjectNote, projectNotes, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
@@ -4937,7 +4941,7 @@ class ProjectsView extends ItemView {
     if (!o.barFirst) this.quickAdd(main, { project: p, placeholder: o.placeholder });
     const lb = el(main, 'div', 'a4pj-lbar' + (o.gap ? ' a4pj-gap' : ''));
     el(lb, 'span', 'a4pj-kicker', o.label); el(lb, 'span', 'a4pj-count', String(open.length - later.length - someday.length));
-    if (st.overdue) { const b = el(lb, 'button', 'a4pj-btn a4pj-small is-warn', `Move ${st.overdue} overdue to today`); b.addEventListener('click', () => this.plugin.moveOverdueToToday(p.key)); }
+    if (st.movable) { const b = el(lb, 'button', 'a4pj-btn a4pj-small is-warn', `Move ${st.movable} overdue to today`); b.addEventListener('click', () => this.plugin.moveOverdueToToday(p.key)); }
     if (later.length) {
       const tg = el(lb, 'label', 'a4pj-toggle');
       const cb = el(tg, 'input'); cb.type = 'checkbox'; cb.checked = showLater;
@@ -5278,6 +5282,8 @@ class ProjectsView extends ItemView {
       iconChip(meta, late ? 'is-warn' : (t.due === today ? 'is-today' : 'is-due'), late ? `Due ${shortDay(t.due, today)}${tm} · ${d}d late` : `Due ${shortDay(t.due, today)}${tm}`, 'calendar',
         open && !t.ext ? (c) => this.pickDate(t, 'due', c) : null, 'Due date and time: when it must be done. Open the calendar');
     }
+    const missed = t.recurrenceRaw && open && !t.archived ? lastMissedDay(t, today, completedStatusesOf(cfg)) : null;
+    if (missed) el(meta, 'span', 'a4pj-chip is-warn', `Missed ${shortDay(missed, today)}`);
     if (t.plannedDay && t.plannedDay !== t.due && !t.recurrenceRaw) el(meta, 'span', 'a4pj-chip' + (t.plannedDay < today && open ? ' is-warn' : ''), `On ${shortDay(t.plannedDay, today)}${t.plannedHalf ? `, ${halfWord(t.plannedHalf)}` : ''}`);
     else if (t.due && t.plannedHalf && !t.dueTime && !t.recurrenceRaw) el(meta, 'span', 'a4pj-chip', halfWord(t.plannedHalf));
     if (t.recurrenceRaw) el(meta, 'span', 'a4pj-chip', `${repeatWords(t.recurrenceRaw).replace(/^Every/, 'repeats every').replace(/^Repeats/, 'repeats')}${t.time ? `, ${timeText(t.time)}` : (t.plannedHalf ? `, ${halfWord(t.plannedHalf)}` : '')}`);

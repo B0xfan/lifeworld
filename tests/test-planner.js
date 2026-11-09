@@ -142,7 +142,8 @@ const od = L.overdueOf([
   mk('late due', { due: '2026-10-01' }), mk('late plan', { planned_day: '2026-10-02' }), mk('today', { due: TODAY }),
   mk('done late', { due: '2026-09-01', status: 'done' }), mk('rep', { recurrence: 'FREQ=DAILY', due: '2026-09-01' }), mk('future', { due: '2026-10-08' }),
 ], TODAY, DONE);
-eq(od.map((i) => i.title), ['late due', 'late plan'], 'overdue: past due or past planned day, not done, not repeating, oldest first');
+eq(od.map((i) => i.title), ['late due', 'late plan', 'rep'], 'overdue: past due or past planned day, not done, and a repeat\'s missed last day (Oct 3), oldest first (1.5.5)');
+eq(L.overdueOf([mk('rep ok', { recurrence: 'FREQ=DAILY', due: '2026-09-01', complete_instances: ['2026-10-03'] })], TODAY, DONE).length, 0, 'overdue: a repeat whose last day was done is not listed');
 eq(L.weeklyGoalsOf([mk('g1', { weekly_goal: true }), mk('g2', { weekly_goal: true, status: 'done' }), mk('g3', {})], TODAY, DONE).map((i) => i.title), ['g1'], 'weekly goals: pinned and open');
 const lane = [mk('b', { planned_day: TODAY, planned_half: 'am', planned_order: 20 }), mk('a', { planned_day: TODAY, planned_half: 'am', planned_order: 10 }),
   mk('any', { planned_day: TODAY }), mk('pm', { due: TODAY, planned_half: 'pm' }), mk('rep', { recurrence: 'FREQ=WEEKLY;BYDAY=SU', scheduled: '2026-09-06', planned_half: 'am' })];

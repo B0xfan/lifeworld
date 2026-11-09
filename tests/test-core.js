@@ -20,7 +20,7 @@ const EXPORTS = {
   'settings-log': ['readFile', 'addChanges', 'carryChanges'],
   settings: ['drawRows', 'blockRow', 'noCleanup'],
   reminders: ['REMINDER_CHOICES', 'ringField', 'offsetMinutes', 'offsetIso', 'reminderOf', 'reminderShort', 'reminderWords'],
-  tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'lastMissedDay', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
+  tasks: ['DEFAULT_COMPLETED_STATUSES', 'wikilinkTarget', 'wikilinkLabel', 'taskTitleOf', 'timeOf', 'ruleTimeOf', 'onDay', 'movedDate', 'untimedSlot', 'taskFromFrontmatter', 'isTaskDone', 'isOverdue', 'lastMissedDay', 'isLate', 'taskOnDay', 'isSomeday', 'applySomeday', 'sortByOrder', 'orderForInsert', 'applyMove', 'applyPlacement', 'applyUnschedule', 'planInsert', 'blockerLinks', 'blockerHolds', 'openBlockersOf'],
   parts: ['ADDON', 'HOST', 'PARTS', 'partOf'],
   vault: ['vaultHas', 'movePath', 'pathsAfterRename', 'BAD_NAME', 'RESERVED', 'isReserved', 'FOLDER_DEFAULTS', 'PROPS', 'DAILY_DEFAULTS', 'vaultFolders', 'propNames', 'feedNotes', 'sidebarContent', 'planning', 'setVault', 'startWith', 'namesProblem', 'dailyNotes', 'inTaskFolders', 'readable', 'writable', 'toNote', 'isRenamed'],
   calendars: ['isHttp', 'normalizeLinks', 'linksOf', 'saveLinks', 'fetchUrl', 'eventsFromIcs', 'calendarEvents', 'refreshCalendars', 'calendarErrors', 'resetCalendars'],

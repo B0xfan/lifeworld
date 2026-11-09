@@ -169,6 +169,11 @@ function lastMissedDay(item, today, completedStatuses) {
   return null;
 }
 
+// Late, what every page counts as overdue (2026-11-09): an overdue one-off, or a repeating task's missed last day.
+// isOverdue alone is what "Move all to today" moves; a missed repeat is never moved, only ticked.
+/** @param {TaskItem} item @param {string} today @param {string[] | null} [completedStatuses] */
+function isLate(item, today, completedStatuses) { return isOverdue(item, today, completedStatuses) || !!lastMissedDay(item, today, completedStatuses); }
+
 /** @param {TaskItem} item @param {string} day */
 function taskOnDay(item, day) {
   if (isSomeday(item)) return false; // kept for later: on no day, repeating or not
@@ -312,4 +317,4 @@ function openBlockersOf(app, item, completedStatuses) {
   return out;
 }
 
-export { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, blockerLinks, blockerHolds, openBlockersOf };
+export { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, isLate, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, planInsert, blockerLinks, blockerHolds, openBlockersOf };
