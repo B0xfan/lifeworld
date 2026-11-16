@@ -28,6 +28,8 @@ class Component {
   register(fn) { this._events.push(fn); }
 }
 class Plugin extends Component { registerEvent() {}
+  // The typed bullets' hooks (2026-11-10): accepted, not run.
+  registerEditorSuggest() {} registerMarkdownPostProcessor() {} registerMarkdownCodeBlockProcessor() {} registerEditorExtension() {}
   constructor(app, manifest) { super(); this.app = app; this.manifest = manifest; }
   addCommand(c) { c.id = `${this.manifest.id}:${c.id}`; c.name = `${this.manifest.name}: ${c.name}`; this.app.commands[c.id] = c; this.register(() => delete this.app.commands[c.id]); return c; }
   registerView(type) { this.app.views.push(type); }
@@ -37,6 +39,8 @@ class Plugin extends Component { registerEvent() {}
   async saveData(d) { if (failSave) throw new Error('disk full'); const s = JSON.stringify(d); writes.push('begin'); await new Promise((r) => setTimeout(r, writeDelay())); disk[this.manifest.dir] = s; writes.push('end'); }
 }
 class Notice { constructor(m) { notices.push(m); } }
+// The outline look's switch is a class on <body> (typed bullets).
+if (!global.document) global.document = { body: { toggleClass() {}, removeClass() {} }, querySelectorAll: () => [] };
 // Settings page stand-ins: a Setting records what it shows; an element records what is put in it.
 const fakeEl = (tag) => ({ tag, kids: [], cls: [], attr: {}, dataset: {}, text: '', on: {}, addEventListener(t, f) { (this.on[t] = this.on[t] || []).push(f); }, fire(t) { return Promise.all((this.on[t] || []).map((f) => f())); }, empty() { this.kids = []; }, addClass(c) { this.cls.push(c); }, toggleClass(c, on) { this.cls = this.cls.filter((x) => x !== c); if (on) this.cls.push(c); },
   setAttr(k, v) { this.attr[k] = v; }, setText(t) { this.text = t; }, createDiv(o) { return this.createEl('div', o); },
@@ -65,7 +69,10 @@ class AbstractInputSuggest { constructor(app, inputEl) { this.app = app; this.in
 const debounce = (f, ms) => { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; f(...a); }, ms); }; d.cancel = () => { clearTimeout(t); t = null; }; return d; };
 const fakeObsidian = new Proxy({ Plugin, Component, Notice, PluginSettingTab, Setting, Modal, TFile, TFolder, AbstractInputSuggest, debounce, setIcon() {}, moment: require('moment') }, { get: (t, k) => (k in t ? t[k] : k === 'Platform' ? {} : class {}) });
 const load = Module._load;
-Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : load.call(this, req, ...a); };
+// The typed bullets' editor look loads CodeMirror, which needs a real page: small stand-ins here.
+const fakeCM = { '@codemirror/state': { StateEffect: { define: () => ({}) }, RangeSetBuilder: class {}, Prec: { high: (x) => x } }, '@codemirror/view': { ViewPlugin: { fromClass: () => ({}) }, Decoration: {}, WidgetType: class {} } };
+let useFakeCM = true; // off for the task links checks below, which load the real CodeMirror
+Module._load = function (req, ...a) { return req === 'obsidian' ? fakeObsidian : (useFakeCM && fakeCM[req]) || load.call(this, req, ...a); };
 
 const LW = require(path.join(ROOT, 'main.js')).default; // the new-install start (no test vault settings)
 const { fromSrc } = require('./lib/paths');
@@ -104,7 +111,7 @@ const adapter = {
   async write(p, s) { if (failCopy) throw new Error('disk full'); if (DATA.test(p)) disk[p.replace(DATA, '')] = s; else files[p] = s; },
 };
 let openTabs = {}; // tab type -> leaves already open when LifeWorld starts
-const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, cleared: [], saveLocalStorage(k, v) { if (v === null) this.cleared.push(k); }, workspace: { onLayoutReady: (f) => f(), trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { on(name, f) { if (name === 'rename') this.renamed = f; return {}; }, configDir: '.obsidian', adapter, getRoot: () => new TFolder('', []), getMarkdownFiles: () => [], getAbstractFileByPath: () => null }, metadataCache: { getFileCache: () => null } }; }; // no app.plugins: lookups must not need it
+const newApp = () => { const closed = []; return { commands: {}, tabs: [], views: [], closed, cleared: [], saveLocalStorage(k, v) { if (v === null) this.cleared.push(k); }, workspace: { onLayoutReady: (f) => f(), updateOptions() {}, trigger(name, x) { (this.fired = this.fired || []).push([name, x]); }, detachLeavesOfType(t) { closed.push(t); }, getLeavesOfType: (t) => (t === 'file-explorer' ? ['files'] : openTabs[t] || []), async revealLeaf(l) { closed.push(`reveal ${l}`); } }, vault: { on(name, f) { if (name === 'rename' && !this.renamed) this.renamed = f; return {}; }, configDir: '.obsidian', adapter, getRoot: () => new TFolder('', []), getMarkdownFiles: () => [], getAbstractFileByPath: () => null }, metadataCache: { getFileCache: () => null, on: () => ({}) } }; }; // no app.plugins: lookups must not need it
 const start = async (data) => {
   const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;
   if (data !== undefined) disk[dir] = typeof data === 'string' ? data : JSON.stringify(data); // a string: the raw file
@@ -211,7 +218,7 @@ const start = async (data) => {
 
   // Section 2: one settings page, the Parts switches.
   const draw = (h) => { h.settingTab.display(); return h.settingTab.containerEl.kids.filter((k) => !(k.cls || []).includes('lw-hint')).map((k) => (k.rec ? k.rec : 'section')); };
-  const rows = (h) => draw(h).filter((r) => r !== 'section' && !r.heading && 'on' in r && r.name !== 'Reminder pop-ups'); // the Parts switches
+  const rows = (h) => draw(h).filter((r) => r !== 'section' && !r.heading && 'on' in r && r.name !== 'Reminder pop-ups' && r.name !== 'Tana-style outline look'); // the Parts switches
   const heads = (h) => draw(h).filter((r) => r.heading).map((r) => r.name);
   const cmds = (a) => Object.keys(a.commands).map((c) => c.split(':')[0]).filter((p) => p !== 'lifeworld').sort(); // the parts' commands
   const pg = await start({ 'a4-today': { layout: ['weather'] } });
@@ -220,8 +227,9 @@ const start = async (data) => {
     ['Planner', 'Day, week and month board', true, false],
     ['Projects and areas', 'Project pages, areas, the task board and Inbox', true, false],
     ['Sidebar', "The LifeWorld panel on the left. Off: Obsidian's normal file list.", true, false],
-  ], 'Parts: the four switches as drawn, all on for a setup that never switched one');
-  eq(heads(pg.host), ['Parts', 'Planning', 'Your vault', 'Tasks', 'Today page', 'Sidebar'], 'then each part\'s own settings under the mockup\'s heading, in its order');
+    ['Typed bullets', 'Give bullets a type with # (task, Person, Decision and your own), link people with @, and show live lists. Off: LifeWorld leaves your bullets as they are.', false, false],
+  ], 'Parts: the four parts on, and Typed bullets off, for a setup that never switched one');
+  eq(heads(pg.host), ['Parts', 'Planning', 'Your vault', 'Tasks', 'Today page', 'Sidebar', 'Bullet types'], 'then each part\'s own settings under the mockup\'s heading, in its order');
   { const names = draw(pg.host).filter((r) => r !== 'section').map((r) => (r.heading ? `#${r.name}` : r.name));
     const at = names.indexOf('Reminder pop-ups');
     ok(at > names.indexOf('#Planning') && at < names.indexOf('#Your vault') && names.filter((n) => n === 'Reminder pop-ups').length === 1, 'Reminder pop-ups: once, under Planning (2026-11-07 mockup)'); }
@@ -251,7 +259,7 @@ const start = async (data) => {
   eq(log.filter((x) => /^(stop|started) /.test(x)), ['stop a4-projects', 'started a4-projects'], 'Projects off: only the task engine restarts, Today keeps running');
   ok(pg.host.running['a4-projects'].pagesOff === true && pg.host.running['a4-today'], 'the engine runs without its pages while Today is on');
   eq(pg.app.closed.slice(1), ['a4-projects-view'], 'the Projects tabs are closed');
-  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and areas', false, false], ['Sidebar', true, false]], 'every switch on its own, none greyed');
+  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and areas', false, false], ['Sidebar', true, false], ['Typed bullets', false, false]], 'every switch on its own, none greyed');
   ok(!pg.host.settingTab.containerEl.kids.some((k) => k.rec && k.settingEl.cls.includes('lw-dim')), 'no Parts row dimmed');
   ok(heads(pg.host).includes('Tasks'), 'the task settings stay while the engine runs');
   await pg.host.setPart('a4-today', false);
@@ -263,7 +271,7 @@ const start = async (data) => {
   eq(log.filter((x) => /^(stop|started) /.test(x)), ['stop a4-projects', 'started a4-projects'], 'Projects on: the engine restarts with its pages');
   ok(pg.host.running['a4-projects'].pagesOff === false, 'pages on');
   eq(cmds(pg.app), ['a4-projects', 'a4-sidebar', 'a4-today'], 'commands back for the parts that are on');
-  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and areas', true, false], ['Sidebar', true, false]], 'the Planner\'s own switch kept');
+  eq(rows(pg.host).map((r) => [r.name, r.on, !!r.disabled]), [['Today page', true, false], ['Planner', false, false], ['Projects and areas', true, false], ['Sidebar', true, false], ['Typed bullets', false, false]], 'the Planner\'s own switch kept');
   eq(pg.host.running['a4-today'].saved, { layout: ['weather'] }, 'a part started again reads its saved settings');
   eq(plainFile(disk[pg.dir]).lifeworld.parts, { 'a4-planner': false, 'a4-projects': true, 'a4-today': true }, 'saved');
   await pg.host.setPart('a4-planner', true);
@@ -789,6 +797,8 @@ const start = async (data) => {
   const tl = await start({});
   const TL = LW.parts['a4-projects'].TaskLinks;
   const evs = {};
+  // The real CodeMirror from here on; it reads a real page when one is there, so the stand-in page goes.
+  const fakePage = global.document; useFakeCM = false; delete global.document;
   const tlApp = { metadataCache: { on: (n, f) => { evs[n] = f; } }, vault: { on: (n, f) => { evs[n] = f; } }, workspace: { updateOptions() {} } };
   const links = new TL({ app: tlApp, engine: { isTaskFile: () => false }, registerMarkdownPostProcessor() {}, registerEditorExtension() {}, registerEvent() {}, register() {} });
   links.editorExtension = () => null;
@@ -807,6 +817,7 @@ const start = async (data) => {
     try { cmLinks.start(); await new Promise((r) => setTimeout(r, 0)); } finally { Mod._load = load; console.warn = warn; }
     eq([exts.length, exts[0], updated, warned.length], missing ? [1, [], 0, 1] : [1, ['ext'], 1, 0], missing ? 'task links: a missing CodeMirror module is logged and only Live Preview links are off' : 'task links: CodeMirror loads at start and the editors are told');
   }
+  global.document = fakePage; useFakeCM = true;
   tl.host.unload();
 
   // ---- Section 6: the Sidebar's content is stored data; a part switched off hides its buttons ----
@@ -1352,7 +1363,7 @@ const start = async (data) => {
       const root = new TFolder('', []); const dirs = { '': root }; const all = [];
       const dir = (p) => { if (dirs[p]) return dirs[p]; const d = new TFolder(p, []); d.name = p.split('/').pop(); dir(p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '').children.push(d); return (dirs[p] = d); };
       for (const p of paths) { const f = tf(p); all.push(f); dir(p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '').children.push(f); }
-      return { getRoot: () => root, getMarkdownFiles: () => all, getAbstractFileByPath: (p) => dirs[p] || all.find((f) => f.path === p) || null, cache: { getFileCache: (f) => caches[f.path] || null } };
+      return { getRoot: () => root, getMarkdownFiles: () => all, getAbstractFileByPath: (p) => dirs[p] || all.find((f) => f.path === p) || null, cache: { getFileCache: (f) => caches[f.path] || null, on: () => ({}) } };
     };
     const startIn = async (data, v, more = {}) => {
       const dir = `.obsidian/plugins/lifeworld-${Math.random()}`;

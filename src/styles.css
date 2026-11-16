@@ -39,3 +39,41 @@
 .lw-rem-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .lw-rem-more:not(:empty) { font-size: var(--font-ui-small); color: var(--text-muted); text-align: right; }
 .is-mobile .lw-reminders { left: 8px; right: 8px; bottom: calc(var(--safe-area-inset-bottom, 0px) + 64px); width: auto; }
+
+/* Typed bullets (Tana-style bullets job, 2026-11-10; mockup-tana-style-bullets.html). --lw-bt-c is the type's color. */
+.lw-bt-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--radius-l); font-family: var(--font-monospace); font-size: var(--font-smaller); color: var(--lw-bt-c); background-color: color-mix(in srgb, var(--lw-bt-c) 16%, transparent); text-decoration: none; }
+a.tag.lw-bt-tag { border: 0; padding: 1px 8px; color: var(--lw-bt-c); background-color: color-mix(in srgb, var(--lw-bt-c) 16%, transparent); }
+.lw-bt-line .list-bullet::after, .lw-bt-li > .list-bullet::after { background-color: var(--lw-bt-c); }
+.lw-bt-li::marker { color: var(--lw-bt-c); }
+/* Field rows: the name small and muted on the left, the value on the right. */
+.lw-bt-rows { display: grid; gap: 1px; margin: 2px 0 6px var(--size-4-2); }
+.lw-bt-row { display: flex; align-items: center; gap: var(--size-4-3); min-width: 0; }
+.lw-bt-name { display: inline-block; flex: 0 0 7.5em; width: 7.5em; color: var(--text-muted); font-size: var(--font-smaller); cursor: text; }
+.lw-bt-value { min-width: 0; overflow-wrap: anywhere; }
+.lw-bt-value.is-empty, .lw-bt-list td.is-empty { color: var(--text-faint); }
+.lw-bt-value.is-button, .lw-bt-caret.is-button, .lw-bt-list-row { cursor: var(--cursor); }
+.lw-bt-caret { display: inline-flex; vertical-align: middle; margin-left: var(--size-4-1); color: var(--text-faint); --icon-size: var(--icon-xs); }
+.lw-bt-tail .lw-bt-value { margin-left: var(--size-4-1); }
+.lw-bt-fieldline .list-bullet { visibility: hidden; }
+li.lw-bt-fieldli { list-style: none; }
+li.lw-bt-fieldli > .list-bullet { visibility: hidden; }
+/* Person pill with an initials badge (the owner's 2026-10-16 picture). */
+.lw-bt-person { border-radius: var(--radius-s); padding: 0 6px 0 2px; background-color: color-mix(in srgb, var(--lw-bt-c) 16%, transparent); color: var(--lw-bt-c); text-decoration: none; }
+.lw-bt-badge { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; margin-right: 4px; border-radius: 50%; vertical-align: 0.05em; font-size: 0.65em; font-weight: var(--font-semibold); color: var(--text-on-accent); background-color: var(--lw-bt-c); text-decoration: none; }
+/* The live list block. */
+.lw-bt-list-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin-bottom: var(--size-4-2); }
+.lw-bt-hint, .lw-bt-count { color: var(--text-muted); font-size: var(--font-smaller); }
+.lw-bt-count { margin-left: auto; }
+.lw-bt-scroll { overflow-x: auto; }
+.lw-bt-list-row:hover { background-color: var(--background-modifier-hover); }
+.lw-bt-note { color: var(--text-muted); }
+.lw-bt-error { color: var(--text-error); }
+/* The # menu and the type box. */
+.lw-bt-suggest { display: flex; align-items: center; gap: var(--size-4-2); }
+.lw-bt-create { color: var(--text-accent); }
+.lw-bt-warn { color: var(--text-warning); }
+.lw-bt-warn:empty { display: none; }
+.lw-bt-wide, .lw-bt-date { width: 100%; }
+/* Tana-style outline look (criterion 6): round dots, a ring on folded bullets, lines down to the children. */
+body.lw-outline { --list-bullet-radius: 50%; --list-bullet-size: 0.35em; --indentation-guide-width: 1px; --indentation-guide-color: var(--background-modifier-border-hover); --indentation-guide-color-active: var(--text-faint); }
+body.lw-outline .is-collapsed .list-bullet::after, body.lw-outline .is-collapsed ~ .cm-formatting-list .list-bullet::after { box-shadow: 0 0 0 4px var(--background-modifier-border-hover); }

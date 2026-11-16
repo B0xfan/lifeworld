@@ -15,7 +15,7 @@ exports.STYLES = path.join(ROOT, 'styles.css');
 // require.cache): install the 'obsidian' stand-in before the first lifeworld() call and keep that same
 // object (adding to it later is fine); run-all.js gives each test file its own process. Upgrade if a
 // file ever needs two stand-ins.
-const BASES = ['Plugin', 'ItemView', 'Modal', 'PluginSettingTab', 'SuggestModal', 'FuzzySuggestModal', 'AbstractInputSuggest'];
+const BASES = ['Plugin', 'ItemView', 'Modal', 'PluginSettingTab', 'SuggestModal', 'FuzzySuggestModal', 'AbstractInputSuggest', 'EditorSuggest', 'MarkdownRenderChild'];
 exports.lifeworld = () => {
   const first = !require.cache[exports.MAIN];
   if (first) { const ob = require('module')._load('obsidian', module); for (const k of BASES) if (!ob[k]) ob[k] = class {}; }

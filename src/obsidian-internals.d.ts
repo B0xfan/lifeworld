@@ -23,6 +23,10 @@ declare module 'obsidian' {
     dragManager?: { dragFile?(e: DragEvent, file: TFile): unknown; onDragStart(e: DragEvent, data: unknown): void; draggable?: { file?: TAbstractFile | null; type?: string } | null };
     importAttachments?(entries: { name: string; extension: string; filepath: string; data: Promise<ArrayBuffer> }[], folder: TFolder): Promise<(TFile | null)[]>;
   }
+  // The editor's list of suggest boxes, asked in order; the first that answers wins (typed bullets' # menu).
+  interface Workspace { editorSuggest?: { suggests?: unknown[] } }
+  // Every tag in the vault with its count, "#tag" -> n (typed bullets leave known tags to Obsidian's own box).
+  interface MetadataCache { getTags?(): Record<string, number> }
   interface Vault { getAbstractFileByPathInsensitive?(path: string): TAbstractFile | null; getConfig?(key: string): unknown; setConfig?(key: string, value: unknown): void; saveConfig?(): unknown }
   interface FileManager { promptForDeletion(file: TAbstractFile): Promise<void> }
   interface Menu { dom?: HTMLElement }

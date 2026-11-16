@@ -20,6 +20,7 @@ import Planner from './planner/main';
 import sidebarManifest from './sidebar/manifest.json';
 import Sidebar from './sidebar/main';
 import { readFile, addChanges, carryChanges } from './core/settings-log';
+import { Bullets } from './bullets/main';
 
 // Start order: Projects first (the task engine the others use).
 /** @typedef {[import('obsidian').PluginManifest, new (app: import('obsidian').App, manifest: import('obsidian').PluginManifest) => PartPlugin]} PartEntry */
@@ -146,6 +147,9 @@ class LifeWorldPlugin extends Plugin {
       const change = { ...paths, ...(named || (paths && paths.sidebar) ? { sidebar: { ...(paths && paths.sidebar), ...named } } : {}) };
       this.setVaultSettings(change).catch((e) => console.error('LifeWorld: its settings could not follow a renamed folder', e));
     }));
+    // Typed bullets run with LifeWorld itself, whichever parts are on (Tana-style bullets job, 2026-11-10).
+    this.bullets = new Bullets(this);
+    this.bullets.start();
     this.addSettingTab(new LifeWorldSettingTab(this.app, this));
     this.addCommand({ id: 'open-manual', name: 'Open the manual', callback: () => window.open(MANUAL_URL) });
     // A tab open before the later parts started (Today before the Planner) drew them as off: all open
@@ -569,6 +573,8 @@ class LifeWorldPlugin extends Plugin {
     if (hostChanged) {
       const h = this.store[HOST];
       if (JSON.stringify(before[HOST] && before[HOST].vault) !== JSON.stringify(h && h.vault)) this.applyVault(h && h.vault);
+      // Bullet types or the outline switch changed on another device.
+      if (this.bullets && JSON.stringify(before[HOST] && before[HOST].bullets) !== JSON.stringify(h && h.bullets)) { this.bullets.applyOutline(); this.bullets.refreshSoon(); }
     }
     if (hostChanged || popupsChanged) await this.applyParts();
     // Once, last, and only before 1.13: from 1.13 Obsidian calls the open page's update() after this handler.
@@ -605,6 +611,8 @@ class LifeWorldSettingTab extends PluginSettingTab {
       // The part's first group goes under LifeWorld's heading for it.
       tab.getSettingDefinitions().forEach((g, i) => items.push(i ? g : { ...g, heading }));
     }
+    // Typed bullets last: they work whichever parts are on (2026-11-10).
+    items.push(this.plugin.bullets.settingsGroup(() => this.redraw()));
     return noCleanup(items);
   }
 
