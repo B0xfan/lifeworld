@@ -1941,7 +1941,8 @@ class SchedulePopover {
     this.month = this.sel.slice(0, 7);
     /** @type {string} */
     this.half = it.plannedHalf || 'am';
-    this.time = ''; // HH:MM from the At field, or none
+    /** @type {string} HH:MM from the At field, or none; starts at the task's own time where the field is shown */
+    this.time = (!it.ext && !it.recurrenceRaw && planning.setsDue && it.time) || '';
     this.el = document.body.createDiv({ cls: 'a4pl-pop' + (view.narrow ? ' is-narrow' : '') });
     this.el.setAttr('role', 'dialog'); this.el.setAttr('aria-label', 'Schedule ' + it.title);
     btn.addClass('is-open');
@@ -2060,7 +2061,8 @@ class SchedulePopover {
         seg.querySelectorAll('button').forEach((b, i) => b.toggleClass('is-on', ['am', 'pm', 'any'][i] === this.half));
       };
       ti.addEventListener('change', () => { this.time = ti.value; if (this.time) this.half = /** @type {string} */ (halfOfTime(this.time)); sync(); });
-      clear.addEventListener('click', () => { this.time = ''; ti.value = ''; sync(); ti.focus(); });
+      ti.addEventListener('keydown', (e) => { if (e.key === 'Enter' && ti.value) { e.preventDefault(); this.time = ti.value; this.placeOn(this.sel, halfOfTime(ti.value), ti.value); } });
+      clear.addEventListener('click',() => { this.time = ''; ti.value = ''; sync(); ti.focus(); });
       sync();
     }
     label();
