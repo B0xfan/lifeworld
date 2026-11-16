@@ -1843,7 +1843,8 @@ class PlannerView extends ItemView {
       // from Any time no longer scrolls the hours up and away (1.6.2), and the lower edge is reachable.
       const r = tg.getBoundingClientRect(); const view = sc ? sc.getBoundingClientRect() : r;
       const top = Math.max(r.top, view.top), bottom = Math.min(r.bottom, view.bottom);
-      if (dy < 0 && y < top + 30 && y > top - 60) tg.scrollTop -= 10; else if (dy > 0 && y > bottom - 30 && y < bottom + 60) tg.scrollTop += 10;
+      // Not while the grid is off screen, nor from inside Any time above it (a small wobble there scrolled the hours away).
+      if (top < bottom) { if (dy < 0 && y < top + 30 && y > top) tg.scrollTop -= 10; else if (dy > 0 && y > bottom - 30 && y < bottom + 60) tg.scrollTop += 10; }
     }
     if (!sc) return;
     const r = sc.getBoundingClientRect();
@@ -1940,6 +1941,7 @@ class SchedulePopover {
     this.month = this.sel.slice(0, 7);
     /** @type {string} */
     this.half = it.plannedHalf || 'am';
+    this.time = ''; // HH:MM from the At field, or none
     this.el = document.body.createDiv({ cls: 'a4pl-pop' + (view.narrow ? ' is-narrow' : '') });
     this.el.setAttr('role', 'dialog'); this.el.setAttr('aria-label', 'Schedule ' + it.title);
     btn.addClass('is-open');
@@ -1991,9 +1993,10 @@ class SchedulePopover {
     window.setTimeout(() => { const r = /** @type {HTMLElement[]} */ ([...view.contentEl.querySelectorAll('[data-focus]')]).find((x) => /** @type {string} */ (x.dataset.focus).startsWith(key + '@')); if (r) r.focus({ preventScroll: true }); }, 450);
   }
 
-  /** @param {string} day @param {string | null} half */
-  placeOn(day, half) {
+  /** @param {string} day @param {string | null} half @param {string} [time] the At field: placed at that time instead */
+  placeOn(day, half, time) {
     const { view, it } = this;
+    if (time) { this.act(() => view.plugin.placeAt(it, day, time, view.items)); return; }
     this.act(async () => { const res = await view.plugin.moveTask(it, day, half, null, view.items); if (res) view.plugin.movedNotice(it, day, half, res, () => view.scheduleRender()); });
   }
 
@@ -2032,16 +2035,36 @@ class SchedulePopover {
       b.addEventListener('keydown', (e) => {
         const mv = /** @type {Record<string, number>} */ ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 })[e.key];
         if (mv) { e.preventDefault(); this.sel = addDays(this.sel, mv); this.month = this.sel.slice(0, 7); this.draw(); this.focusSel(); }
-        else if (e.key === 'Enter') { e.preventDefault(); this.placeOn(this.sel, this.half === 'any' ? null : this.half); }
+        else if (e.key === 'Enter') { e.preventDefault(); this.placeOn(this.sel, this.half === 'any' ? null : this.half, this.time); }
       });
     }
     const seg = h(el, 'div', 'a4pl-seg a4pl-pop-seg');
     for (const [k, l] of [['am', 'Morning'], ['pm', 'Afternoon'], ['any', 'Any time']]) {
       const b = h(seg, 'button', this.half === k ? 'is-on' : '', l);
-      b.addEventListener('click', () => { this.half = k; this.draw(); });
+      b.addEventListener('click', () => { this.half = k; this.time = ''; this.draw(); });
     }
-    const pl = h(el, 'button', 'a4pl-pop-place', `Place on ${fmtDay(this.sel, { weekday: 'short', month: 'short', day: 'numeric' })}`);
-    pl.addEventListener('click', () => this.placeOn(this.sel, this.half === 'any' ? null : this.half));
+    // At a time (mockup approved 2026-11-16): the same placement as a drop on the Day hour grid.
+    // Only where a time can be kept: not a repeating task, another source, or "just plan it".
+    const pl = h(el, 'button', 'a4pl-pop-place');
+    const label = () => { pl.textContent = `Place on ${fmtDay(this.sel, { weekday: 'short', month: 'short', day: 'numeric' })}` + (this.time ? ` · ${timeText(this.time)}` : ''); };
+    if (!it.ext && !it.recurrenceRaw && planning.setsDue) {
+      const row = h(el, 'div', 'a4pl-pop-time');
+      el.insertBefore(row, pl);
+      h(row, 'span', 'a4pl-pop-tlb', 'At');
+      const ti = /** @type {HTMLInputElement} */ (h(row, 'input', 'a4pl-pop-tf'));
+      ti.type = 'time'; ti.step = '900'; ti.value = this.time; ti.setAttr('aria-label', 'Start time');
+      const clear = h(row, 'button', 'a4pl-pop-clear', 'clear');
+      const sync = () => {
+        ti.toggleClass('is-set', !!this.time); clear.toggleClass('is-hidden', !this.time); label();
+        // Redrawn in place, not with draw(), so typing into the time field keeps its focus.
+        seg.querySelectorAll('button').forEach((b, i) => b.toggleClass('is-on', ['am', 'pm', 'any'][i] === this.half));
+      };
+      ti.addEventListener('change', () => { this.time = ti.value; if (this.time) this.half = /** @type {string} */ (halfOfTime(this.time)); sync(); });
+      clear.addEventListener('click', () => { this.time = ''; ti.value = ''; sync(); ti.focus(); });
+      sync();
+    }
+    label();
+    pl.addEventListener('click', () => this.placeOn(this.sel, this.half === 'any' ? null : this.half, this.time));
     if (it.plannedDay && !it.recurrenceRaw) {
       h(el, 'div', 'a4pl-pop-sep');
       const u = h(el, 'button', 'a4pl-pop-q');
