@@ -889,7 +889,7 @@ function closeOpenPopovers() { for (const p of [...openPopovers]) p.close(false)
 const h = (parent, tag, cls, text) => { const e = (parent ? parent.createEl(tag) : document.createElement(tag)); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
 /** @typedef {HTMLElement & { _dragged?: boolean }} PlanRow */
-/** @typedef {{ item?: PlanItem, ev?: PlanEvent, fb?: TimeBlock, free?: boolean, group?: { name: string, label: string }, grabY?: number, resize?: { start: number, d0: number, d: number }, gridMin?: number | null, row: PlanRow, x0: number, y0: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, tip?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
+/** @typedef {{ item?: PlanItem, ev?: PlanEvent, fb?: TimeBlock, free?: boolean, group?: { name: string, label: string }, grabY?: number, resize?: { start: number, d0: number, d: number }, gridMin?: number | null, row: PlanRow, x0: number, y0: number, lastY?: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, tip?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
 /** @typedef {{ day?: string | null, side?: boolean, drag?: boolean, compact?: boolean, hideProject?: boolean, missed?: string | null }} PlanRowOpts */
 class PlannerView extends ItemView {
   // Set on every render (no value before the first one).
@@ -1783,7 +1783,8 @@ class PlannerView extends ItemView {
       else d.ghost = document.body.createDiv({ cls: 'a4pl-ghost', text: d.ev ? 'New task: ' + d.ev.summary : d.group ? 'Work on ' + d.group.label : d.fb ? d.fb.title : d.free ? 'Free time' : d.item && d.item.title });
       if (d.inSheet) { this.sheetOpen = false; const s = this.contentEl.querySelector('.a4pl-sheet'); if (s) s.addClass('is-closed'); }
     }
-    if (d.resize) { this.resizeMove(d, e); return; }
+    const dy = e.clientY - (d.lastY ?? d.y0); d.lastY = e.clientY;
+    if (d.resize) { this.resizeMove(d, e, dy); return; }
     const ghost = /** @type {HTMLElement} */ (d.ghost);
     ghost.style.left = `${e.clientX + 12}px`;
     ghost.style.top = `${e.clientY + 8}px`;
@@ -1792,7 +1793,7 @@ class PlannerView extends ItemView {
     let zone = /** @type {HTMLElement | null} */ (hit && this.contentEl.contains(hit) ? hit.closest('[data-drop]') : null);
     if ((d.group || d.fb || d.free) && zone && zone.dataset.drop !== 'grid') zone = null; // work and free time blocks go on a time only
     d.zone = zone; d.idx = null; d.at = null; d.gridMin = null;
-    this.autoScroll(e.clientY);
+    this.autoScroll(e.clientY, dy);
     if (!zone) return;
     if (zone.dataset.drop === 'grid') { this.gridPreview(d, zone, e); return; }
     zone.addClass('is-over');
@@ -1820,8 +1821,8 @@ class PlannerView extends ItemView {
   }
 
   // The bottom edge being dragged: the block grows or shrinks in 15-minute steps, live.
-  /** @param {PlanDrag} d @param {PointerEvent} e */
-  resizeMove(d, e) {
+  /** @param {PlanDrag} d @param {PointerEvent} e @param {number} dy */
+  resizeMove(d, e, dy) {
     const r = /** @type {NonNullable<PlanDrag['resize']>} */ (d.resize);
     r.d = snapLength(r.d0 + ((e.clientY - d.y0) / GRID_HOUR_PX) * 60, r.start, Math.max(GRID_END - r.start, r.d0));
     d.row.style.height = `${(r.d / 60) * GRID_HOUR_PX - 2}px`;
@@ -1830,14 +1831,20 @@ class PlannerView extends ItemView {
     const tip = /** @type {HTMLElement} */ (d.tip);
     tip.textContent = `until ${timeText(hhmmOf(r.start + r.d))} · ${lengthText(r.d)}`;
     tip.style.left = `${e.clientX + 14}px`; tip.style.top = `${e.clientY + 14}px`;
-    this.autoScroll(e.clientY);
+    this.autoScroll(e.clientY, dy);
   }
 
-  /** @param {number} y */
-  autoScroll(y) {
-    const tg = this.contentEl.querySelector('.a4pl-tg-scroll');
-    if (tg) { const r = tg.getBoundingClientRect(); if (y < r.top + 30 && y > r.top - 60) tg.scrollTop -= 10; else if (y > r.bottom - 30 && y < r.bottom + 60) tg.scrollTop += 10; }
+  /** @param {number} y @param {number} dy how far the pointer moved down since the last move */
+  autoScroll(y, dy) {
     const sc = this.contentEl.querySelector('.a4pl-scroll');
+    const tg = this.contentEl.querySelector('.a4pl-tg-scroll');
+    if (tg) {
+      // Only the way the pointer is heading, at the edges that are on screen: a task dragged down
+      // from Any time no longer scrolls the hours up and away (1.6.2), and the lower edge is reachable.
+      const r = tg.getBoundingClientRect(); const view = sc ? sc.getBoundingClientRect() : r;
+      const top = Math.max(r.top, view.top), bottom = Math.min(r.bottom, view.bottom);
+      if (dy < 0 && y < top + 30 && y > top - 60) tg.scrollTop -= 10; else if (dy > 0 && y > bottom - 30 && y < bottom + 60) tg.scrollTop += 10;
+    }
     if (!sc) return;
     const r = sc.getBoundingClientRect();
     if (y < r.top + 40) sc.scrollTop -= 14; else if (y > r.bottom - 40) sc.scrollTop += 14;
