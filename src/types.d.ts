@@ -133,7 +133,7 @@ interface TaskApi {
 
 /** A task as the Planner draws it (plannerItem, src/planner/main.js; or a source's item). */
 interface PlanItem extends TaskItem {
-  projectKey: string | null; projectLink: string | null; weeklyGoal: boolean; ext?: ExtInfo; repeats?: boolean;
+  projectKey: string | null; projectLink: string | null; weeklyGoal: boolean; estimate?: number | null; ext?: ExtInfo; repeats?: boolean;
   blockers?: { path: string; title: string }[];
 }
 /** A priority row as the Planner draws it (priorityTable). */

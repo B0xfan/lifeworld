@@ -544,4 +544,27 @@ ok(!/Pick a spot/.test(srcP), 'no pick-a-spot mode (removed)');
   eq(L.monthGrid('2026-10').slice(0, 1).concat(L.monthGrid('2026-10').slice(-1)), ['2026-09-28', '2026-11-08'], 'October 2026 grid runs Mon Sep 28 to Sun Nov 8');
 }
 
+/* ---- Day time grid (1.7.0): snapping, lengths, side by side, the timed write ---- */
+{
+  eq([L.estimateOf(45), L.estimateOf('90'), L.estimateOf(0), L.estimateOf('x'), L.estimateOf(undefined)], [45, 90, null, null, null], 'timeEstimate read as whole minutes, else none');
+  eq([L.snapStart(9 * 60 + 7, 30), L.snapStart(9 * 60 + 8, 30), L.snapStart(60, 30), L.snapStart(23 * 60, 60)], [9 * 60 + 15 - 15, 9 * 60 + 15, L.GRID_START, L.GRID_END - 60], 'start snaps to 15 minutes and stays inside 6 AM to 11 PM');
+  eq([L.snapLength(5, 600), L.snapLength(52, 600), L.snapLength(500, 22 * 60)], [15, 45, 60], 'length: 15-minute steps, at least 15, never past 11 PM');
+  eq(L.snapLength(130, 22 * 60, 120), 120, 'a stretch of a long late block stops at its own length, not shorter');
+  eq([L.lengthText(30), L.lengthText(60), L.lengthText(90)], ['30m', '1h', '1h 30m'], 'length text');
+  const lay = L.layoutBlocks([{ s: 540, d: 60, k: 'a' }, { s: 570, d: 30, k: 'b' }, { s: 660, d: 30, k: 'c' }]);
+  eq(lay.map((b) => `${b.k}${b.col}/${b.cols}`), ['a0/2', 'b1/2', 'c0/1'], 'overlapping blocks side by side; a later one gets the full width');
+  const fm = { tags: ['task'], status: 'someday', planned_day: '2026-11-16', due: '2026-11-17' };
+  L.applyTimed(fm, '2026-11-18', '14:15', 30);
+  eq([fm.due, fm.planned_half, fm.planned_day, fm.timeEstimate, fm.status], ['2026-11-18T14:15', 'pm', undefined, 30, 'open'], 'drop on the grid: Due with time, the half, length 30, someday opened');
+  const kept = { tags: ['task'], timeEstimate: 90 };
+  L.applyTimed(kept, '2026-11-18', '09:00', null);
+  eq([kept.due, kept.planned_half, kept.timeEstimate], ['2026-11-18T09:00', 'am', 90], 'a move keeps the task\'s own length');
+  eq(L.plannerItem({ tags: ['task'], due: '2026-11-18T09:00', timeEstimate: 45 }, 'T/x.md', 'x').estimate, 45, 'the Planner reads timeEstimate as the block length');
+  eq(L.blocksOf([{ id: 'a1', date: '2026-11-16', time: '12:30', minutes: 45, title: 'Lunch' }, { id: 12345678, date: '2026-11-17', time: '07:00', minutes: '30', title: ' ' },
+    { date: '2026-11-17', time: '08:00', minutes: 30 }, { id: 'b', date: '2026-11-17', time: '8:00', minutes: 30 }, { id: 'c', date: 'soon', time: '08:00', minutes: 30 }, { id: 'd', date: '2026-11-17', time: '08:00', minutes: 0 }, 'junk', null]),
+  [{ id: 'a1', date: '2026-11-16', time: '12:30', minutes: 45, title: 'Lunch' }, { id: '12345678', date: '2026-11-17', time: '07:00', minutes: 30, title: 'Free time' }],
+  'Time Blocks note: good entries drawn (a digit id as text, a blank title as Free time); no id, a bad time or date, no length are left out');
+  eq(L.blocksOf(undefined), [], 'no note, no blocks');
+}
+
 console.log(`RESULT ${n} ${failed}`);

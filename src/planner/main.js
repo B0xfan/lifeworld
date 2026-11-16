@@ -280,6 +280,7 @@ function plannerItem(fm, path, basename) {
   it.projectKey = projectKeyOf(asList(fm.projects)[0]);
   it.projectLink = /** @type {string | null} */ (asList(fm.projects)[0] || null);
   it.weeklyGoal = fm.weekly_goal === true;
+  it.estimate = estimateOf(fm.timeEstimate);
   return it;
 }
 
@@ -460,6 +461,74 @@ function moveLabel(day, half, today) {
   return `${d}, ${half === 'am' ? 'morning' : half === 'pm' ? 'afternoon' : 'any time'}`;
 }
 
+/* ---- Day time grid (LifeWorld 1.7.0, mockup approved 2026-11-16) ---------- *
+ * Day view on a desktop width: hours 6 AM to 11 PM, a task's clock time (on Due)
+ * is its start, TaskNotes' own `timeEstimate` (minutes) its length. */
+const GRID_START = 6 * 60;
+const GRID_END = 23 * 60;
+const GRID_SNAP = 15;
+const GRID_HOUR_PX = 64;
+const BLOCK_DEFAULT = 30;
+/** @param {string} t 'HH:MM' */
+const minutesOf = (t) => { const [hh, mm] = t.split(':').map(Number); return hh * 60 + mm; };
+/** @param {number} m */
+const hhmmOf = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+// A stored length: a positive whole number of minutes, else null.
+/** @param {unknown} v */
+function estimateOf(v) { const n = Number(v); return Number.isFinite(n) && n >= 1 ? Math.round(n) : null; }
+// A pointer's minute -> the 15-minute step, kept so a block of `dur` fits inside the grid.
+/** @param {number} m @param {number} dur */
+function snapStart(m, dur) { return Math.max(GRID_START, Math.min(GRID_END - dur, Math.round(m / GRID_SNAP) * GRID_SNAP)); }
+// A dragged length -> 15-minute steps, at least 15, never past the end of the grid.
+/** @param {number} m @param {number} start @param {number} [cap] the longest it may become */
+function snapLength(m, start, cap = GRID_END - start) { return Math.max(GRID_SNAP, Math.min(Math.max(GRID_SNAP, cap), Math.round(m / GRID_SNAP) * GRID_SNAP)); }
+/** @param {number} m */
+function lengthText(m) { return m < 60 ? `${m}m` : m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`; }
+// Overlapping blocks side by side: each touching cluster shares its column count.
+/** @template {{ s: number, d: number }} B @param {B[]} blocks @returns {(B & { col: number, cols: number })[]} */
+function layoutBlocks(blocks) {
+  const list = [...blocks].sort((a, b) => a.s - b.s || b.d - a.d).map((b) => ({ ...b, col: 0, cols: 1 }));
+  /** @type {typeof list} */
+  let cluster = []; let ends = /** @type {number[]} */ ([]); let clusterEnd = -1;
+  const close = () => { for (const b of cluster) b.cols = ends.length; cluster = []; ends = []; };
+  for (const b of list) {
+    if (b.s >= clusterEnd) close();
+    let c = ends.findIndex((e) => e <= b.s);
+    if (c < 0) { c = ends.length; ends.push(0); }
+    ends[c] = b.s + b.d; b.col = c; cluster.push(b);
+    clusterEnd = Math.max(clusterEnd, b.s + b.d);
+  }
+  close();
+  return list;
+}
+/** @typedef {{ id: string, date: string, time: string, minutes: number, title: string }} TimeBlock */
+// Free time blocks (Block time) are not tasks: one machine-owned note shared with Dateline
+// (shared file format): `blocks`, a list of { id, date, time, minutes, title }.
+// shortcut: the note sits beside the calendar or weather note (the vault root without one); add a setting if someone asks.
+function timeBlocksPath() { const f = feedNotes.calendar || feedNotes.weather; return (f && f.includes('/') ? f.slice(0, f.lastIndexOf('/') + 1) : '') + 'Time Blocks.md'; }
+// The note's well-formed blocks; anything else in the list is left alone and not drawn.
+/** @param {unknown} list @returns {TimeBlock[]} */
+function blocksOf(list) {
+  return asList(list).flatMap((b) => {
+    const o = /** @type {Fm} */ (b && typeof b === 'object' ? b : {});
+    const date = typeof o.date === 'string' ? o.date : ''; const time = typeof o.time === 'string' ? o.time : ''; const minutes = estimateOf(o.minutes);
+    if (!o.id || !isDayStr(date) || !/^\d{2}:\d{2}$/.test(time) || !minutes) return [];
+    return [{ id: String(o.id), date, time, minutes, title: (typeof o.title === 'string' && o.title.trim()) || 'Free time' }];
+  });
+}
+const newBlockId = () => Math.random().toString(36).slice(2, 10);
+// The write for a drop on a time: Due = that day at that time, the half from the time, no
+// planned_day left to disagree; a length only when given (a move keeps the task's own).
+/** @param {Fm} fm @param {string} day @param {string} time @param {number | null} minutes */
+function applyTimed(fm, day, time, minutes) {
+  if (isSomeday(fm)) fm.status = 'open';
+  fm.due = `${day}T${time}`;
+  fm.planned_half = halfOfTime(time);
+  delete fm.planned_day;
+  if (minutes != null) fm.timeEstimate = minutes;
+  return fm;
+}
+
 /* ========================================================================== *
  * Plugin
  * ========================================================================== */
@@ -624,6 +693,61 @@ class PlannerPlugin extends Plugin {
     return { undo, dropsTime };
   }
 
+  // A drop on the Day time grid. A LifeWorld task with "Set its due date" gets that time on Due
+  // and a length (30 minutes when it has none), with Undo; anything else (another source, "just
+  // plan it", a repeating task) takes the plain move into the half the time falls in.
+  /** @param {PlanItem} item @param {string} day @param {string} time @param {PlanItem[]} items */
+  async placeAt(item, day, time, items) {
+    const half = halfOfTime(time);
+    if (item.ext || item.recurrenceRaw || !planning.setsDue) {
+      const res = await this.moveTask(item, day, half, null, items);
+      if (res) this.movedNotice(item, day, half, res);
+      return;
+    }
+    const file = this.fileOf(item.path);
+    if (!file) { new Notice('That task note is gone.'); return; }
+    const undo = await writeWithUndo(this.app, file, (fm) => { applyTimed(fm, day, time, item.estimate ? null : BLOCK_DEFAULT); });
+    const d = day === dayOf(new Date()) ? 'today' : fmtDay(day, { weekday: 'short', month: 'short', day: 'numeric' });
+    undoNotice(`Moved to ${d}, ${timeText(time)}`, undo);
+  }
+
+  /** @returns {TimeBlock[]} */
+  timeBlocks() {
+    const f = this.app.vault.getAbstractFileByPath(timeBlocksPath());
+    const fm = /** @type {Fm | null | undefined} */ (f instanceof TFile ? (this.app.metadataCache.getFileCache(f) || {}).frontmatter : null);
+    return blocksOf(fm && fm.blocks);
+  }
+
+  // One change to the Time Blocks note, read fresh at write time (Dateline writes it too).
+  /** @param {(list: Fm[]) => Fm[]} fn */
+  async editBlocks(fn) {
+    const path = timeBlocksPath();
+    let f = this.app.vault.getAbstractFileByPath(path);
+    if (!f) f = await this.app.vault.create(path, '---\ntype: note\ncategory: time-blocks\nblocks: []\n---\nFree time blocks from the Planner (Block time), kept by LifeWorld and Dateline. Change them in the Planner.\n');
+    if (!(f instanceof TFile)) throw new Error(`${path} is not a note`);
+    await this.app.fileManager.processFrontMatter(f, (fm) => { fm.blocks = fn(/** @type {Fm[]} */ (asList(fm.blocks))); });
+  }
+
+  /** @param {TimeBlock} fb @param {Partial<TimeBlock>} patch */
+  async changeBlock(fb, patch) { await this.editBlocks((l) => l.map((x) => (x && String(x.id) === fb.id ? { ...x, ...patch } : x))); }
+
+  /** @param {TimeBlock} fb */
+  async removeBlock(fb) {
+    /** @type {Fm | null} */
+    let gone = null;
+    await this.editBlocks((l) => l.filter((x) => { if (!x || String(x.id) !== fb.id) return true; gone = x; return false; }));
+    const back = gone;
+    if (back) undoNotice(`Removed ${fb.title}`, async () => { await this.editBlocks((l) => [...l, back]); });
+  }
+
+  // A block's bottom edge dragged: only its length changes.
+  /** @param {PlanItem} item @param {number} minutes */
+  async setLength(item, minutes) {
+    const file = this.fileOf(item.path);
+    if (!file) { new Notice('That task note is gone.'); return; }
+    await this.app.fileManager.processFrontMatter(file, (raw) => writable(raw, (fm) => { fm.timeEstimate = minutes; }));
+  }
+
   // "Moved to ..." after a move; when the move took the clock time off, with Undo.
   /** @param {PlanItem} item @param {string} day @param {string | null} half @param {{ undo: (() => Promise<void>) | null, dropsTime: boolean } | false | null} res @param {() => void} [onUndo] */
   movedNotice(item, day, half, res, onUndo) {
@@ -701,8 +825,8 @@ class PlannerPlugin extends Plugin {
   // New task through Projects' engine (its folder, filename, id, dates and defaults).
   // `time` (a calendar event's start, 'HH:MM') goes on Due as the engine writes
   // it when the task lands in that time's half of the day (the move rule).
-  /** @param {{ title: unknown, project?: string | null, day?: string | null, half?: string | null, details?: string, time?: string | null }} arg @param {PlanItem[]} items */
-  async createTask({ title, project, day, half, details, time }, items) {
+  /** @param {{ title: unknown, project?: string | null, day?: string | null, half?: string | null, details?: string, time?: string | null, minutes?: number | null }} arg @param {PlanItem[]} items */
+  async createTask({ title, project, day, half, details, time, minutes }, items) {
     const ext = this.ext();
     if (ext) return ext.create({ title: String(title).trim(), day: day || null, half, time: time && day ? time : null, project: project || null });
     const api = this.tasksApi();
@@ -715,6 +839,7 @@ class PlannerPlugin extends Plugin {
     const timed = day && time ? movedDate(`${day}T${time}`, day, half) : null;
     const due = timeOf(timed) ? timed : (day && planning.setsDue ? day : null);
     if (due) { data.due = due; delete data.customFrontmatter.planned_day; }
+    if (minutes && timeOf(due)) data.customFrontmatter.timeEstimate = minutes; // a block on the Day time grid
     if (project) data.projects = [`[[${project}]]`];
     if (details) data.details = details;
     const t = await api.tasks.create(data);
@@ -764,7 +889,7 @@ function closeOpenPopovers() { for (const p of [...openPopovers]) p.close(false)
 const h = (parent, tag, cls, text) => { const e = (parent ? parent.createEl(tag) : document.createElement(tag)); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
 /** @typedef {HTMLElement & { _dragged?: boolean }} PlanRow */
-/** @typedef {{ item?: PlanItem, ev?: PlanEvent, row: PlanRow, x0: number, y0: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
+/** @typedef {{ item?: PlanItem, ev?: PlanEvent, fb?: TimeBlock, free?: boolean, group?: { name: string, label: string }, grabY?: number, resize?: { start: number, d0: number, d: number }, gridMin?: number | null, row: PlanRow, x0: number, y0: number, live: boolean, inSheet: boolean, ghost?: HTMLElement, tip?: HTMLElement, zone?: HTMLElement | null, idx?: number | null, at?: { before: string | null, after: string | null } | null }} PlanDrag */
 /** @typedef {{ day?: string | null, side?: boolean, drag?: boolean, compact?: boolean, hideProject?: boolean, missed?: string | null }} PlanRowOpts */
 class PlannerView extends ItemView {
   // Set on every render (no value before the first one).
@@ -808,7 +933,7 @@ class PlannerView extends ItemView {
     this.anchor = dayOf(new Date());
     // The task folders, the calendar note (when set), and the projects folder (which project is in which area).
     /** @param {unknown} p */
-    const watched = (p) => typeof p === 'string' && ((!!feedNotes.calendar && p === feedNotes.calendar) || inTaskFolders(p) || p.startsWith(`${vaultFolders.projects}/`));
+    const watched = (p) => typeof p === 'string' && ((!!feedNotes.calendar && p === feedNotes.calendar) || p === timeBlocksPath() || inTaskFolders(p) || p.startsWith(`${vaultFolders.projects}/`));
     /** @param {import('obsidian').TAbstractFile | null | undefined} f */
     const relevant = (f) => f && watched(f.path);
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (relevant(f)) this.scheduleRender(); }));
@@ -818,6 +943,7 @@ class PlannerView extends ItemView {
     this.registerEvent(this.app.workspace.on('lifeworld:tasks', () => this.scheduleRender()));
     this.registerEvent(this.app.workspace.on('lifeworld:calendars', () => this.scheduleRender()));
     this.registerInterval(window.setInterval(() => { if (this.today() !== this.renderedToday) this.render(); }, 60000));
+    this.registerInterval(window.setInterval(() => this.tickNow(), 30000)); // the Day grid's red line
     this.registerDomEvent(document, 'pointermove', (e) => this.onPointerMove(e));
     this.registerDomEvent(document, 'pointerup', (e) => this.onPointerUp(e));
     this.registerDomEvent(document, 'pointercancel', () => this.cancelDrag());
@@ -855,6 +981,8 @@ class PlannerView extends ItemView {
     const root = this.contentEl;
     const keepMain = root.querySelector('.a4pl-scroll'); const keepSheet = root.querySelector('.a4pl-sheet-body');
     const scrollMain = keepMain ? keepMain.scrollTop : 0; const scrollSheet = keepSheet ? keepSheet.scrollTop : 0;
+    const keepGrid = /** @type {HTMLElement | null} */ (root.querySelector('.a4pl-tg-scroll'));
+    const gridScroll = keepGrid && keepGrid.dataset.day === this.anchor ? keepGrid.scrollTop : null;
     const focusKey = document.activeElement && root.contains(document.activeElement) ? document.activeElement.getAttribute('data-focus') : null;
     const today = this.today();
     this.renderedToday = today;
@@ -870,6 +998,7 @@ class PlannerView extends ItemView {
     this.areaIx = this.plugin.areaIndex();
     this.areaNames = new Set((this.areaIx ? this.areaIx.areas : []).map((a) => a.name));
     this.events = this.plugin.calendarEvents();
+    this.blocks = this.plugin.timeBlocks();
     const mode = this.narrow && this.mode === 'week' ? 'day' : this.mode; // phone: Day or Month
     const days = mode === 'day' ? [this.anchor] : mode === 'month' ? monthGrid(this.anchor.slice(0, 7)) : weekOf(this.anchor);
     const visible = this.project ? items.filter((it) => (this.project === '-' ? !it.projectKey : it.projectKey === this.project)) : items;
@@ -884,6 +1013,7 @@ class PlannerView extends ItemView {
     if (!this.narrow) this.renderSide(side, mode === 'month' ? days.filter((d) => d.startsWith(this.anchor.slice(0, 7))) : days, today);
     const grid = h(body, 'div', `a4pl-days is-${mode}`);
     if (mode === 'month') this.renderMonth(grid, days, today);
+    else if (mode === 'day' && !this.narrow) this.renderTimeDay(grid, this.anchor, today, gridScroll);
     else for (const d of days) this.renderDay(grid, d, mode, today);
     if (this.narrow) {
       const sheet = h(root, 'div', 'a4pl-sheet' + (this.sheetOpen ? '' : ' is-closed'));
@@ -968,6 +1098,12 @@ class PlannerView extends ItemView {
     }
     if (this.tab === 'agenda') return this.renderAgenda(side, days, today);
     if (this.tab === 'goals') return this.renderGoals(side, today);
+    if (this.mode === 'day' && !this.narrow) {
+      const bt = /** @type {PlanRow} */ (h(side, 'div', 'a4pl-blocktime'));
+      h(bt, 'b', '', 'Block time'); h(bt, 'span', '', 'drag onto the day');
+      bt.setAttr('title', 'Drag onto a time to block it (Lunch, Gym, Free time). It is not a task.');
+      bt.addEventListener('pointerdown', (e) => this.startDrag(e, { free: true }, bt));
+    }
     const ext = this.plugin.ext();
     if (ext && ext.status().error) h(side, 'div', 'a4pl-src-err', ext.status().error); // a wrong key, no internet... (criterion 28)
     const od = overdueOf(this.visible, today, this.completed);
@@ -1050,7 +1186,15 @@ class PlannerView extends ItemView {
       if (byArea ? g.area : (this.areaIx && this.areaIx.of[g.key] === g.key)) { const ai = h(head, 'span', 'a4pl-ic a4pl-area-ic'); setIcon(ai, 'layers'); ai.setAttr('aria-label', 'Area'); }
       h(head, 'span', 'a4pl-grp-name', g.label);
       h(head, 'span', 'a4pl-pill', String(g.items.length));
-      head.addEventListener('click', () => this.toggleFold(key));
+      const hr = /** @type {PlanRow} */ (head);
+      head.addEventListener('click', () => { if (!hr._dragged) this.toggleFold(key); });
+      // Day time grid: a project or area dragged onto a time becomes a "Work on ..." block for it.
+      const target = byArea ? g.area : g.key;
+      if (target && this.mode === 'day' && !this.narrow) {
+        head.addClass('is-drag');
+        head.setAttr('title', 'Drag onto a time to make a work block for it');
+        head.addEventListener('pointerdown', (e) => this.startDrag(e, { group: { name: target, label: g.label } }, hr));
+      }
       if (folded) continue;
       const list = h(el, 'div', 'a4pl-grp-list');
       // By area, each row names its project (a loose task needs no name: the group is its area).
@@ -1278,6 +1422,175 @@ class PlannerView extends ItemView {
     this.renderSlot(col, day, 'pm', laneOf(this.visible, day, 'pm'), mode);
   }
 
+  // Day view on a desktop width (1.7.0): Any time strip, then the hours with blocks and the now line.
+  /** @param {HTMLElement} grid @param {string} day @param {string} today @param {number | null} keepScroll */
+  renderTimeDay(grid, day, today, keepScroll) {
+    grid.addClass('is-time');
+    const col = h(grid, 'div', 'a4pl-day is-grid' + (day === today ? ' is-today' : '') + (day < today ? ' is-past' : ''));
+    col.dataset.day = day;
+    const head = h(col, 'div', 'a4pl-day-head');
+    h(head, 'span', 'a4pl-dow', fmtDay(day, { weekday: 'short' }));
+    h(head, 'span', 'a4pl-dom', String(partsOf(day).d));
+    if (day === today) h(head, 'span', 'a4pl-today-tag', 'today');
+    const tasks = this.dayTasks(day);
+    if (day === today && tasks.length) {
+      const done = tasks.filter((it) => isTaskDone(it, day, this.completed)).length;
+      const p = h(col, 'div', 'a4pl-progress');
+      h(h(p, 'div', 'a4pl-track'), 'div', 'a4pl-fill').style.width = `${Math.round((done / tasks.length) * 100)}%`;
+      h(p, 'div', 'a4pl-plabel', `${done}/${tasks.length} DONE`);
+    }
+    const evs = eventsForDay(this.events, day);
+    // Any time: all-day events and the day's tasks with no clock time. A drop here takes a time off.
+    const any = h(col, 'div', 'a4pl-slot is-any a4pl-anytime');
+    any.dataset.drop = 'slot'; any.dataset.day = day; any.dataset.half = '';
+    h(any, 'div', 'a4pl-slot-label', 'Any time');
+    for (const ev of evs.filter((e) => e.allDay || !e.time)) any.appendChild(this.eventRow(ev));
+    for (const it of tasks.filter((x) => !x.time)) any.appendChild(this.taskRow(it, { day, drag: !it.recurrenceRaw, compact: true }));
+    const sc = h(col, 'div', 'a4pl-tg-scroll');
+    sc.dataset.day = day;
+    const tg = h(sc, 'div', 'a4pl-tg');
+    tg.dataset.drop = 'grid'; tg.dataset.day = day;
+    tg.style.height = `${((GRID_END - GRID_START) / 60) * GRID_HOUR_PX}px`;
+    for (let m = GRID_START; m <= GRID_END; m += 30) {
+      const y = `${this.yOf(m)}px`;
+      const full = m % 60 === 0;
+      h(tg, 'div', 'a4pl-hr' + (full ? '' : ' is-half')).style.top = y;
+      if (full) h(tg, 'div', 'a4pl-hl', timeText(hhmmOf(m), true)).style.top = y;
+    }
+    /** @type {{ s: number, d: number, it?: PlanItem, ev?: PlanEvent, fb?: TimeBlock }[]} */
+    const raw = (this.blocks || []).filter((fb) => fb.date === day).map((fb) => ({ s: minutesOf(fb.time), d: fb.minutes, fb }));
+    for (const it of tasks) if (it.time) raw.push({ s: minutesOf(it.time), d: it.estimate || BLOCK_DEFAULT, it });
+    for (const ev of evs) {
+      if (ev.allDay || !ev.time || !timeOf(`${day}T${ev.time}`)) continue;
+      const s = minutesOf(/** @type {string} */ (timeOf(`${day}T${ev.time}`)));
+      const e = ev.end && timeOf(`${day}T${ev.end}`) ? minutesOf(/** @type {string} */ (timeOf(`${day}T${ev.end}`))) : s + BLOCK_DEFAULT;
+      raw.push({ s, d: e > s ? e - s : GRID_END - s, ev }); // ends after midnight: runs to the bottom
+    }
+    // Drawn inside the grid (before 6 AM from the top, past 11 PM at the bottom); the label keeps the real times.
+    const drawn = raw.map((b) => { const cs = Math.max(GRID_START, Math.min(GRID_END - GRID_SNAP, b.s)); const ce = Math.max(cs + GRID_SNAP, Math.min(GRID_END, b.s + b.d)); return { ...b, s: cs, d: ce - cs, rs: b.s, rd: Math.max(GRID_SNAP, b.d) }; });
+    for (const b of layoutBlocks(drawn)) tg.appendChild(this.blockEl(b, day));
+    if (day === today) {
+      h(tg, 'div', 'a4pl-past');
+      h(h(tg, 'div', 'a4pl-now'), 'b', 'a4pl-now-t');
+      this.tickNow();
+    }
+    // Opening the day: straight to the red line (today) or 8 AM; a redraw keeps the scroll.
+    window.requestAnimationFrame(() => {
+      if (keepScroll != null) { sc.scrollTop = keepScroll; return; }
+      const now = new Date();
+      const at = day === today ? now.getHours() * 60 + now.getMinutes() : 8 * 60;
+      sc.scrollTop = Math.max(0, this.yOf(at) - sc.clientHeight / 3);
+    });
+  }
+
+  /** @param {number} m */
+  yOf(m) { return ((Math.max(GRID_START, Math.min(GRID_END, m)) - GRID_START) / 60) * GRID_HOUR_PX; }
+
+  // The red line and the shaded past, moved in place (every 30 seconds) without a redraw.
+  tickNow() {
+    const line = /** @type {HTMLElement | null} */ (this.contentEl.querySelector('.a4pl-now'));
+    if (!line) return;
+    const now = new Date();
+    const m = now.getHours() * 60 + now.getMinutes();
+    const y = `${this.yOf(m)}px`;
+    line.style.top = y;
+    line.toggleClass('is-off', m < GRID_START || m > GRID_END);
+    const t = line.querySelector('.a4pl-now-t'); if (t) t.textContent = timeText(hhmmOf(m));
+    const past = /** @type {HTMLElement | null} */ (this.contentEl.querySelector('.a4pl-past')); if (past) past.style.height = y;
+  }
+
+  /** @param {{ s: number, d: number, rs: number, rd: number, col: number, cols: number, it?: PlanItem, ev?: PlanEvent, fb?: TimeBlock }} b @param {string} day */
+  blockEl(b, day) {
+    const it = b.it; const ev = b.ev;
+    const isArea = !!(it && it.projectKey && this.areaIx && this.areaIx.of[it.projectKey] === it.projectKey);
+    const done = !!it && isTaskDone(it, day, this.completed);
+    const el = /** @type {PlanRow} */ (h(null, 'div', 'a4pl-blk' + (ev ? ' is-ev' : '') + (isArea ? ' is-area' : '') + (done ? ' is-done' : '') + (b.d <= 30 ? ' is-short' : '') + (b.fb ? ' is-free' : '')));
+    el.style.top = `${this.yOf(b.s) + 1}px`;
+    el.style.height = `${Math.max(18, (b.d / 60) * GRID_HOUR_PX - 2)}px`;
+    el.style.left = `calc(${(b.col / b.cols) * 100}% + 4px)`;
+    el.style.width = `calc(${100 / b.cols}% - 8px)`;
+    const top = h(el, 'div', 'a4pl-blk-t');
+    if (it) {
+      el.dataset.path = it.path;
+      const tick = h(top, 'button', 'a4pl-tick' + (done ? ' is-on' : ''));
+      tick.setAttr('aria-label', done ? 'Mark not done' : 'Mark done');
+      if (isArea || (it.projectKey && /^Work on /.test(it.title))) tick.setAttr('title', 'Done for this block. The project or area and its other tasks stay as they are.');
+      if (done) setIcon(tick, 'check');
+      tick.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try { await this.plugin.toggleTask(it, day); } catch (err) { new Notice(String(errField(err, 'message') || err)); }
+        this.scheduleRender();
+      });
+    }
+    h(top, 'span', 'a4pl-blk-name', it ? it.title : b.fb ? b.fb.title : /** @type {PlanEvent} */ (ev).summary);
+    const meta = h(el, 'div', 'a4pl-blk-m');
+    const shown = b.rs; const inGrid = shown >= GRID_START && shown < GRID_END; // stretching only where the block is drawn at its real start
+    h(meta, 'span', 'a4pl-blk-when', `${timeText(hhmmOf(shown))} – ${timeText(hhmmOf(Math.min(shown + b.rd, 24 * 60 - 1)))} · ${lengthText(b.rd)}`);
+    if (ev) { el.setAttr('title', `${eventDetails(ev)} Read only: it stays in your calendar.`); return el; }
+    if (b.fb) return this.freeBlock(el, top, b.fb, shown, b.rd, inGrid);
+    const item = /** @type {PlanItem} */ (it);
+    if (item.projectKey) {
+      const pc = h(meta, 'span', 'a4pl-chip a4pl-proj', item.project || item.projectKey);
+      pc.addEventListener('click', (e) => { e.stopPropagation(); if (el._dragged) return; openProjectPage(this.app, item.projectLink || item.projectKey, e, item.path); });
+    }
+    top.addEventListener('click', () => { if (el._dragged) return; if (item.ext) { const own = this.plugin.projectsPlugin(); if (own) own.openTask(/** @type {ExtItem} */ (item)); return; } const f = this.plugin.fileOf(item.path); if (f) this.app.workspace.getLeaf('tab').openFile(f); });
+    if (item.recurrenceRaw) { el.setAttr('title', 'Repeating tasks follow their schedule.'); return el; }
+    el.addEventListener('pointerdown', (e) => this.startDrag(e, { item, grabY: e.clientY - el.getBoundingClientRect().top }, el));
+    // The bottom edge: drag to change how long (only LifeWorld task notes keep a length).
+    if (!item.ext && inGrid) {
+      const hd = h(el, 'div', 'a4pl-blk-handle');
+      hd.setAttr('title', 'Drag to change how long');
+      hd.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        this.drag = { item, row: el, x0: e.clientX, y0: e.clientY, live: false, inSheet: false, resize: { start: shown, d0: b.rd, d: b.rd } };
+      });
+    }
+    return el;
+  }
+
+  // A free time block: click the name to rename it, the x removes it (with Undo); it moves and stretches like a task block.
+  /** @param {PlanRow} el @param {HTMLElement} top @param {TimeBlock} fb @param {number} shown @param {number} d @param {boolean} inGrid */
+  freeBlock(el, top, fb, shown, d, inGrid) {
+    const name = /** @type {HTMLElement} */ (top.querySelector('.a4pl-blk-name'));
+    name.setAttr('title', 'Click to rename'); name.tabIndex = 0; name.setAttr('role', 'button');
+    const rename = () => {
+      if (el._dragged || name.isContentEditable) return;
+      this.editing = true; name.contentEditable = 'true'; name.focus();
+      const sel = window.getSelection(); if (sel) sel.selectAllChildren(name);
+    };
+    name.addEventListener('click', rename);
+    name.addEventListener('keydown', (e) => {
+      if (!name.isContentEditable) { if (e.key === 'Enter') { e.preventDefault(); rename(); } return; }
+      if (e.key === 'Escape') name.textContent = fb.title;
+      if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); name.blur(); }
+    });
+    name.addEventListener('blur', async () => {
+      if (!name.isContentEditable) return; // tabbing past, not a rename
+      name.contentEditable = 'false'; this.editing = false;
+      const title = (name.textContent || '').trim() || 'Free time';
+      try { if (title !== fb.title) await this.plugin.changeBlock(fb, { title }); } catch (err) { console.error('[LifeWorld] rename failed', err); new Notice('Could not rename the block. Nothing was changed.'); }
+      this.scheduleRender();
+    });
+    const x = h(top, 'button', 'a4pl-blk-x', '×');
+    x.setAttr('aria-label', 'Remove this block');
+    x.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try { await this.plugin.removeBlock(fb); } catch (err) { console.error('[LifeWorld] remove failed', err); new Notice('Could not remove the block. Nothing was changed.'); }
+      this.scheduleRender();
+    });
+    el.addEventListener('pointerdown', (e) => { if (!name.isContentEditable) this.startDrag(e, { fb, grabY: e.clientY - el.getBoundingClientRect().top }, el); });
+    if (!inGrid) return el;
+    const hd = h(el, 'div', 'a4pl-blk-handle');
+    hd.setAttr('title', 'Drag to change how long');
+    hd.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      this.drag = { fb, row: el, x0: e.clientX, y0: e.clientY, live: false, inSheet: false, resize: { start: shown, d0: d, d } };
+    });
+    return el;
+  }
+
   /** @param {PlanEvent} ev */
   eventRow(ev) {
     const r = h(null, 'div', 'a4pl-ev');
@@ -1450,7 +1763,7 @@ class PlannerView extends ItemView {
   /** @param {PointerEvent} e @param {{ item?: PlanItem, ev?: PlanEvent }} what @param {PlanRow} row */
   startDrag(e, what, row) {
     const target = /** @type {HTMLElement} */ (e.target);
-    if (e.button !== 0 || target.closest('.a4pl-tick, .a4pl-pin, .a4pl-sched')) return;
+    if (e.button !== 0 || target.closest('.a4pl-tick, .a4pl-pin, .a4pl-sched, .a4pl-proj, .a4pl-blk-handle, .a4pl-blk-x')) return;
     const inSheet = !!row.closest('.a4pl-sheet, .a4pl-mlist');
     if (inSheet && what.item && !target.closest('.a4pl-grip')) return; // the phone drawer (and Month's day list) scrolls; the grip drags
     if (e.pointerType === 'touch' && !inSheet && !what.ev) return; // board rows on touch: use the Schedule button
@@ -1465,19 +1778,23 @@ class PlannerView extends ItemView {
     if (!d.live) {
       if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) return;
       d.live = true;
-      if (d.item) d.row.addClass('is-lifted');
-      d.ghost = document.body.createDiv({ cls: 'a4pl-ghost', text: d.ev ? 'New task: ' + d.ev.summary : d.item.title });
+      if ((d.item || d.fb) && !d.resize) d.row.addClass('is-lifted');
+      if (d.resize) { d.tip = document.body.createDiv({ cls: 'a4pl-ghost a4pl-tip' }); }
+      else d.ghost = document.body.createDiv({ cls: 'a4pl-ghost', text: d.ev ? 'New task: ' + d.ev.summary : d.group ? 'Work on ' + d.group.label : d.fb ? d.fb.title : d.free ? 'Free time' : d.item && d.item.title });
       if (d.inSheet) { this.sheetOpen = false; const s = this.contentEl.querySelector('.a4pl-sheet'); if (s) s.addClass('is-closed'); }
     }
+    if (d.resize) { this.resizeMove(d, e); return; }
     const ghost = /** @type {HTMLElement} */ (d.ghost);
     ghost.style.left = `${e.clientX + 12}px`;
     ghost.style.top = `${e.clientY + 8}px`;
     this.clearMarks();
     const hit = document.elementFromPoint(e.clientX, e.clientY);
-    const zone = /** @type {HTMLElement | null} */ (hit && this.contentEl.contains(hit) ? hit.closest('[data-drop]') : null);
-    d.zone = zone; d.idx = null; d.at = null;
+    let zone = /** @type {HTMLElement | null} */ (hit && this.contentEl.contains(hit) ? hit.closest('[data-drop]') : null);
+    if ((d.group || d.fb || d.free) && zone && zone.dataset.drop !== 'grid') zone = null; // work and free time blocks go on a time only
+    d.zone = zone; d.idx = null; d.at = null; d.gridMin = null;
     this.autoScroll(e.clientY);
     if (!zone) return;
+    if (zone.dataset.drop === 'grid') { this.gridPreview(d, zone, e); return; }
     zone.addClass('is-over');
     if (zone.dataset.drop === 'slot' && d.item) {
       const rows = /** @type {HTMLElement[]} */ ([...zone.querySelectorAll(':scope > .a4pl-task:not(.is-lifted)')]);
@@ -1490,8 +1807,36 @@ class PlannerView extends ItemView {
     }
   }
 
+  // The dashed block showing where a drop on the time grid lands, and its times.
+  /** @param {PlanDrag} d @param {HTMLElement} zone @param {PointerEvent} e */
+  gridPreview(d, zone, e) {
+    const dur = d.fb ? d.fb.minutes : d.free ? 60 : d.item ? d.item.estimate || BLOCK_DEFAULT : BLOCK_DEFAULT;
+    const y = e.clientY - zone.getBoundingClientRect().top - (d.grabY == null ? 8 : d.grabY);
+    const s = snapStart(GRID_START + (y / GRID_HOUR_PX) * 60, dur);
+    d.gridMin = s;
+    const pv = h(zone, 'div', 'a4pl-drop-line a4pl-blk-ghost', `${timeText(hhmmOf(s))} – ${timeText(hhmmOf(s + dur))}`);
+    pv.style.top = `${this.yOf(s)}px`;
+    pv.style.height = `${(dur / 60) * GRID_HOUR_PX}px`;
+  }
+
+  // The bottom edge being dragged: the block grows or shrinks in 15-minute steps, live.
+  /** @param {PlanDrag} d @param {PointerEvent} e */
+  resizeMove(d, e) {
+    const r = /** @type {NonNullable<PlanDrag['resize']>} */ (d.resize);
+    r.d = snapLength(r.d0 + ((e.clientY - d.y0) / GRID_HOUR_PX) * 60, r.start, Math.max(GRID_END - r.start, r.d0));
+    d.row.style.height = `${(r.d / 60) * GRID_HOUR_PX - 2}px`;
+    const label = `${timeText(hhmmOf(r.start))} – ${timeText(hhmmOf(r.start + r.d))} · ${lengthText(r.d)}`;
+    const w = d.row.querySelector('.a4pl-blk-when'); if (w) w.textContent = label;
+    const tip = /** @type {HTMLElement} */ (d.tip);
+    tip.textContent = `until ${timeText(hhmmOf(r.start + r.d))} · ${lengthText(r.d)}`;
+    tip.style.left = `${e.clientX + 14}px`; tip.style.top = `${e.clientY + 14}px`;
+    this.autoScroll(e.clientY);
+  }
+
   /** @param {number} y */
   autoScroll(y) {
+    const tg = this.contentEl.querySelector('.a4pl-tg-scroll');
+    if (tg) { const r = tg.getBoundingClientRect(); if (y < r.top + 30 && y > r.top - 60) tg.scrollTop -= 10; else if (y > r.bottom - 30 && y < r.bottom + 60) tg.scrollTop += 10; }
     const sc = this.contentEl.querySelector('.a4pl-scroll');
     if (!sc) return;
     const r = sc.getBoundingClientRect();
@@ -1509,18 +1854,43 @@ class PlannerView extends ItemView {
     this.drag = null;
     this.clearMarks();
     if (d.ghost) d.ghost.remove();
+    if (d.tip) d.tip.remove();
     if (d.row) d.row.removeClass('is-lifted');
-    if (this.pendingRender) this.render();
+    if (this.pendingRender || (d.resize && d.live)) this.render(); // a cancelled stretch springs back
   }
 
   async onPointerUp() {
     const d = this.drag;
     if (!d) return;
+    if (d.resize && d.live && d.resize.d !== d.resize.d0) {
+      this.drag = null; this.clearMarks(); if (d.tip) d.tip.remove();
+      d.row._dragged = true; window.setTimeout(() => { d.row._dragged = false; }, 50);
+      try { if (d.fb) await this.plugin.changeBlock(d.fb, { minutes: d.resize.d }); else await this.plugin.setLength(/** @type {PlanItem} */ (d.item), d.resize.d); } catch (err) { console.error('[LifeWorld] length failed', err); new Notice('Could not change the length. Nothing was changed.'); }
+      this.scheduleRender();
+      return;
+    }
     this.cancelDrag();
-    if (!d.live || !d.zone) return;
-    d.row._dragged = true; window.setTimeout(() => { d.row._dragged = false; }, 50);
+    if (d.live) { d.row._dragged = true; window.setTimeout(() => { d.row._dragged = false; }, 50); }
+    if (!d.live || !d.zone || d.resize) return;
     const today = this.today();
     const zone = d.zone;
+    if (zone.dataset.drop === 'grid') {
+      if (d.gridMin == null) return;
+      const day = /** @type {string} */ (zone.dataset.day); const time = hhmmOf(d.gridMin); const half = halfOfTime(time);
+      try {
+        if (d.fb) await this.plugin.changeBlock(d.fb, { date: day, time });
+        else if (d.free) await this.plugin.editBlocks((l) => [...l, { id: newBlockId(), date: day, time, minutes: 60, title: 'Free time' }]);
+        else if (d.item) await this.plugin.placeAt(d.item, day, time, this.items);
+        else if (d.group) { if (await this.plugin.createTask({ title: `Work on ${d.group.label}`, project: d.group.name, day, half, time, minutes: BLOCK_DEFAULT }, this.items)) new Notice(`Work block added at ${timeText(time)}`); }
+        else if (d.ev) {
+          await this.plugin.createTask({ title: d.ev.summary, day, half, details: eventDetails(d.ev), time, minutes: BLOCK_DEFAULT }, this.items);
+          await this.plugin.markEventMade(d.ev, today);
+          new Notice(`Task made for ${timeText(time)}`);
+        }
+      } catch (err) { console.error('[LifeWorld] drop failed', err); new Notice(String(errField(err, 'plain') || 'That did not work. Nothing was changed.')); }
+      this.scheduleRender();
+      return;
+    }
     const toPool = zone.dataset.drop === 'pool';
     const day = toPool ? null : /** @type {string} */ (zone.dataset.day);
     const onMonth = zone.dataset.drop === 'mday';
@@ -1719,4 +2089,4 @@ class SchedulePopover {
 
 export default PlannerPlugin;
 // Pure functions for tests/test-planner.js (same convention as a4-today's .logic).
-PlannerPlugin.logic = { allUnscheduledFolded, projectMatches, projectToken, pickProjectText, unmatchedProjectWords, PROJECT_HITS_MAX, isSomeday, applySomeday, somedayOf, understand, quickAddChips, quickAddPlan, parseClock, timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo, taskFromFrontmatter, priorityTable, priorityOf, groupUnscheduled, groupByArea, unscheduledOf, overdueOf, weeklyGoalsOf, laneOf, plannerItem, taskTitleOf, projectKeyOf, applyUnschedule, applyPlacement, applyMove, orderForInsert, planInsert, insertIndexOf, eventsForDay, eventKey, eventDetails, plannedFields, pruneMade, dueChipOf, monthGrid, shiftMonth, viewModeOf, monthDropHalf, moveLabel, mondayOf, weekOf, taskOnDay, isTaskDone, occursOn, parseRRule, sortByOrder, addDays, openProjectPage, REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };
+PlannerPlugin.logic = { blocksOf, timeBlocksPath, estimateOf, snapStart, snapLength, lengthText, layoutBlocks, applyTimed, minutesOf, hhmmOf, GRID_START, GRID_END, allUnscheduledFolded, projectMatches, projectToken, pickProjectText, unmatchedProjectWords, PROJECT_HITS_MAX, isSomeday, applySomeday, somedayOf, understand, quickAddChips, quickAddPlan, parseClock, timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo, taskFromFrontmatter, priorityTable, priorityOf, groupUnscheduled, groupByArea, unscheduledOf, overdueOf, weeklyGoalsOf, laneOf, plannerItem, taskTitleOf, projectKeyOf, applyUnschedule, applyPlacement, applyMove, orderForInsert, planInsert, insertIndexOf, eventsForDay, eventKey, eventDetails, plannedFields, pruneMade, dueChipOf, monthGrid, shiftMonth, viewModeOf, monthDropHalf, moveLabel, mondayOf, weekOf, taskOnDay, isTaskDone, occursOn, parseRRule, sortByOrder, addDays, openProjectPage, REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords };

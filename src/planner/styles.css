@@ -314,3 +314,49 @@ html:not(#a4pl-guard) .a4pl-root .a4pl-mlist .a4pl-task { touch-action: pan-y; }
 /* A task source that could not be read (launch section 5b): one short line above the lists. */
 .a4pl-root .a4pl-src-err { color: var(--text-warning, var(--text-muted)); font-size: var(--font-ui-smaller); margin: 6px 0 8px; }
 .a4pl-root .a4pl-pin.a4pl-off { display: none; }
+
+/* Day time grid (1.7.0): desktop Day view only */
+html:not(#a4pl-guard) .a4pl-root .a4pl-days.is-day.is-time { grid-template-columns: minmax(0, 1fr); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-anytime { min-height: 40px; padding-bottom: 8px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tg-scroll { height: min(70vh, 760px); overflow-y: auto; position: relative; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tg { position: relative; margin: 12px 12px 12px 64px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-tg.is-over { outline: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-hr { position: absolute; left: 0; right: 0; border-top: 1px solid var(--pl-hair); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-hr.is-half { border-top-style: dashed; opacity: .55; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-hl { position: absolute; left: -60px; width: 50px; text-align: right; font: 11px var(--pl-f-mono); color: var(--pl-faint); transform: translateY(-8px); font-variant-numeric: tabular-nums; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-past { position: absolute; left: 0; right: 0; top: 0; background: var(--pl-hover); opacity: .35; pointer-events: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-now { position: absolute; left: -64px; right: 0; height: 0; border-top: 2px solid var(--color-red); z-index: 5; pointer-events: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-now.is-off { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-now::after { content: ''; position: absolute; left: 58px; top: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--color-red); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-now-t { position: absolute; left: 0; top: -11px; background: var(--color-red); color: var(--text-on-accent); font: 500 10.5px/20px var(--pl-f-mono); padding: 0 5px; border-radius: var(--pl-r-control); white-space: nowrap; font-variant-numeric: tabular-nums; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk { position: absolute; z-index: 2; display: flex; flex-direction: column; gap: 2px; overflow: hidden; padding: 4px 8px 8px; border: 1px solid var(--pl-hair2); border-left: 3px solid var(--pl-marker); border-radius: var(--pl-r-control); background: var(--pl-bg3); cursor: grab; touch-action: none; user-select: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-area { border-left-color: var(--color-yellow); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-ev { background: rgba(var(--color-blue-rgb), .14); border-color: rgba(var(--color-blue-rgb), .3); border-left-color: var(--color-blue); cursor: default; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-done { opacity: .7; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-done .a4pl-blk-name { text-decoration: line-through; color: var(--pl-faint); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-lifted { opacity: .4; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-t { display: flex; gap: 7px; align-items: flex-start; min-width: 0; font-weight: 600; font-size: 13.5px; line-height: 1.25; cursor: pointer; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-m { display: flex; flex-wrap: wrap; gap: 8px; font: 10.5px var(--pl-f-mono); color: var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-short { flex-direction: row; align-items: center; gap: 10px; padding-top: 0; padding-bottom: 0; white-space: nowrap; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-short .a4pl-blk-t { align-items: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-short .a4pl-blk-t .a4pl-tick { margin-top: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-short .a4pl-proj { display: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 9px; cursor: ns-resize; display: grid; place-items: center; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-handle::after { content: ''; width: 32px; height: 3px; border-radius: 2px; background: var(--pl-faint); opacity: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk:hover .a4pl-blk-handle::after { opacity: 1; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-ghost { position: absolute; left: 4px; right: 4px; z-index: 1; margin: 0; border: 1.5px dashed var(--pl-marker); border-radius: var(--pl-r-control); background: var(--pl-wash); pointer-events: none; font: 10.5px var(--pl-f-mono); color: var(--pl-marker); padding: 3px 8px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-grp-head.is-drag { cursor: grab; touch-action: none; }
+html:not(#a4pl-guard) .a4pl-ghost.a4pl-tip { transform: none; border-left: 1px solid var(--pl-hair2); font: 11.5px var(--pl-f-mono); padding: 3px 8px; }
+/* Block time (1.7.0, mockup approved 2026-11-16): free time blocks are hatched and grey, not tasks */
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-free { background: repeating-linear-gradient(135deg, var(--pl-bg2) 0 8px, var(--pl-bg3) 8px 16px); border: 1px dashed var(--pl-hair2); border-left: 3px solid var(--pl-dim); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-free .a4pl-blk-t { color: var(--pl-dim); font-weight: 500; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-free .a4pl-blk-name { cursor: text; outline: none; border-radius: var(--pl-r-micro); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk.is-free .a4pl-blk-name:focus { background: var(--pl-bg); color: var(--pl-paper); padding: 0 4px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-x { margin-left: auto; flex: none; height: auto; border: 0; box-shadow: none; background: none; color: var(--pl-faint); font-size: 15px; line-height: 1; cursor: pointer; padding: 0 2px; opacity: 0; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk:hover .a4pl-blk-x,
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-x:focus-visible { opacity: 1; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blk-x:hover { color: var(--pl-paper); background: none; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blocktime { display: flex; align-items: center; gap: 10px; border: 1px dashed var(--pl-hair2); border-radius: var(--pl-r-control); padding: 10px 12px; margin: 0 0 14px; cursor: grab; touch-action: none; user-select: none; background: repeating-linear-gradient(135deg, var(--pl-bg2) 0 8px, var(--pl-bg3) 8px 16px); }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blocktime b { font-size: 15px; }
+html:not(#a4pl-guard) .a4pl-root .a4pl-blocktime span { font-size: 13px; color: var(--pl-dim); }
