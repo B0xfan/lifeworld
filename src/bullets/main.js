@@ -669,7 +669,7 @@ class TagSuggest extends EditorSuggest {
   constructor(b) { super(b.app); this.b = b; this.limit = 20; this.taskOnly = false; }
   /** @param {import('obsidian').EditorPosition} cursor @param {import('obsidian').Editor} editor @param {TFile | null} file */
   onTrigger(cursor, editor, file) {
-    if (!file || !this.b.on() || this.b.isTaskNote(file)) return null;
+    if (!file || !this.b.on()) return null;
     const line = editor.getLine(cursor.line);
     const m = /(^|\s)#([\p{L}\p{N}_-]*)$/u.exec(line.slice(0, cursor.ch));
     if (!m || this.b.inFence(editor, cursor.line)) return null;
@@ -716,7 +716,7 @@ class PersonSuggest extends EditorSuggest {
   person() { return this.b.types().find((t) => t.where === 'folder' && low(t.name) === 'person') || null; }
   /** @param {import('obsidian').EditorPosition} cursor @param {import('obsidian').Editor} editor @param {TFile | null} file */
   onTrigger(cursor, editor, file) {
-    if (!file || !this.b.on() || this.b.isTaskNote(file) || !this.person()) return null;
+    if (!file || !this.b.on() || !this.person()) return null;
     // After a space or at the line's start only, so an email address opens nothing.
     const m = /(^|\s)@([\p{L}\p{N}_.'-]*)$/u.exec(editor.getLine(cursor.line).slice(0, cursor.ch));
     return m && !this.b.inFence(editor, cursor.line) ? { start: { line: cursor.line, ch: cursor.ch - m[2].length - 1 }, end: cursor, query: m[2] } : null;
