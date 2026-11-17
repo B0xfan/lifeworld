@@ -5,7 +5,7 @@
 // part's own settings under its heading. A part switched off is not started at all.
 'use strict';
 
-import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder, AbstractInputSuggest } from 'obsidian';
+import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder, AbstractInputSuggest, Platform } from 'obsidian';
 import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
 import { findSetup, SetupModal } from './setup';
@@ -48,6 +48,9 @@ const HOST = 'lifeworld'; // LifeWorld's own corner of the settings file
 // The manual is a PDF in the public repo (docs/, built by scripts/build-manual.sh), never in the install
 // files. GitHub's viewer page, not a raw download: it reads in the browser on every device and has a Download button.
 const MANUAL_URL = 'https://github.com/B0xfan/lifeworld/blob/HEAD/docs/LifeWorld-manual.pdf';
+// LifeWorld Capture, the computer-only companion: its page in Obsidian's own Community plugins browser.
+const CAPTURE_ID = 'lifeworld-capture';
+const CAPTURE_PAGE = `obsidian://show-plugin?id=${CAPTURE_ID}`;
 
 // Settings › Your vault, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
 // The mockup's "Found on first run" line under the task notes folder comes with the first-run screen.
@@ -595,6 +598,7 @@ class LifeWorldSettingTab extends PluginSettingTab {
     const items = [
       { name: 'User manual', desc: 'How to use every part, with pictures. Opens the PDF in your web browser, where you can also download it.',
         render: (s) => s.addButton((b) => b.setButtonText('Open manual').onClick(() => window.open(MANUAL_URL))) },
+      ...this.captureRow(),
       { type: 'group', heading: 'Parts', items: [
         ...SWITCHES.map((x) => /** @type {Row} */ ({ name: x.name, desc: x.desc, render: (s) => s.addToggle((t) => t
           .setValue(this.plugin.isOn(x.id))
@@ -631,6 +635,22 @@ class LifeWorldSettingTab extends PluginSettingTab {
   // Draws the page again after a change: on 1.13+ through update() (it set settingItems when the page
   // was added), before that by display().
   redraw() { if (this.settingItems) this.update(); else this.display(); }
+
+  // Menu bar capture: tells people about LifeWorld Capture (computers only, so not on phones and tablets).
+  /** @returns {Row[]} */
+  captureRow() {
+    if (Platform.isMobile) return [];
+    const pl = this.app.plugins;
+    const state = pl && pl.enabledPlugins && pl.enabledPlugins.has(CAPTURE_ID) ? 'on' : pl && pl.manifests && pl.manifests[CAPTURE_ID] ? 'off' : 'none';
+    return [{ name: 'Menu bar capture',
+      desc: "LifeWorld Capture, a free companion plugin, puts a pen icon in your computer's menu bar: type a thought from any app and it lands in today's daily note, your inbox or a LifeWorld task. Computers only.",
+      render: (s) => {
+        if (state === 'on') { s.descEl.createDiv({ cls: 'lw-capture-on', text: '✓ LifeWorld Capture is on.' }); return; }
+        s.addButton((b) => b.setButtonText(state === 'off' ? 'Turn on' : 'Get LifeWorld Capture').onClick(() => {
+          if (state === 'off') { this.app.setting.open(); if (this.app.setting.openTabById) this.app.setting.openTabById('community-plugins'); } else window.open(CAPTURE_PAGE);
+        }));
+      } }];
+  }
 
   taskSource() { const pj = this.plugin.running['a4-projects']; return pj && pj.settings ? pj.settings.source : 'builtin'; }
 

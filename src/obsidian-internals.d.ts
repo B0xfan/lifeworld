@@ -14,7 +14,7 @@ declare module 'obsidian' {
   interface App {
     loadLocalStorage(key: string): unknown;
     internalPlugins?: { getEnabledPluginById?(id: string): { options?: Record<string, unknown> } | null; getPluginById?(id: string): { instance?: { revealInFolder?(file: TAbstractFile): void } } | null };
-    plugins?: { plugins?: Record<string, unknown> };
+    plugins?: { plugins?: Record<string, unknown>; manifests?: Record<string, unknown>; enabledPlugins?: Set<string> };
     commands?: { commands?: Record<string, unknown>; executeCommandById(id: string): boolean };
     metadataTypeManager?: { getAssignedWidget?(name: string): unknown; setType?(name: string, type: string): unknown };
     setting: { open(): void; openTabById?(id: string): unknown };

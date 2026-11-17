@@ -93,6 +93,10 @@ Add a task by typing a sentence like `call Max friday 3pm !high`; LifeWorld pick
 the time and the priority. Tasks can repeat, wait on other tasks, and move to an archive folder when
 they are done. One button moves everything overdue to today, with Undo.
 
+## Companion: LifeWorld Capture
+
+[LifeWorld Capture](https://github.com/B0xfan/lifeworld-capture) is a free companion plugin. It puts a pen icon in your computer's menu bar: type a thought from any app and it lands in today's daily note, your inbox or a LifeWorld task. Computers only. Find it in Settings, Community plugins, or from the Menu bar capture row at the top of LifeWorld's settings.
+
 ## Getting started
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for "LifeWorld", select
