@@ -184,7 +184,8 @@ function listLine(line) {
 // tag's offset in the line (its #). The last word only, so a tag in the middle of the text stays plain.
 /** @param {string} line */
 function tagAtEnd(line) {
-  const l = listLine(line);
+  // #task also on a plain line (criterion 13 makes those), so it gets the task look; other types stay bullet-only.
+  const l = listLine(line) || (/(^|\s)#task\s*$/i.test(line) ? anyLine(line) : null);
   if (!l) return null;
   const m = /(^|\s)#([\p{L}\p{N}_-]+)\s*$/u.exec(l.text);
   if (!m || /^\d+$/.test(m[2])) return null;

@@ -49,6 +49,8 @@ class Bullets {
     this.timer = null;
     /** @type {{ raw: unknown, types: BtType[] } | null} */
     this.typesCache = null;
+    /** Task notes just made, waiting for one redraw once Obsidian has read them. @type {Set<string>} */
+    this.fresh = new Set();
   }
 
   /* ---- settings --------------------------------------------------------------------------------------- */
@@ -123,7 +125,9 @@ class Bullets {
   changed(f) {
     for (const l of this.lists) l.noteChanged(f);
     const watched = Array.from(document.querySelectorAll('.lw-bt-rows[data-path], .lw-bt-person[data-path]')).some((el) => /** @type {HTMLElement} */ (el).dataset.path === f.path);
-    if (watched || this.ownType(f)) this.refreshSoon();
+    // A task note #task just made: the line drawn before Obsidian read it gets its task look now.
+    const fresh = this.fresh.delete(f.path); // once: after Obsidian reads it, normal refreshes take over
+    if (watched || this.ownType(f) || fresh) this.refreshSoon();
   }
   refreshSoon() {
     if (this.timer) window.clearTimeout(this.timer);
@@ -201,6 +205,7 @@ class Bullets {
     // Checkbox tasks live in the daily note, not a note of their own: nothing to link the bullet to.
     // (Asked of the setting, not the note: a note this new is not read by Obsidian yet.)
     if (pj.ext && pj.ext.id === 'checkbox') { new Notice(`Task added to ${tf.basename}: ${r.title}.`); return; }
+    this.fresh.add(tf.path);
     const link = this.app.metadataCache.fileToLinktext(tf, file.path, true);
     const shown = link.split('/').pop() === r.title ? '' : `|${r.title}`;
     if (this.replaceLine(editor, line, original, textAt, `[[${link}${shown}]] #task`)) new Notice(`Task made: ${r.title}${project ? ` (in ${baseName(project)})` : ''}. Cmd+Z takes the link off the bullet; the task note stays.`);
@@ -374,15 +379,18 @@ class Bullets {
     const types = this.types();
     const src = ctx.sourcePath;
     for (const a of /** @type {HTMLElement[]} */ (Array.from(el.querySelectorAll('a.tag')))) {
-      const li = a.closest('li');
       const type = L.typeFor(types, (a.textContent || '').replace(/^#/, ''));
+      // shortcut: a plain #task line is its paragraph; only a paragraph's last line counts, as with a bullet's.
+      const li = /** @type {HTMLElement | null} */ (a.closest('li') || (type === L.TASK ? a.closest('p') : null));
       if (!li || !type || !this.lastInLine(a, li)) continue;
       a.addClass('lw-bt-tag');
       a.style.setProperty('--lw-bt-c', colorOf(type));
       li.addClass('lw-bt-li');
       li.style.setProperty('--lw-bt-c', colorOf(type));
       if (type === L.TASK || type.where === 'folder') {
-        const link = Array.from(li.querySelectorAll('a.internal-link')).find((x) => x.closest('li') === li);
+        const own = Array.from(li.querySelectorAll('a.internal-link')).filter((x) => (x.closest('li') || x.closest('p')) === li);
+        // A paragraph can hold several lines: its link is the last one before the tag.
+        const link = li.tagName === 'P' ? own.filter((x) => x.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING).pop() : own[0];
         const dest = link ? this.app.metadataCache.getFirstLinkpathDest((link.getAttribute('data-href') || '').split('#')[0], src) : null;
         if (dest && (type === L.TASK ? this.isTaskNote(dest) : true)) { const sub = li.querySelector(':scope > ul, :scope > ol'); const rows = this.rowsEl(dest.path, type); if (sub) sub.before(rows); else li.append(rows); }
       } else this.fieldItems(li, type, el, ctx);

@@ -44,6 +44,8 @@ assert.deepStrictEqual(L.tagAtEnd('- Favourites page: take the heart off #Decisi
 assert.strictEqual(L.tagAtEnd('\t- [[Add a filter]] #task').tag, 'task');
 assert.strictEqual(L.tagAtEnd('- #Decision in the middle of text'), null, 'only the last word');
 assert.strictEqual(L.tagAtEnd('Not a list #Decision'), null);
+assert.strictEqual(L.tagAtEnd('[[Call Mara]] #task').tag, 'task', 'a plain #task line (criterion 13) gets the task look');
+assert.strictEqual(L.tagAtEnd('Plain words #task').text, 'Plain words');
 assert.strictEqual(L.tagAtEnd('- Issue #123'), null, 'all digits is not a tag');
 assert.strictEqual(L.tagAtEnd('- [ ] call #Decision').text, 'call');
 const fl = L.fieldLine('\t- Decided by:: Mara');
