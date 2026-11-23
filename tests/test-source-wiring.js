@@ -69,7 +69,7 @@ const LW = require('./lib/paths').lifeworld();
   const PJ = LW.parts['a4-projects'];
   eq(['builtin', 'tasknotes', 'checkbox', 'clickup', 'todoist', 'things', 'bogus'].map((s) => PJ.logic.normalizeSettings({ source: s }).source), ['builtin', 'tasknotes', 'checkbox', 'clickup', 'todoist', 'things', 'builtin'], 'the six choices are kept; anything else is LifeWorld tasks');
   const store = {}; const saved = [];
-  const app = { loadLocalStorage: (k) => store[k] || null, saveLocalStorage: (k, v) => { if (v == null) delete store[k]; else store[k] = v; }, plugins: { plugins: {} }, workspace: { trigger() {} } };
+  const app = { loadLocalStorage: (k) => store[k] || null, saveLocalStorage: (k, v) => { if (v == null) delete store[k]; else store[k] = v; }, plugins: { plugins: {} }, workspace: { trigger() {} }, vault: { getAbstractFileByPath: () => null } };
   const plugin = { app, settings: PJ.logic.normalizeSettings({ source: 'todoist' }), ext: { status: () => ({ error: '' }), refresh: async () => {} }, save: async () => saved.push(JSON.parse(JSON.stringify(plugin.settings))), tnApi: () => null, cards: { refreshAll() {} }, setSource: async (id) => { plugin.settings.source = id; } };
   const tab = new PJ.ProjectsSettingTab(app, plugin);
   tab.display();

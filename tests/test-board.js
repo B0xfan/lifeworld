@@ -66,7 +66,7 @@ const walk = (n, f, out = []) => { if (f(n)) out.push(n); for (const k of n.kids
 const text = (n) => n.textContent + (n.kids || []).map(text).join('');
 const moves = [];
 const host = { settings: L.normalizeSettings({ activity: [{ at: Date.UTC(2026, 9, 12, 16), text: 'You moved <b>X</b> to Waiting.' }] }),
-  engine: { file: () => null }, moveProject(p, k) { moves.push([p, k]); return Promise.resolve(true); } };
+  engine: { file: () => null }, okWork: () => null, moveProject(p, k) { moves.push([p, k]); return Promise.resolve(true); } };
 const view = Object.assign(Object.create(V), { plugin: host, app: {}, cfg: { statuses: [], priorities: [] }, today: '2026-10-13', tasks: [], projects: all, query: '', tab: 'projects', area: 'work', descs: new Map(), render() {} });
 const page = node('div');
 view.renderBoard(page);
@@ -118,7 +118,7 @@ assert.ok(/comes from an add-on/.test(notices[0]), 'no form: "+ Add project" say
   /* ---- description search survives a note change ---------------------------- */
   const tick = () => new Promise((r) => setImmediate(r));
   const D = { path: 'P/M.md', name: 'M', key: 'M', status: 'active', sphere: 'work', why: '', mtime: 2 }; // just moved: newer than the kept line
-  const dv = Object.assign(Object.create(V), { plugin: { engine: { file: () => ({}) } }, app: { vault: { cachedRead: async () => '# M\n\nNew menu page.\n' } },
+  const dv = Object.assign(Object.create(V), { plugin: { settings: L.normalizeSettings({}), okWork: () => null, engine: { file: () => ({}) } }, app: { vault: { cachedRead: async () => '# M\n\nNew menu page.\n' } },
     cfg: { statuses: [], priorities: [] }, today: '2026-10-13', tasks: [], projects: [D], tab: 'projects', area: null, render() {} });
   const shownTitles = (pg) => walk(pg, (n) => n.className === 'a4pj-btitle').map(text);
   dv.descs = new Map([['P/M.md', { mtime: 1, line: 'Old notes.' }]]); dv.query = 'old notes';

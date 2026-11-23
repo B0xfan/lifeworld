@@ -117,7 +117,20 @@ const COLUMN_LABEL = { backlog: 'Backlog', active: 'Active', waiting: 'Waiting',
 const COLUMN_SUB = { backlog: 'Ready to start', active: 'Actively moving', waiting: 'Needs a response', paused: 'Active, but not for now', blocked: 'Waiting on something', done: 'Finished work' };
 // Page title per board tab (mockup).
 /** @type {Record<string, string>} */
-const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed' };
+const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keeping', cold: 'Projects paused for later', activity: 'What changed', ai: 'Where the AI time goes' };
+// The "Needs my OK" column (mockup approved 2026-10-15) reads the progress reports in the
+// vault's work folders. It shows only with a name set in Settings and that folder present.
+const WIP_FOLDER = '03 WiP';
+// Owner-only by design: the AI use tab reads a nightly count file the owner's own scripts write. No file, no tab.
+const AI_USE_FILE = 'Scripts/data/ai-use-by-project.json';
+/** @type {Record<string, string>} */
+const AI_UNTIED_LABEL = { main_sessions: 'main conversations and scheduled runs', no_folder: 'team jobs that name no work folder',
+  folder_without_project: 'work folders with no project yet', several_projects: 'team jobs spanning several projects' };
+// "By goal" (mockup approved 2026-10-15): groups follow their liveliest project.
+/** @type {Record<string, number>} */
+const GOAL_RANK = { active: 0, waiting: 1, blocked: 2, backlog: 3, paused: 4, done: 5 };
+/** @type {Record<string, string>} */
+const GOAL_STATUS_LABEL = { achieved: 'achieved', 'not-achieved': 'not achieved', 'on-hold': 'on hold' };
 // The tasks board (spec 14): the task statuses the vault already has, plus the planner's Someday. No new status.
 const TASK_COLUMNS = ['open', 'in-progress', 'blocked', 'someday', 'done', 'closed'];
 /** @type {Record<string, string>} */
@@ -862,6 +875,72 @@ function onBoard(p, area, query, extra) {
   return !!p && BOARD_COLUMNS.includes(p.status) && (!area || p.sphere === area)
     && (!q || [p.name, p.why, ...(extra || [])].some((x) => String(x || '').toLowerCase().includes(q)));
 }
+/** @typedef {{ key: string, path?: string, name: string, status: string }} GoalRef */
+/** @typedef {{ p: ProjNote, st: ReturnType<typeof projectStats> }} BoardItem */
+// "By goal": items grouped by goalOf(p) (a GoalRef or null). Groups in the order of
+// their liveliest project (GOAL_RANK), then A to Z; projects the same way inside;
+// projects with no goal under "No goal", last.
+/** @param {BoardItem[]} items @param {(p: ProjNote) => GoalRef | null} goalOf */
+function goalGroups(items, goalOf) {
+  /** @param {unknown} a @param {unknown} b */
+  const az = (a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: 'base' });
+  /** @param {BoardItem} it */
+  const rank = (it) => GOAL_RANK[it.p.status] ?? 9;
+  /** @type {Map<string, { goal: GoalRef, items: BoardItem[] }>} */
+  const groups = new Map();
+  for (const it of items) {
+    const g = goalOf(it.p) || { key: '', name: 'No goal', status: '' };
+    if (!groups.has(g.key)) groups.set(g.key, { goal: g, items: [] });
+    /** @type {{ items: BoardItem[] }} */ (groups.get(g.key)).items.push(it);
+  }
+  const out = [...groups.values()];
+  for (const x of out) x.items.sort((a, b) => rank(a) - rank(b) || az(a.p.name, b.p.name));
+  return out.sort((a, b) => Number(!a.goal.key) - Number(!b.goal.key) || rank(a.items[0]) - rank(b.items[0]) || az(a.goal.name, b.goal.name));
+}
+/** @typedef {{ path: string, title: string, project: string | null, updated: string | null, waiting: string }} OkItem */
+// Team work waiting on the owner: work_status WAITING or BLOCKED and a
+// waiting_on that starts with the owner's name, any case ("Sam's OK", "Sam: ...",
+// not "Lee, then Sam"); a closed report never. Newest first.
+/** @param {{ path: string, folder: string, fm: Fm, heading: string }[]} reports @param {string} owner @returns {OkItem[]} */
+function okItems(reports, owner) {
+  const who = new RegExp(`^\\s*${owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu');
+  /** @type {OkItem[]} */
+  const out = [];
+  for (const r of reports) {
+    const fm = r.fm || {};
+    const ws = String(fm.work_status || '').trim().toUpperCase();
+    const wait = (Array.isArray(fm.waiting_on) ? fm.waiting_on.join(', ') : typeof fm.waiting_on === 'string' ? fm.waiting_on : '').trim();
+    if ((ws !== 'WAITING' && ws !== 'BLOCKED') || !who.test(wait) || statusOf(fm) === 'closed') continue;
+    // Headings keep their [[links]] as typed: show the link's words; drop a ": progress" / "- progress report" ending.
+    const title = String(r.heading || '').replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2')
+      .replace(/\s*(?::|—|–|-)\s*progress(?: report)?\s*$/i, '').trim() || r.folder;
+    out.push({ path: r.path, title, project: projectKeyOf(fm.project), updated: toDayStr(fm.updated), waiting: wait });
+  }
+  return out.sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')) || a.title.localeCompare(b.title));
+}
+/** @typedef {{ total: number, from: string, to: string, rows: { name: string, share: number }[], untied: { reason: string, share: number }[], untiedShare: number, high: number }} AiRead */
+// The AI-use file read for one window ('7d' / '30d'): shares (0..1) of the
+// window's total, projects largest first; null when the file is not the expected shape.
+/** @typedef {{ total?: unknown, from?: unknown, to?: unknown, projects?: Record<string, unknown>, untied?: Record<string, unknown> }} AiWindow */
+/** @typedef {{ windows?: Record<string, AiWindow | undefined>, high_share?: unknown, generated?: unknown }} AiFile */
+/** @param {AiFile | null} data @param {string} win @returns {AiRead | null} */
+function aiShares(data, win) {
+  const w = data && data.windows && data.windows[win];
+  if (!w || !(Number(w.total) >= 0)) return null;
+  const total = Number(w.total);
+  /** @param {unknown} n */
+  const share = (n) => (total > 0 ? Math.max(0, Number(n) || 0) / total : 0);
+  const rows = Object.entries(w.projects || {}).map(([name, n]) => ({ name, share: share(n) })).filter((r) => r.share > 0).sort((a, b) => b.share - a.share || a.name.localeCompare(b.name));
+  const untied = Object.entries(w.untied || {}).map(([reason, n]) => ({ reason, share: share(n) })).filter((r) => r.share > 0).sort((a, b) => b.share - a.share);
+  const high = Number(data.high_share) > 0 && Number(data.high_share) <= 1 ? Number(data.high_share) : 0.25;
+  return { total, from: typeof w.from === 'string' ? w.from : '', to: typeof w.to === 'string' ? w.to : '', rows, untied, untiedShare: untied.reduce((a, r) => a + r.share, 0), high };
+}
+// "26%", and "<1%" for a share too small to round up to 1.
+/** @param {number} x */
+function pctText(x) { const n = Math.round(x * 100); return x > 0 && n === 0 ? '<1%' : `${n}%`; }
+// High on the whole number shown, as the mockup: "25%" is red when the mark is 25%.
+/** @param {number} share @param {number} high */
+function isHighShare(share, high) { return Math.round(share * 100) >= Math.round(high * 100); }
 // Tasks board column of a task status: none or blank sits in Open; a status the
 // board has no column for shows nowhere (as a project with an unknown status).
 /** @param {unknown} status */
@@ -1425,7 +1504,7 @@ const logic = {
   addDtstart, updateDtstart, owningDay, actionDay, applyRecurringToggle, applyProperty, applyArchive, planCreate, createContent, titleForFilename, titleForStorage,
   sanitizeForFilename, readTask, isOpenTask, isBlockedTask, blockerLinks, blockerHolds, openBlockersOf, isLaterTask, isOverdueTask, isLateTask, isInboxTask, isSomeday, applySomeday, sortOpenTasks, readProject, readArea, linkAreas, areaList, areaStats, areaNote, applyToArea, applyToProject, projectStats, overviewGroups, closedProjects, isOpenProject, sphereTasks,
   searchTasks, findTasks, findNote, findMark, doneGroups, applyProjectStatus, projectLinkFor,
-  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, TASK_COLUMNS, taskColumn, taskColumns, taskBoardRows, taskColumnCards, firstBodyLine, plainLine, appendProjectNote, projectNotes, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
+  ACTIVITY_CAP, addActivity, normalizeSettings, BOARD_COLUMNS, onBoard, goalGroups, okItems, aiShares, pctText, isHighShare, TASK_COLUMNS, taskColumn, taskColumns, taskBoardRows, taskColumnCards, firstBodyLine, plainLine, appendProjectNote, projectNotes, stampText, PROJECT_STATUSES, statusRoute, applyPlainStatus, ideaNote, fieldsOf, undoFields, statusOf, applyColdStorage, restoreTarget, applyRestore, hasGoalLink, applyPromote, applyProjectLink, readSteps, setStepDone, addStep, moveStep, removeStep, parseDayWord, understand, quickAddChips, quickAddPlan,
   repeatRule, repeatWords, firstOccurrence, ruleBody, parseClock, parseWhen, whenPreview, whenValue, dayLong, saveWhen, whenToast, whenPickerOpts, shortDay, monthGrid, shiftMonth, nextMonday, projectBodyForPage, projectKeyOf, priorityWeight,
   // shared (also exported by a4-today / a4-planner)
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot,
@@ -1981,6 +2060,7 @@ function normalizeSettings(raw) {
     cbTag: typeof s.cbTag === 'string' ? s.cbTag : '', // Checkboxes: "Only lines with this tag"
     cuList: typeof s.cuList === 'string' ? s.cuList : '', // ClickUp: the list new tasks go to
     hideProps: s.hideProps !== false,
+    okName: typeof s.okName === 'string' ? s.okName : '', // whose OK the board's first column collects
     tnSnapshot: s.tnSnapshot && typeof s.tnSnapshot === 'object' ? s.tnSnapshot : null,
     archiveQueue: Array.isArray(s.archiveQueue) ? /** @type {Fm[]} */ (s.archiveQueue).filter((x) => x && typeof x.taskPath === 'string' && Number.isFinite(x.archiveAfterTimestamp)) : [],
     ui: {
@@ -1991,6 +2071,7 @@ function normalizeSettings(raw) {
       // Projects page switches (spec 4): today's List + Projects until picked otherwise.
       view: s.ui && s.ui.view === 'board' ? 'board' : 'list',
       kind: s.ui && (s.ui.kind === 'tasks' || s.ui.kind === 'areas') ? s.ui.kind : 'projects',
+      group: s.ui && s.ui.group === 'goal' ? 'goal' : 'status', // projects board: By status / By goal
     },
     activity: Array.isArray(s.activity) ? /** @type {Fm[]} */ (s.activity).filter((e) => e && Number.isFinite(e.at) && typeof e.text === 'string').slice(0, ACTIVITY_CAP) : [],
   });
@@ -3485,7 +3566,27 @@ class ProjectsPlugin extends Plugin {
     return f;
   }
 
-  // Open goals (not achieved), A to Z, for Promote.
+  // Work waiting on the owner's OK, from the progress report in each open
+  // work folder (not _archive). null when there is no work folder with a report.
+  okWork() {
+    const name = this.settings.okName.trim();
+    if (!name) return null;
+    const root = this.app.vault.getAbstractFileByPath(WIP_FOLDER);
+    if (!(root instanceof TFolder)) return null;
+    /** @type {{ path: string, folder: string, fm: Fm, heading: string }[]} */
+    const reports = [];
+    for (const d of root.children) {
+      if (!(d instanceof TFolder) || d.name === '_archive') continue;
+      const f = this.app.vault.getAbstractFileByPath(`${d.path}/progress-report.md`);
+      const fm = f instanceof TFile ? this.engine.fm(f) : null;
+      if (!fm || fm.type !== 'progress-report') continue;
+      const hs = (this.app.metadataCache.getFileCache(/** @type {TFile} */ (f)) || {}).headings;
+      reports.push({ path: /** @type {TFile} */ (f).path, folder: d.name, fm, heading: hs && hs[0] ? hs[0].heading : '' });
+    }
+    return reports.length ? okItems(reports, name) : null;
+  }
+
+  // Open goals (not achieved), A to Z, for Promote and By goal's folded list.
   goalFiles() {
     const root = this.app.vault.getAbstractFileByPath(vaultFolders.goals);
     /** @type {TFile[]} */
@@ -4154,6 +4255,9 @@ class ProjectsView extends ItemView {
     this.descs = new Map(); // path -> { mtime, line }: card descriptions, read once per change
     /** @type {string | null} */
     this.dragPath = null;
+    /** @type {AiFile | null} */ this.ai = null;      // the AI-use file, parsed; null hides the AI use tab
+    this.aiWin = '7d';
+    /** @type {AiFile | null} */ this.aiWeekOf = null; /** @type {AiRead | null} */ this.aiWeek = null; // card lines: read once per file
   }
 
   getViewType() { return VIEW_TYPE; }
@@ -4195,11 +4299,14 @@ class ProjectsView extends ItemView {
     this.contentEl.addClass('a4pj-root');
     // Tasks and projects (Projects reads no calendar or weather note).
     /** @param {unknown} p */
-    const relevant = (p) => typeof p === 'string' && (inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/'));
+    const relevant = (p) => typeof p === 'string' && (inTaskFolders(p) || p.startsWith(vaultFolders.projects + '/') || p.startsWith(vaultFolders.goals + '/')
+      || (p.startsWith(WIP_FOLDER + '/') && p.endsWith('/progress-report.md')));
     this.registerEvent(this.app.metadataCache.on('changed', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('delete', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
     this.registerEvent(this.app.vault.on('rename', (f, old) => { if ((f && relevant(f.path)) || relevant(old)) { if (this.state.project === old) this.state.project = f.path; this.scheduleRender(); } }));
     this.registerEvent(this.app.vault.on('create', (f) => { if (f && relevant(f.path)) this.scheduleRender(); }));
+    for (const ev of /** @type {const} */ (['create', 'modify', 'delete'])) this.registerEvent(this.app.vault.on(/** @type {'create'} */ (ev), (f) => { if (f && f.path === AI_USE_FILE) void this.loadAi(); }));
+    void this.loadAi();
     this.registerInterval(window.setInterval(() => { if (this.plugin.engine.today() !== this.renderedToday) this.render(); }, 30000));
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => { const w = this.contentEl.clientWidth; const n = w > 0 && w <= NARROW_WIDTH; if (n !== this.narrow) this.render(); });
@@ -4214,6 +4321,23 @@ class ProjectsView extends ItemView {
     for (const t of this.justDone.values()) window.clearTimeout(t);
     closeAllPops();
     if (this.bodyComp) { this.bodyComp.unload(); this.bodyComp = null; }
+  }
+
+  // Read the nightly AI-use file; a missing or broken file hides the tab.
+  async loadAi() {
+    /** @type {AiFile | null} */
+    let data = null;
+    try {
+      const a = this.app.vault.adapter;
+      if (await a.exists(AI_USE_FILE)) {
+        const raw = /** @type {unknown} */ (JSON.parse(await a.read(AI_USE_FILE)));
+        const d = raw && typeof raw === 'object' ? /** @type {AiFile} */ (raw) : null;
+        data = aiShares(d, '7d') ? d : null;
+      }
+    } catch { data = null; }
+    if (!this.contentEl.isConnected || JSON.stringify(data) === JSON.stringify(this.ai)) return; // closed meanwhile, or unchanged
+    this.ai = data;
+    this.scheduleRender();
   }
 
   scheduleRender() { if (this.timer) window.clearTimeout(this.timer); this.timer = window.setTimeout(() => { this.timer = null; this.render(); }, 250); }
@@ -4298,13 +4422,15 @@ class ProjectsView extends ItemView {
     const tasksKind = ui.kind === 'tasks'; // Tasks is always a board (spec 14)
     const areasKind = ui.kind === 'areas'; // its own page of area cards, never a board (Areas mockup, option 1)
     if (tasksKind && this.tab !== 'activity') this.tab = 'projects'; // Ideas and Cold Storage are for projects only
+    if (this.tab === 'ai' && !this.ai) this.tab = 'projects'; // the AI-use file went away: before the title is drawn
     const board = !areasKind && (tasksKind || ui.view === 'board');
+    const byGoal = board && !tasksKind && this.tab === 'projects' && ui.group === 'goal';
     // Read settings at click time: a Sync reload swaps the settings object under this page.
-    /** @param {'kind' | 'view'} key @param {string} k */
+    /** @param {'kind' | 'view' | 'group'} key @param {string} k */
     const pick = async (key, k) => { const u = /** @type {Record<string, unknown>} */ (this.plugin.settings.ui); if (u[key] === k) return; u[key] = k; this.query = ''; this.render(true, true); await this.plugin.save(); };
     // Mockup: the board's Ideas, Cold Storage and Activity tabs show no List / Board, Inbox or overdue button; Ideas has + Add idea.
     const side = board && this.tab !== 'projects';
-    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
+    this.head(page, areasKind ? [['/ Projects', () => pick('kind', 'projects')], ['Areas', null]] : sp ? [['/ Projects', () => this.go({ page: 'overview' })], [SPHERE_LABEL[sp], null]] : [['/ Projects', null]], areasKind ? 'Areas' : byGoal ? 'Projects by goal' : board ? (tasksKind ? TASK_BOARD_TITLE : BOARD_TITLE)[this.tab] : this.area ? `${SPHERE_LABEL[this.area]} projects` : 'Projects', side ? [
       this.tab === 'ideas' ? { label: '+ Add idea', cls: 'is-primary', run: () => this.plugin.addIdea(this.area) } : null,
     ] : [
       overdueAll.length ? { label: `Move ${overdueAll.length} overdue to today`, cls: 'is-warn', icon: 'calendar-check', run: () => this.plugin.moveOverdueToToday(null) } : null,
@@ -4316,9 +4442,10 @@ class ProjectsView extends ItemView {
     ]);
     // Areas / Projects / Tasks (Areas first, owner request 2026-10-19), then List / Board (Projects only: Tasks is a board).
     const act = /** @type {HTMLElement} */ (page.querySelector('.a4pj-actions'));
-    /** @type {['kind' | 'view', string, [string, string][]][]} */
+    /** @type {['kind' | 'view' | 'group', string, [string, string][]][]} */
     const switches = [['kind', 'Show', [['areas', 'Areas'], ['projects', 'Projects'], ['tasks', 'Tasks']]]];
     if (ui.kind === 'projects' && !side) switches.push(['view', 'View', [['list', 'List'], ['board', 'Board']]]);
+    if (board && !tasksKind && !side) switches.push(['group', 'Group projects by', [['status', 'By status'], ['goal', 'By goal']]]);
     for (const [key, name, opts] of switches.reverse()) {
       const seg = createDiv({ cls: 'a4pj-seg a4pj-switch', attr: { role: 'group', 'aria-label': name } });
       for (const [k, l] of opts) {
@@ -4463,8 +4590,9 @@ class ProjectsView extends ItemView {
   /** @param {HTMLElement} page */
   renderBoard(page) {
     this.boardTabs(page, [['projects', 'Projects', this.projects.filter((p) => onBoard(p)).length], ['ideas', 'Ideas', this.projects.filter((p) => p.status === 'idea').length],
-      ['cold', 'Cold Storage', this.projects.filter((p) => p.status === 'cold-storage').length], ['activity', 'Activity']]);
+      ['cold', 'Cold Storage', this.projects.filter((p) => p.status === 'cold-storage').length], ...(this.ai ? [['ai', 'AI use']] : []), ['activity', 'Activity']]);
     if (this.tab === 'activity') { this.renderActivity(page); return; }
+    if (this.tab === 'ai') { if (this.ai) { this.renderAiUse(page); return; } this.tab = 'projects'; }
     if (this.tab === 'cold') { this.renderCold(page); return; }
     this.areaButtons(page);
     if (this.tab === 'ideas') { this.renderIdeas(page); return; }
@@ -4505,6 +4633,15 @@ class ProjectsView extends ItemView {
       .map((p) => ({ p, st: projectStats(p, this.tasks, today, cfg) }))
       .filter(({ p, st }) => onBoard(p, this.area, this.query, [this.descOf(p, null, refill), st.next && st.next.title]))
       .sort((a, b) => /** @type {number} */ (b.p.mtime) - /** @type {number} */ (a.p.mtime) || a.p.name.localeCompare(b.p.name));
+    const byGoal = this.plugin.settings.ui.group === 'goal';
+    board.className = byGoal ? 'a4pj-board is-goals' : 'a4pj-board'; tiles.className = 'a4pj-tiles';
+    if (byGoal) { this.fillGoals(board, shown); return; }
+    const ok = this.okShown();
+    if (ok) {
+      board.className = 'a4pj-board has-ok'; tiles.className = 'a4pj-tiles has-ok';
+      const list = this.boardColumn(tiles, board, 'ok', 'Needs my OK', 'Team work waiting for you', ok.length, 'nothing waiting for you', null);
+      for (const x of ok) this.okCard(list, x);
+    }
     for (const k of BOARD_COLUMNS) {
       const items = shown.filter((x) => x.p.status === k);
       const list = this.boardColumn(tiles, board, k, COLUMN_LABEL[k], COLUMN_SUB[k], items.length, 'Drop a project here', (path) => this.dropOn(path, k));
@@ -4512,8 +4649,77 @@ class ProjectsView extends ItemView {
     }
   }
 
+  // "By goal" (mockup 2026-10-15): a section per goal with its projects (status shown
+  // on each card), then the goals no project on the board serves, folded. No tiles.
+  /** @param {HTMLElement} board @param {BoardItem[]} shown */
+  fillGoals(board, shown) {
+    const groups = goalGroups(shown, (p) => this.goalOf(p));
+    for (const { goal, items } of groups) {
+      const sec = el(board, 'div', 'a4pj-goal');
+      const gh = el(sec, 'div', 'a4pj-goalhead');
+      const h = el(gh, 'h3', 'a4pj-goalh'); // a heading per goal, for screen-reader jumps
+      const gp = goal.path;
+      if (gp) { const b = el(h, 'button', 'a4pj-goalname', goal.name); b.addEventListener('click', () => this.plugin.openFile(gp)); }
+      else el(h, 'span', 'a4pj-goalname', goal.name);
+      if (GOAL_STATUS_LABEL[goal.status]) el(gh, 'span', `a4pj-pill is-goal-${goal.status}`, GOAL_STATUS_LABEL[goal.status]);
+      el(gh, 'span', 'a4pj-goalcount', `${items.length} project${items.length === 1 ? '' : 's'}`);
+      const row = el(sec, 'div', 'a4pj-goalrow');
+      for (const { p, st } of items) this.boardCard(row, p, st, true);
+    }
+    if (!groups.length) el(board, 'div', 'a4pj-empty', this.query ? 'nothing matches' : 'no projects here');
+    if (this.query || this.area) return; // the rest list is about every goal, not a filtered view
+    const used = new Set(groups.map((g) => g.goal.key));
+    const rest = this.plugin.goalFiles().filter((f) => !used.has(f.path));
+    if (!rest.length) return;
+    const d = el(board, 'details', 'a4pj-goalrest');
+    el(d, 'summary', null, `Goals with no open project (${rest.length})`);
+    const ul = el(d, 'ul');
+    for (const f of rest) { const b = el(el(ul, 'li'), 'button', null, f.basename); b.addEventListener('click', () => this.plugin.openFile(f.path)); }
+  }
+
+  // The column's work, filtered like the board (area through the work's
+  // project; work with no project shows in every area, as its area is unknown; search
+  // reads the title, the waiting line and the project). null when the vault has no work folders.
+  okShown() {
+    const all = this.plugin.okWork();
+    if (!all) return null;
+    const q = String(this.query || '').trim().toLowerCase();
+    const byKey = new Map(this.projects.map((p) => [p.key, p]));
+    return all.filter((x) => (!this.area || !x.project || !byKey.has(x.project) || /** @type {ProjNote} */ (byKey.get(x.project)).sphere === this.area)
+      && (!q || [x.title, x.waiting, x.project].some((v) => String(v || '').toLowerCase().includes(q))));
+  }
+
+  // A piece of team work, not a project (dashed); opens its progress report.
+  /** @param {HTMLElement} host @param {OkItem} x */
+  okCard(host, x) {
+    const c = el(host, 'div', 'a4pj-bcard is-work');
+    c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open the progress report for ${x.title}`); c.dataset.focus = `okcard:${x.path}`;
+    const top = el(c, 'div', 'a4pj-btop');
+    el(el(top, 'div', 'a4pj-pills'), 'span', 'a4pj-pill is-proj', x.project || 'no project');
+    el(top, 'span', 'a4pj-bwhen', x.updated || '');
+    el(c, 'div', 'a4pj-btitle', x.title);
+    el(c, 'div', 'a4pj-bwait', x.waiting);
+    const open = () => this.plugin.openFile(x.path);
+    el(el(c, 'div', 'a4pj-bacts'), 'button', null, 'Open progress page').addEventListener('click', open);
+    c.addEventListener('click', (e) => { if (!/** @type {HTMLElement} */ (e.target).closest('button')) open(); });
+    c.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === c) { e.preventDefault(); open(); } });
+  }
+
+  // A project's goal: the note its `goal` link resolves to, with that note's status.
+  /** @param {ProjNote} p @returns {GoalRef | null} */
+  goalOf(p) {
+    if (!p.goal) return null;
+    const link = (wikilinkTarget(p.goal) || '').split('#')[0].trim();
+    if (!link) return null; // "[[#Heading]]" names no note: No goal
+    const f = this.app.metadataCache.getFirstLinkpathDest(link, p.path);
+    const fm = f ? this.plugin.engine.fm(f) : null;
+    // A missing note, or a note that is not a goal: its name only, no status, no button.
+    if (!fm || fm.type !== 'goal') return { key: `link:${f ? f.path : link}`, name: f ? f.basename : (wikilinkLabel(p.goal) || link), status: '' };
+    return { key: /** @type {TFile} */ (f).path, path: /** @type {TFile} */ (f).path, name: /** @type {TFile} */ (f).basename, status: statusOf(fm) };
+  }
+
   // One column with its tile; returns the card list. `n` is the full count.
-  /** @param {HTMLElement} tiles @param {HTMLElement} board @param {string} k @param {string} label @param {string} sub @param {number} n @param {string} dropText @param {(path: string) => void} onDrop */
+  /** @param {HTMLElement} tiles @param {HTMLElement} board @param {string} k @param {string} label @param {string} sub @param {number} n @param {string} dropText @param {((path: string) => void) | null} onDrop */
   boardColumn(tiles, board, k, label, sub, n, dropText, onDrop) {
     const t = el(tiles, 'button', 'a4pj-tile'); t.dataset.col = k;
     el(t, 'b', null, String(n)); el(t, 'span', null, label);
@@ -4522,7 +4728,8 @@ class ProjectsView extends ItemView {
     const hd = el(col, 'div', 'a4pj-colhead'); el(hd, 'h3', null, label); el(hd, 'span', 'a4pj-badge', String(n));
     el(col, 'div', 'a4pj-colsub', sub);
     const list = el(col, 'div', 'a4pj-cards');
-    if (!n) el(list, 'div', this.query ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : dropText);
+    if (!n) el(list, 'div', this.query || !onDrop ? 'a4pj-empty' : 'a4pj-dropzone', this.query ? 'nothing matches' : dropText);
+    if (!onDrop) return list; // a column nothing can be dropped on
     col.addEventListener('dragover', (e) => { if (!this.dragPath) return; e.preventDefault(); col.addClass('is-drop'); });
     col.addEventListener('dragleave', (e) => { if (!col.contains(/** @type {Node | null} */ (e.relatedTarget))) col.removeClass('is-drop'); });
     col.addEventListener('drop', (e) => { col.removeClass('is-drop'); if (!this.dragPath) return; e.preventDefault(); onDrop(this.dragPath); });
@@ -4710,18 +4917,20 @@ class ProjectsView extends ItemView {
     return d.line;
   }
 
-  /** @param {HTMLElement} host @param {ProjNote} p @param {ReturnType<typeof projectStats>} st */
-  boardCard(host, p, st) {
+  /** @param {HTMLElement} host @param {ProjNote} p @param {ReturnType<typeof projectStats>} st @param {boolean} [showStatus] */
+  boardCard(host, p, st, showStatus) {
     const c = el(host, 'div', 'a4pj-bcard');
     c.tabIndex = 0; c.setAttr('role', 'button'); c.setAttr('aria-label', `Open ${p.name}`); c.dataset.focus = `bcard:${p.path}`;
-    this.draggable(c, p.path, p.name);
+    if (!showStatus) this.draggable(c, p.path, p.name); // By goal has no columns to drop on
     const top = el(c, 'div', 'a4pj-btop');
     const pills = el(top, 'div', 'a4pj-pills');
     if (p.sphere === 'work' || p.sphere === 'personal') el(pills, 'span', `a4pj-pill is-${p.sphere}`, SPHERE_LABEL[p.sphere]);
     if (p.areaName) el(pills, 'span', 'a4pj-pill is-proj', p.areaName);
+    if (showStatus) el(pills, 'span', 'a4pj-pill is-st', COLUMN_LABEL[p.status] || p.status);
     el(top, 'span', 'a4pj-bwhen', p.mtime ? stampText(p.mtime) : '');
     el(c, 'div', 'a4pj-btitle', p.name);
     this.descOf(p, el(c, 'div', 'a4pj-bdesc'));
+    this.aiLine(c, pills, p);
     /** @param {string} label @param {unknown} text @param {boolean} [go] */
     const sec = (label, text, go) => { const s = el(c, 'div', 'a4pj-bsec'); el(s, 'span', 'a4pj-lab' + (go ? ' is-go' : ''), label); el(s, 'span', 'a4pj-btext', plainLine(text)); };
     if (p.why) sec('Why here', p.why);
@@ -4749,6 +4958,60 @@ class ProjectsView extends ItemView {
   async editWhy(p) {
     const v = await this.plugin.ask(`Why is "${p.name}" in ${COLUMN_LABEL[p.status] || p.status}?`, p.why || '');
     if (v != null) await this.plugin.setProjectWhy(p.path, v);
+  }
+
+  // AI use (mockup approved 2026-10-15): each project's share of the window's AI
+  // work, red at or over the file's high share, and the untied share by reason.
+  /** @param {HTMLElement} page */
+  renderAiUse(page) {
+    const a = aiShares(this.ai, this.aiWin);
+    const wrap = el(page, 'div', 'a4pj-ai');
+    const head = el(wrap, 'div', 'a4pj-sechead');
+    el(head, 'h2', null, this.aiWin === '7d' ? 'AI use this week' : 'AI use, last 30 days');
+    const seg = el(head, 'div', 'a4pj-seg'); seg.setAttr('role', 'group'); seg.setAttr('aria-label', 'Period');
+    for (const [k, l] of [['7d', 'This week'], ['30d', 'Last 30 days']]) {
+      const b = el(seg, 'button', this.aiWin === k ? 'is-on' : '', l); b.setAttr('aria-pressed', String(this.aiWin === k));
+      b.addEventListener('click', () => { if (this.aiWin === k) return; this.aiWin = k; this.render(true); });
+    }
+    el(wrap, 'div', 'a4pj-secnote', `Share of all AI-team work, by project. Red means one project took ${pctText(a ? a.high : 0.25)} or more of the ${this.aiWin === '7d' ? 'week' : '30 days'}.`);
+    if (!a || !a.total) { el(wrap, 'div', 'a4pj-empty', a ? 'no AI use recorded in this period' : 'no data for this period'); return; }
+    if (a.untiedShare > 0) {
+      el(wrap, 'div', 'a4pj-callout', `${pctText(a.untiedShare)} of AI use can't be tied to one project: `
+        + a.untied.map((r) => `${AI_UNTIED_LABEL[r.reason] || r.reason} ${pctText(r.share)}`).join(', ')
+        + '. That share is shown, never guessed into a project.');
+    }
+    const byName = new Map(this.projects.map((p) => [p.name.toLowerCase(), p]));
+    /** @param {string} name @param {number} share @param {string} cls @param {(() => void) | null} go */
+    const row = (name, share, cls, go) => {
+      const r = el(wrap, go ? 'button' : 'div', 'a4pj-urow' + (cls ? ` ${cls}` : ''));
+      const hi = cls === 'is-high';
+      r.setAttr('aria-label', `${name}, ${pctText(share)} of AI use${hi ? ', high' : ''}`);
+      const nm = el(r, 'span', 'a4pj-uname'); // name and pill share one cell, so every bar has the same track
+      el(nm, 'b', null, name);
+      if (hi) el(nm, 'span', 'a4pj-pill is-high', 'high'); // not by colour alone
+      const bar = el(r, 'span', 'a4pj-ubar'); el(bar, 'i').style.width = `${Math.min(100, share * 100)}%`;
+      el(r, 'span', 'a4pj-upct', pctText(share));
+      if (go) r.addEventListener('click', go);
+    };
+    for (const x of a.rows) { const p = byName.get(x.name.toLowerCase()); row(x.name, x.share, isHighShare(x.share, a.high) ? 'is-high' : '', p ? () => { void this.go({ page: 'project', project: p.path }); } : null); }
+    if (a.untiedShare > 0) row('Not tied to a project', a.untiedShare, 'is-none', null);
+    const at = Date.parse(typeof this.ai.generated === 'string' ? this.ai.generated : '');
+    const when = Number.isFinite(at) ? stampText(at) : '';
+    el(wrap, 'div', 'a4pj-by', `Counted from Claude Code's own usage records (tokens processed), ${a.from} to ${a.to}${when ? `; updated ${when}` : ''}.`);
+  }
+
+  // A card's line for its share of this week's AI use (none at 0 or without the file).
+  /** @param {HTMLElement} c @param {HTMLElement} pills @param {ProjNote} p */
+  aiLine(c, pills, p) {
+    if (this.aiWeekOf !== this.ai) { this.aiWeekOf = this.ai; this.aiWeek = this.ai && aiShares(this.ai, '7d'); } // once per file, not per card
+    const a = this.aiWeek;
+    const x = a && a.rows.find((r) => r.name.toLowerCase() === p.name.toLowerCase());
+    if (!a || !x) return;
+    const hi = isHighShare(x.share, a.high);
+    if (hi) el(pills, 'span', 'a4pj-pill is-high', 'high AI use');
+    const u = el(c, 'div', 'a4pj-use' + (hi ? ' is-high' : ''));
+    el(u, 'span', null, hi ? `High AI use: ${pctText(x.share)}` : `AI use ${pctText(x.share)}`);
+    el(el(u, 'span', 'a4pj-ubar'), 'i').style.width = `${Math.min(100, x.share * 100)}%`;
   }
 
   // Plain text only (el sets textContent): entries carry note names.
@@ -6006,6 +6269,15 @@ class ProjectsSettingTab extends PluginSettingTab {
       { name: "Hide Obsidian's properties list on task notes",
         desc: 'The task card shows and edits the same fields, and opens the full list for anything unusual. Nothing in the notes changes either way.',
         render: (row) => row.addToggle((t) => t.setValue(s.hideProps).onChange(async (v) => { s.hideProps = v; await this.plugin.save(); this.plugin.cards.refreshAll(); })) },
+      // Only in a vault with work folders: elsewhere the column has nothing to read.
+      ...(this.app.vault.getAbstractFileByPath(WIP_FOLDER) instanceof TFolder ? [{ name: 'Your name, for "Needs my OK"',
+        desc: `Work in the "${WIP_FOLDER}" folders whose progress report is waiting on this name gets the first column on the projects board. Leave empty for no column.`,
+        render: (/** @type {Setting} */ row) => row.addText((t) => {
+          t.setPlaceholder('Your first name').setValue(s.okName);
+          t.inputEl.setAttr('aria-label', 'Your name');
+          t.inputEl.addEventListener('change', async () => { s.okName = t.getValue().trim(); t.setValue(s.okName); await this.plugin.save();
+            for (const l of this.app.workspace.getLeavesOfType(VIEW_TYPE)) if (l.view instanceof ProjectsView) l.view.scheduleRender(); });
+        }) }] : []),
       { name: 'Archive', searchable: false, render: (row) => blockRow(row, '', true).createDiv({ cls: 'setting-item-description a4pj-set-note', text: `Done tasks move to the archive folder five minutes after they are ticked, as with TaskNotes${q ? ` (${q} waiting now)` : ''}.` }) },
     ] }];
   }

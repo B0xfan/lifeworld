@@ -689,3 +689,53 @@ html:not(#a4pj-guard) .a4pj-root .a4pj-task:hover .a4pj-grip, html:not(#a4pj-gua
 html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-dragging { opacity: .45; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-task.is-dragging .a4pj-grip { cursor: grabbing; }
 html:not(#a4pj-guard) .a4pj-root .a4pj-dropline { position: absolute; left: 0; right: 0; height: 2px; background: var(--interactive-accent); border-radius: 1px; pointer-events: none; z-index: 2; }
+/* By goal (mockup approved 2026-10-15): a section per goal, cards in a wrapping row */
+html:not(#a4pj-guard) .a4pj-root .a4pj-board.is-goals { display: block; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goal { border-top: 1px solid var(--pj-hair); padding: 14px 0 6px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tiles:empty { display: none; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalh { margin: 0; font: inherit; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalname { font: 640 18px/1.25 var(--pj-f-display); color: var(--pj-paper); text-align: left; padding: 0; background: none; border: 0; box-shadow: none; height: auto; white-space: normal; }
+html:not(#a4pj-guard) .a4pj-root button.a4pj-goalname:hover { text-decoration: underline; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalcount { font: 500 11px var(--pj-f-mono); color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: start; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-st { --a: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-goal-achieved { --a: var(--pj-success); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-goal-not-achieved { --a: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-pill.is-goal-on-hold { --a: var(--pj-warning); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrest { border-top: 1px solid var(--pj-hair); padding-top: 12px; margin-top: 8px; color: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrest summary { cursor: pointer; font-weight: 600; color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrest ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrest button { padding: 0; background: none; border: 0; box-shadow: none; height: auto; color: var(--pj-dim); font-size: 13px; text-align: left; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-goalrest button:hover { color: var(--pj-paper); text-decoration: underline; }
+/* "Needs my OK" (mockup approved 2026-10-15): a seventh, first column of team work */
+html:not(#a4pj-guard) .a4pj-root [data-col="ok"] { --c: var(--pj-marker); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-board.has-ok { grid-template-columns: repeat(7, minmax(220px, 1fr)); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-tiles.has-ok { grid-template-columns: repeat(7, 1fr); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-col[data-col="ok"] { border-top-style: dashed; background: color-mix(in srgb, var(--pj-marker) 5%, transparent); border-radius: var(--pj-r-subtle); padding: 8px 8px 10px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bcard.is-work { border-style: dashed; border-color: var(--pj-hair2); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-bwait { color: var(--pj-dim); font-size: 13px; margin-top: 6px; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-board.has-ok { grid-template-columns: repeat(7, 86%); }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-tiles.has-ok { grid-template-columns: repeat(3, 1fr); }
+/* AI use (mockup approved 2026-10-15): card line, tab rows, untied callout */
+html:not(#a4pj-guard) .a4pj-root .a4pj-use { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--pj-faint); margin-top: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-use .a4pj-ubar { flex: 1; height: 4px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-use.is-high { color: var(--pj-danger); font-weight: 600; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ubar { display: block; background: var(--pj-bg3); border-radius: 8px; overflow: hidden; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ubar i { display: block; height: 100%; background: var(--pj-dim); }
+html:not(#a4pj-guard) .a4pj-root :is(.a4pj-use, .a4pj-urow).is-high .a4pj-ubar i { background: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ai { max-width: 900px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-ai .a4pj-sechead { justify-content: space-between; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-callout { border: 1px solid var(--pj-hair2); border-left: 3px solid var(--pj-warning); border-radius: var(--pj-r-control); background: var(--pj-bg2); padding: 10px 14px; font-size: 13px; color: var(--pj-dim); margin: 0 0 16px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow { display: grid; grid-template-columns: minmax(0, 260px) 1fr 60px; gap: 12px; align-items: center; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--pj-hair); border-radius: 0; background: none; box-shadow: none; height: auto; font-size: 13.5px; text-align: left; color: var(--pj-paper); }
+html:not(#a4pj-guard) .a4pj-root button.a4pj-urow:hover b { text-decoration: underline; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow b { font-weight: 600; overflow-wrap: anywhere; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-uname { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow .a4pj-ubar { height: 8px; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow.is-high b { color: var(--pj-danger); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow.is-none { color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow.is-none b { font-weight: 500; }
+html:not(#a4pj-guard) .a4pj-root .a4pj-urow.is-none .a4pj-ubar i { background: repeating-linear-gradient(45deg, var(--pj-hair2) 0 4px, transparent 4px 8px); }
+html:not(#a4pj-guard) .a4pj-root .a4pj-upct { font: 500 12px var(--pj-f-mono); text-align: right; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-urow { grid-template-columns: 1fr 60px; }
+html:not(#a4pj-guard) .a4pj-root.is-narrow .a4pj-urow .a4pj-ubar { grid-column: 1 / -1; order: 3; }

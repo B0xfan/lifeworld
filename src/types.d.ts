@@ -113,8 +113,8 @@ interface AreaNote { path: string; name: string; key: string; isArea: true; sphe
 interface ArchiveEntry { taskPath: string; statusChangeTimestamp?: number; archiveAfterTimestamp: number; statusValue?: string }
 /** Projects' own settings after normalizeSettings (src/projects/main.js). */
 interface ProjSettings {
-  source: string; cbTag: string; cuList: string; hideProps: boolean; tnSnapshot: Fm | null; archiveQueue: ArchiveEntry[];
-  ui: { closedOpen: boolean; doneOpen: Record<string, boolean>; later: Record<string, boolean>; someday: Record<string, boolean>; view: 'board' | 'list'; kind: string };
+  source: string; cbTag: string; cuList: string; hideProps: boolean; okName: string; tnSnapshot: Fm | null; archiveQueue: ArchiveEntry[];
+  ui: { closedOpen: boolean; doneOpen: Record<string, boolean>; later: Record<string, boolean>; someday: Record<string, boolean>; view: 'board' | 'list'; kind: string; group: 'status' | 'goal' };
   activity: { at: number; text: string }[];
 }
 /** The TaskNotes plugin, as far as LifeWorld reads it (its live settings). */
