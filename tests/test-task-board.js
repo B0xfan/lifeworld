@@ -202,12 +202,12 @@ if (process.env.LIFEWORLD_TASKS_JSON) JSON.parse(require('fs').readFileSync(proc
   { // Closed on a repeating task ends the series, and the toast says so, with Undo
     const w = world(FIXTURES.repeat);
     await w.p.moveTask(w.task(), 'closed');
-    assert.strictEqual(w.toasts[0][0], 'Closed: "Task" won\'t repeat any more');
+    assert.strictEqual(w.toasts[0][0], 'Canceled: "Task" won\'t repeat any more');
     assert.ok(!L.isOpenTask(w.task(), cfg), 'the series is no longer open');
     await w.toasts[0][1]();
     assert.deepStrictEqual(w.file.fm, FIXTURES.repeat, 'Undo brings the series back');
     const o = world(FIXTURES.open); await o.p.moveTask(o.task(), 'closed');
-    assert.strictEqual(o.toasts[0][0], 'Moved "Task" to Closed', 'a one-off task: the plain toast');
+    assert.strictEqual(o.toasts[0][0], 'Moved "Task" to Canceled', 'a one-off task: the plain toast');
   }
   { // a repeating Someday task dropped on Done: ticks today's day and says it stays in Someday
     const w = world(FIXTURES.repeatSomeday);
@@ -283,7 +283,7 @@ if (process.env.LIFEWORLD_TASKS_JSON) JSON.parse(require('fs').readFileSync(proc
   let page = node('div');
   view.renderTaskBoard(page);
   assert.deepStrictEqual(walk(page, (n) => n.className === 'a4pj-tabs')[0].kids.map(text), ['Tasks37', 'Activity'], 'Tasks and Activity tabs only; full total');
-  assert.deepStrictEqual(walk(page, (n) => n.className === 'a4pj-tile').map(text), ['3Open', '1In progress', '0Blocked', '1Someday', '32Done', '0Closed'], 'tiles: full counts');
+  assert.deepStrictEqual(walk(page, (n) => n.className === 'a4pj-tile').map(text), ['3Open', '1In progress', '0Blocked', '1Someday', '32Done', '0Canceled'], 'tiles: full counts');
   assert.ok(walk(page, (n) => n.className === 'a4pj-by').map(text).includes('The latest 30 of 32'), 'Done says it shows the latest 30');
   const cards = walk(page, (n) => n.className === 'a4pj-bcard');
   assert.strictEqual(cards.length, 3 + 1 + 1 + 30, 'Done capped at 30 cards');
@@ -323,7 +323,7 @@ if (process.env.LIFEWORLD_TASKS_JSON) JSON.parse(require('fs').readFileSync(proc
     const anchor = { getBoundingClientRect: () => ({ left: 0, bottom: 0 }) };
     view.taskMoveMenu(anchor, tasks[0], 'open');
     const items = menus[0].items;
-    assert.deepStrictEqual(items.map((i) => [i.title, !!i.disabled]), [['Open (here now)', true], ['In progress', false], ['Blocked', false], ['Someday', false], ['Done', false], ['Closed', false]]);
+    assert.deepStrictEqual(items.map((i) => [i.title, !!i.disabled]), [['Open (here now)', true], ['In progress', false], ['Blocked', false], ['Someday', false], ['Done', false], ['Canceled', false]]);
     items[4].click();
     assert.deepStrictEqual(moved, [['Menu photos', 'done']], 'menu pick calls moveTask');
     const mb = walk(menu, (n) => n.tag === 'button' && n.textContent === 'Move')[0];

@@ -504,6 +504,9 @@ html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button.is-on .a4pj-chip { backgrou
 html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick { border-color: var(--pj-acc); color: var(--ink-on-marker, var(--pj-bg2)); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick:hover { border-color: var(--pj-acc); background: color-mix(in srgb, var(--pj-acc) 12%, var(--pj-bg2)); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick.is-on { background: var(--pj-acc); border-color: var(--pj-acc); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-bigtick.is-on.is-canceled { background: var(--pj-faint); border-color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-tname.is-canceled { color: var(--pj-faint); }
+html:not(#a4pj-guard) .a4pj-card .a4pj-stseg button.is-on[data-st="closed"] { background: var(--pj-bg3); color: var(--pj-paper); font-weight: 600; }
 
 /* Task links (0.6.0): TaskNotes' old inline task look on links to task notes,
  * measured from TaskNotes 4.12.5 (ring 0.85em / 1.5px, priority dot 0.7em,

@@ -571,6 +571,12 @@ if (VAULT) {
     eq([notes.get(P1).status, notes.get(P1).scheduled], ['open', '2026-10-20'], 'round trip: a start date brings it back');
     await eng.setDue(P1, null);
     eq(notes.get(P1).status, 'open', 'removing a date never touches status');
+    // Canceled: the card's Canceled button writes `closed`, finished everywhere; Open brings it back.
+    await eng.setStatus(P1, 'closed');
+    eq(notes.get(P1).status, 'closed', 'Canceled: writes status closed');
+    ok(L.isTaskDone(L.readTask(notes.get(P1), P1, 'P1', cfg, false), '2026-10-20', null), 'Canceled: counts as finished');
+    await eng.setStatus(P1, 'open');
+    eq(notes.get(P1).status, 'open', 'Canceled: Open sets it back');
     // The real repeats.
     // Repeats by name: the frozen copy's, or the owner's from LIFEWORLD_REAL_REPEATS (names stay out of the repo).
     for (const name of REPEATS) {
@@ -742,6 +748,9 @@ if (VAULT) {
   ok(/--pj-acc: var\(--ink-marker, var\(--pj-acc-l, var\(--interactive-accent\)\)\)/.test(css) && /body\.theme-dark \.a4pj-card \{\s*--pj-acc: var\(--ink-marker, var\(--pj-acc-d/.test(css), "card colour: the theme's --ink-marker wins, then Today's accent, light and dark");
   for (const [sel, name] of [['data-st="in-progress"', 'In progress'], ['data-st="blocked"', 'Waiting'], ['data-half="am"', 'Morning'], ['.a4pj-chip.is-top', 'High'], ['.a4pj-pick.is-today', 'Due today'], ['.a4pj-pick.is-late', 'overdue']]) ok(css.includes(sel), `card colour: ${name} has a colour rule`);
   ok(/\.a4pj-card \.a4pj-bigtick \{ border-color: var\(--pj-acc\)/.test(css), 'card colour: the tick circle is outlined in the accent');
+  ok(/\['closed', 'Canceled'\]\]\) \{/.test(draw) && /setIcon\(big, canceled \? 'x' : 'check'\)/.test(draw), 'Canceled: a Status button, and an x in the circle');
+  ok(/\$\{canceled \? 'Canceled' : 'Completed'\} \$\{longDay/.test(draw), 'Canceled: the footer says Canceled, not Completed');
+  ok(css.includes('.a4pj-bigtick.is-on.is-canceled') && css.includes('.a4pj-tname.is-canceled') && css.includes('data-st="closed"'), 'Canceled: has its look');
 }
 
 (globalThis.__somedayRun ? globalThis.__somedayRun() : Promise.resolve()).catch((e) => ok(false, 'someday engine checks threw', e && e.stack)).then(() => console.log(`RESULT ${n} ${failed}`));

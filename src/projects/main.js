@@ -121,7 +121,7 @@ const BOARD_TITLE = { projects: 'What needs attention', ideas: 'Ideas worth keep
 // The tasks board (spec 14): the task statuses the vault already has, plus the planner's Someday. No new status.
 const TASK_COLUMNS = ['open', 'in-progress', 'blocked', 'someday', 'done', 'closed'];
 /** @type {Record<string, string>} */
-const TASK_COLUMN_LABEL = { open: 'Open', 'in-progress': 'In progress', blocked: 'Blocked', someday: 'Someday', done: 'Done', closed: 'Closed' };
+const TASK_COLUMN_LABEL = { open: 'Open', 'in-progress': 'In progress', blocked: 'Blocked', someday: 'Someday', done: 'Done', closed: 'Canceled' }; // `closed` is shown as Canceled
 /** @type {Record<string, string>} */
 const TASK_COLUMN_SUB = { open: 'Ready to do', 'in-progress': 'Being worked on', blocked: 'Stuck on something', someday: 'No day, kept for later', done: 'Finished', closed: 'Finished without doing it' };
 /** @type {Record<string, string>} */
@@ -3260,7 +3260,7 @@ class ProjectsPlugin extends Plugin {
         if (t.due && !t.recurrenceRaw) msg += '. The due date was taken off';
       } else {
         w = await this.engine.setStatus(t.path, column);
-        if (column === 'closed' && t.recurrenceRaw) msg = `Closed: "${t.title}" won't repeat any more`;
+        if (column === 'closed' && t.recurrenceRaw) msg = `Canceled: "${t.title}" won't repeat any more`;
       }
     } catch (e) { console.error('[LifeWorld] task move failed', t.path, e); new Notice(`Could not move "${t.title}".`); return false; }
     const undo = w && w.undo;
@@ -5643,14 +5643,15 @@ class TaskCardManager {
 
     // tick + name
     const top = el(card, 'div', 'a4pj-card-top');
-    const big = el(top, 'button', 'a4pj-bigtick' + (done ? ' is-on' : ''));
-    if (done) setIcon(big, 'check');
-    big.setAttr('aria-label', done ? 'Mark not done' : (t.recurrenceRaw ? 'Mark this occurrence done' : 'Mark done'));
+    const canceled = done && statusString(/** @type {Fm} */ (fm)[cfg.F.status]) === 'closed'; // shown as Canceled
+    const big = el(top, 'button', 'a4pj-bigtick' + (done ? ' is-on' : '') + (canceled ? ' is-canceled' : ''));
+    if (done) setIcon(big, canceled ? 'x' : 'check');
+    big.setAttr('aria-label', canceled ? 'Set back to open' : done ? 'Mark not done' : (t.recurrenceRaw ? 'Mark this occurrence done' : 'Mark done'));
     big.addEventListener('click', () => { const freed = !done && !t.recurrenceRaw ? engine.freedBy(t.path) : []; act(() => plugin.completeTask(t, !done), (w) => {
       if (t.recurrenceRaw) { const r = /** @type {{ day: string, done: boolean, next: string | null } | null | undefined} */ (w && w.result); return r ? (r.done ? `Done for ${shortDay(r.day, today)}${r.next ? `; next one ${shortDay(r.next, today)}` : ''}` : `Back to open for ${shortDay(r.day, today)}`) : 'Done'; }
       return done ? 'Back to open' : `Done: ${t.title}${unblocksText(freed)}`;
     }); });
-    const name = el(top, 'div', 'a4pj-tname' + (done ? ' is-done' : ''), t.title);
+    const name = el(top, 'div', 'a4pj-tname' + (canceled ? ' is-canceled' : done ? ' is-done' : ''), t.title);
     name.contentEditable = 'true'; name.spellcheck = false; name.setAttr('aria-label', 'Task name'); name.setAttr('role', 'textbox');
     name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); name.blur(); } if (e.key === 'Escape') { name.textContent = t.title; name.blur(); } });
     name.addEventListener('blur', () => { const v = (name.textContent || '').replace(/\s+/g, ' ').trim(); if (v && v !== t.title) act(() => engine.rename(t.path, v), 'Renamed'); else name.textContent = t.title; });
@@ -5665,7 +5666,7 @@ class TaskCardManager {
     // Status
     const ss = el(row('Status'), 'div', 'a4pj-seg a4pj-stseg');
     const stOf = statusString(/** @type {Fm} */ (fm)[cfg.F.status]);
-    for (const [k, lab] of [['open', 'Open'], ['in-progress', 'In progress'], ['blocked', 'Waiting']]) {
+    for (const [k, lab] of [['open', 'Open'], ['in-progress', 'In progress'], ['blocked', 'Waiting'], ['closed', 'Canceled']]) {
       if (!cfg.statuses.some((s) => s.value === k)) continue;
       const b = el(ss, 'button', stOf === k ? 'is-on' : '', lab);
       b.dataset.st = k;
@@ -5777,7 +5778,7 @@ class TaskCardManager {
     // small meta + all properties
     const sm = el(card, 'div', 'a4pj-small-meta');
     el(sm, 'span', null, t.dateCreated ? `Created ${longDay(t.dateCreated)}` : 'Created: not recorded');
-    el(sm, 'span', null, t.recurrenceRaw ? `${t.completeInstances.length} done so far` : (t.completedDate ? `Completed ${longDay(t.completedDate)}` : 'Not completed'));
+    el(sm, 'span', null, t.recurrenceRaw ? `${t.completeInstances.length} done so far` : (t.completedDate ? `${canceled ? 'Canceled' : 'Completed'} ${longDay(t.completedDate)}` : 'Not completed'));
     const steps = /** @type {{ total: number, done: number }} */ (t.steps);
     if (steps.total) el(sm, 'span', null, `Steps ${steps.done}/${steps.total} (the tick boxes in the note)`);
     if (plugin.settings.hideProps) {
