@@ -751,6 +751,7 @@ if (VAULT) {
   ok(/\['closed', 'Canceled'\]\]\) \{/.test(draw) && /setIcon\(big, canceled \? 'x' : 'check'\)/.test(draw), 'Canceled: a Status button, and an x in the circle');
   ok(/\$\{canceled \? 'Canceled' : 'Completed'\} \$\{longDay/.test(draw), 'Canceled: the footer says Canceled, not Completed');
   ok(css.includes('.a4pj-bigtick.is-on.is-canceled') && css.includes('.a4pj-tname.is-canceled') && css.includes('data-st="closed"'), 'Canceled: has its look');
+  ok(/\.a4pj-card \.a4pj-stseg \{ flex-wrap: wrap; max-width: 100%; \}/.test(css), 'Canceled: the four Status buttons wrap inside the card on a narrow screen');
 }
 
 (globalThis.__somedayRun ? globalThis.__somedayRun() : Promise.resolve()).catch((e) => ok(false, 'someday engine checks threw', e && e.stack)).then(() => console.log(`RESULT ${n} ${failed}`));
