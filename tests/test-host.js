@@ -991,9 +991,9 @@ const start = async (data) => {
       const groups = () => wh.kids.filter((k) => !k.rec && k.cls.includes('a4t-wl-group')).map((k) => k.text);
       const wrows = () => wh.kids.filter((k) => k.rec);
       const row = (name) => wrows().find((r) => r.rec.name === name);
-      eq(groups(), ['Top strip', 'Left', 'Middle', 'Right'], 'widget list grouped Top, Left, Middle, Right');
-      eq(wrows().map((r) => [r.rec.name, r.rec.on]), [['Quick capture', true], ['Weather', false], ['Morning tasks', true], ['Afternoon tasks', true], ['Overdue', true], ['Planner shortcut', false], ['Notes', false],
-        ['Calendar', true], ['Recent notes', true], ['Mood', true], ['Habits', true], ['World clock', false], ['Activity heatmap', false], ['Active projects', false], ['Latest journal', false], ['Pinned shortcuts', false], ['Journal box', false], ['News feeds', false]], 'every launch widget listed with its switch; the starter set on; the checkbox card left out for note tasks');
+      eq(groups(), ['Top strip', 'Wide row (Left and Middle)', 'Left', 'Middle', 'Right'], 'widget list grouped Top, Wide row, Left, Middle, Right');
+      eq(wrows().map((r) => [r.rec.name, r.rec.on]), [['Quick capture', true], ['Weather', false], ['Month calendar', false], ['Morning tasks', true], ['Afternoon tasks', true], ['Overdue', true], ['Planner shortcut', false], ['Notes', false], ['Focus timer', false],
+        ['Calendar', true], ['Recent notes', true], ['Mood', true], ['Habits', true], ['World clock', false], ['Activity heatmap', false], ['Countdowns', false], ['Active projects', false], ['Latest journal', false], ['Pinned shortcuts', false], ['Journal box', false], ['News feeds', false], ['Vault stats', false], ['Daily quote', false], ['On this day', false], ['Random note', false]], 'every launch widget listed with its switch; the starter set on; the checkbox card left out for note tasks');
       const pj = row('Active projects');
       eq([pj.rec.desc, pj.rec.disabled, pj.settingEl.cls.includes('lw-dim')], ['Needs Projects (off under Parts)', true, true], 'a widget whose part is off: greyed, says which part, cannot be switched on');
       eq(row('Quick capture').rec.extras.map((b) => !!b.disabled), [true, true], 'Top strip: the only shown widget cannot move');
@@ -1188,8 +1188,8 @@ const start = async (data) => {
     eq(plainFile(disk[ex.dir])['a4-today'].layout.zones.c1, ['tides'], 'adding and removing an add-on widget writes nothing to the settings file');
     // An open Today page: the removed widget's card leaves the page and is forgotten; a hidden one only leaves.
     const gone = []; const card = (id) => ({ id, dataset: {}, toggleClass() {}, querySelector: () => ({}), detach() { gone.push(id); } });
-    const zone = () => ({ children: [], insertBefore(el) { this.children.push(el); }, appendChild() {} });
-    const page = { data: {}, plugin: { layout: today.layout }, zoneEls: { top: zone(), c1: zone(), c2: zone(), c3: zone() }, clockEl: {},
+    const zone = () => ({ children: [], insertBefore(el) { this.children.push(el); }, appendChild() {}, toggleClass() {} });
+    const page = { data: {}, plugin: { layout: today.layout }, zoneEls: { top: zone(), wide: zone(), c1: zone(), c2: zone(), c3: zone() }, clockEl: {},
       widgetEls: new Map([['tides', card('tides')], ['journal', card('journal')]]), renderWidget() {}, renderCapture() {} };
     page.widgetEl = (id) => page.widgetEls.get(id) || (page.widgetEls.set(id, card(id)), page.widgetEls.get(id));
     TV.renderWidgets.call(page);

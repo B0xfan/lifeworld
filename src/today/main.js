@@ -73,7 +73,7 @@
  */
 'use strict';
 
-import { Plugin, ItemView, TFile, TFolder, Notice, Modal, FuzzySuggestModal, AbstractInputSuggest, debounce, setIcon, PluginSettingTab, Setting, Keymap, Menu, moment } from 'obsidian';
+import { Plugin, ItemView, TFile, TFolder, Notice, Modal, FuzzySuggestModal, AbstractInputSuggest, debounce, setIcon, PluginSettingTab, Setting, Keymap, Menu, Platform, moment } from 'obsidian';
 
 /* ========================================================================== *
  * Constants
@@ -118,6 +118,7 @@ import { ringsOf, ringsDue, pruneSeen, ringWhen, renameSeen } from '../core/popu
 import { HEAT_MODES, normalizeHeatCount, normalizeActivity, pruneActivity, datesPerDay, mergeCounts, tasksDonePerDay, heatLevel, heatDays, heatMonths, heatWords } from '../core/activity'; // Activity heatmap (phase 4)
 import { MAX_FEEDS, SHOW_CHOICES, cleanFeedUrl, normalizeFeeds, normalizeFeedCount, parseFeed, readFeed, newsResults, feedsStale, refreshNews, newsCard, newsAge } from '../core/feeds'; // News feeds (phase 4)
 import { isHttp, linksOf, saveLinks, calendarEvents, refreshCalendars, calendarErrors, resetCalendars } from '../core/calendars'; // calendar links (launch section 6)
+import * as EX from './extras.js'; // the seven 1.7.0 widgets' logic
 import { formatDateTokens, momentFormat, scratchPathFor, renderTemplate, insertUnderHeading, newDailyContent, writeDailyNote } from '../core/daily'; // a day's daily note (launch section 5)
 
 /* ---- tasks ---------------------------------------------------------------- */
@@ -626,13 +627,13 @@ function fmt12(hhmm) {
   return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** @typedef {{ date: string, time: string | null, allDay: boolean, summary: string, calendar: string }} TodayEvent */
+/** @typedef {{ date: string, time: string | null, allDay: boolean, summary: string, calendar: string, end?: string | null }} TodayEvent */
 /** @param {unknown} events @param {string} today @param {number | null} [daysAhead] @returns {TodayEvent[]} */
 function eventsWindow(events, today, daysAhead) {
   const last = addDays(today, daysAhead == null ? CALENDAR_DAYS_AHEAD : daysAhead);
   return /** @type {TodayEvent[]} */ (/** @type {Fm[]} */ (asList(events))
     .filter((e) => e && typeof e === 'object')
-    .map((e) => ({ date: toDayStr(e.date), time: /** @type {string | null} */ (e.time || null), allDay: !!e.all_day || !e.time, summary: String(e.summary || '(untitled)'), calendar: e.calendar ? String(e.calendar) : '' }))
+    .map((e) => ({ date: toDayStr(e.date), time: /** @type {string | null} */ (e.time || null), allDay: !!e.all_day || !e.time, summary: String(e.summary || '(untitled)'), calendar: e.calendar ? String(e.calendar) : '', end: typeof e.end === 'string' && /^\d{2}:\d{2}$/.test(e.end) ? e.end : null }))
     .filter((e) => e.date && e.date >= today && e.date <= last)
     .sort((a, b) => /** @type {string} */ (a.date).localeCompare(/** @type {string} */ (b.date)) || (a.allDay === b.allDay ? String(a.time || '').localeCompare(String(b.time || '')) : (a.allDay ? -1 : 1))));
 }
@@ -814,7 +815,8 @@ function hourLabel(h) { const mins = Math.round(h * 60) % 1440; return timeText(
 
 /* ---- widgets and layout ---------------------------------------------------- */
 
-const ZONES = ['top', 'c1', 'c2', 'c3'];
+// wide: one row over the Left and Middle columns, for the two-space Month calendar only (1.7.0).
+const ZONES = ['top', 'wide', 'c1', 'c2', 'c3'];
 // The launch widget list (mockup v6, approved 2026-10-19), in each zone's order. tasks: the task cards that
 // show only for one kind of task source ('notes': Morning and Afternoon; 'checkbox': one "Today's tasks"
 // card, decision A). needs: the part it needs ('planner', 'projects'); greyed in Settings while it is off.
@@ -841,12 +843,21 @@ const WIDGETS = [
   { id: 'pinned', name: 'Pinned shortcuts', desc: 'Notes and folders you pick', zone: 'c3' },
   { id: 'journalbox', name: 'Journal box', desc: "Write a line under Journal in today's note", zone: 'c3' },
   { id: 'news', name: 'News feeds', desc: 'Headlines from feeds you add', zone: 'c3' },
+  // 1.7.0 (mockup approved 2026-11-23)
+  { id: 'monthcal', name: 'Month calendar', desc: 'The month from Dateline, Google or Apple, two spaces wide', zone: 'wide' },
+  { id: 'focus', name: 'Focus timer', desc: 'Timed focus runs, with a task', zone: 'c1' },
+  { id: 'countdowns', name: 'Countdowns', desc: 'Days left to the dates you add', zone: 'c2' },
+  { id: 'vaultstats', name: 'Vault stats', desc: 'Notes, words and links this week', zone: 'c3' },
+  { id: 'quote', name: 'Daily quote', desc: 'One quote a day', zone: 'c3' },
+  { id: 'onthisday', name: 'On this day', desc: 'Notes from this day in earlier years', zone: 'c3' },
+  { id: 'randomnote', name: 'Random note', desc: 'One note to rediscover', zone: 'c3' },
 ];
+const NEW_170 = ['monthcal', 'focus', 'countdowns', 'vaultstats', 'quote', 'onthisday', 'randomnote'];
 // A new install starts with the decided starter set (decision 10): everything else starts off.
-const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news', 'notes'];
+const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news', 'notes', ...NEW_170];
 // Widgets added at launch that a layout saved before them has never seen: they start off there, so an
 // existing Today page looks as before (criterion 43). Today's tasks only shows for checkbox tasks.
-const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox', 'heatmap', 'news', 'notes'];
+const ADDED_OFF = ['recent', 'clock', 'pinned', 'journalbox', 'heatmap', 'news', 'notes', ...NEW_170];
 // Settings wording for a part that is off.
 /** @type {Record<string, string>} */
 const NEEDS_TEXT = { planner: 'Needs the Planner (off under Parts)', projects: 'Needs Projects (off under Parts)' };
@@ -867,11 +878,15 @@ function addExtraWidget(def) {
   return () => { const i = EXTRA_WIDGETS.indexOf(w); if (i !== -1) EXTRA_WIDGETS.splice(i, 1); };
 }
 const TOP_ONLY = ['weather', 'capture'];
+const WIDE_ONLY = ['monthcal'];
+// The wide row takes only the wide widgets, and they go nowhere else.
+/** @param {string} id @param {string} zone */
+const fitsZone = (id, zone) => WIDE_ONLY.includes(id) === (zone === 'wide');
 
 /** @returns {Layout} */
 function defaultLayout() {
   /** @type {Record<string, string[]>} */
-  const zones = { top: [], c1: [], c2: [], c3: [] };
+  const zones = { top: [], wide: [], c1: [], c2: [], c3: [] };
   /** @type {string[]} */
   const hidden = [];
   allWidgets().forEach((w) => (STARTER_OFF.includes(w.id) ? hidden : zones[w.zone]).push(w.id));
@@ -883,7 +898,7 @@ function defaultLayout() {
 /** @param {unknown} raw @returns {Layout} */
 function normalizeLayout(raw) {
   /** @type {Layout} */
-  const out = { zones: { top: [], c1: [], c2: [], c3: [] }, hidden: [] };
+  const out = { zones: { top: [], wide: [], c1: [], c2: [], c3: [] }, hidden: [] };
   /** @type {Set<string>} */
   const seen = new Set();
   const src = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
@@ -891,7 +906,10 @@ function normalizeLayout(raw) {
   if (!zones) return defaultLayout();
   for (const z of ZONES) {
     for (const id of /** @type {string[]} */ (asList(zones[z]))) {
-      if (isWidget(id) && !seen.has(id)) { out.zones[z].push(id); seen.add(id); }
+      if (!isWidget(id) || seen.has(id)) continue;
+      // One in the wrong row (the wide row is the Month calendar's alone) goes to its own zone.
+      const home = fitsZone(id, z) ? z : /** @type {WidgetDef} */ (allWidgets().find((w) => w.id === id)).zone;
+      out.zones[home].push(id); seen.add(id);
     }
   }
   for (const id of /** @type {string[]} */ (asList(src.hidden))) {
@@ -922,8 +940,8 @@ function addWidget(layout, id, heights) {
   const l = cloneLayout(layout);
   if (!isWidget(id) || zoneOf(l, id)) return l;
   l.hidden = l.hidden.filter((x) => x !== id);
-  let zone = 'top';
-  if (!TOP_ONLY.includes(id)) {
+  let zone = WIDE_ONLY.includes(id) ? 'wide' : 'top';
+  if (!TOP_ONLY.includes(id) && zone !== 'wide') {
     const cols = ['c1', 'c2', 'c3'];
     zone = cols.reduce((best, z) => {
       const hb = heights && heights[best] != null ? heights[best] : l.zones[best].length;
@@ -949,9 +967,9 @@ function moveWidget(layout, id, dir, shown) {
   const v = vis(z);
   const j = v.indexOf(id) + dir;
   if (j >= 0 && j < v.length) { const a = list.indexOf(id); const b = list.indexOf(v[j]); list[a] = v[j]; list[b] = id; return l; }
-  if (z === 'top') return l;
+  if (z === 'top' || z === 'wide') return l;
   const zi = ZONES.indexOf(z) + dir;
-  if (zi < 1 || zi >= ZONES.length) return l;
+  if (zi < 2 || zi >= ZONES.length) return l;
   list.splice(list.indexOf(id), 1);
   const target = l.zones[ZONES[zi]];
   if (dir < 0) target.push(id); else target.unshift(id);
@@ -973,6 +991,7 @@ function setWidgetOn(layout, id, on) {
 /** @param {Layout} layout @param {string} id @param {string} zone @param {number} index */
 function placeWidget(layout, id, zone, index) {
   const l = cloneLayout(layout);
+  if (!fitsZone(id, l.zones[zone] ? zone : 'c1')) return l;
   const z = zoneOf(l, id);
   if (z) l.zones[z] = l.zones[z].filter((x) => x !== id);
   l.hidden = l.hidden.filter((x) => x !== id);
@@ -1107,6 +1126,7 @@ const logic = {
   timeOf, ruleTimeOf, halfOfTime, timeText, onDay, movedDate, untimedSlot, writeWithUndo,
   REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords,
   addNote, readNotes, moveNote, noteDay, cleanNotesFile, normalizeNotesFile, noteParts,
+  ...EX,
 };
 
 /* ========================================================================== *
@@ -1118,6 +1138,9 @@ class TodayPlugin extends Plugin {
   /** @type {((refresh: boolean) => unknown) | null} an add-on's calendar sync (LifeWorld sets it) */ calendarSync = null;
   /** @type {TodaySettingTab | null | undefined} LifeWorld's settings page keeps it here */ settingTab;
   /** @type {boolean | undefined} LifeWorld sets it: the Today page is off, only the reminder pop-ups run */ popupsOnly;
+  /** @type {import('./extras.js').More} the 1.7.0 widgets' settings */ more = EX.normalizeMore(null);
+  /** @type {import('./extras.js').FocusRun | null} the running focus timer (this Obsidian session only) */ focusRun = null;
+  /** @type {{ key: string, at: number, events: TodayEvent[], error: string, loading: boolean }} Dateline's last answer */ dlCache = { key: '', at: 0, events: [], error: '', loading: false };
 
   async onload() {
     /** @type {Map<string, HTMLElement>} */
@@ -1142,6 +1165,8 @@ class TodayPlugin extends Plugin {
     this.activity = normalizeActivity(saved.activity);
     this.feeds = normalizeFeeds(saved.feeds);
     this.feedCount = normalizeFeedCount(saved.feedCount);
+    this.more = EX.normalizeMore(saved.more);
+    this.registerInterval(window.setInterval(() => this.focusTick(), 1000));
     // Runs the calendar sync now: (refresh) => Promise<boolean>. Set through LifeWorld's setCalendarSync
     // by a companion add-on; none = the picker saves the choice and the next sync picks it up.
     this.calendarSync = null;
@@ -1222,6 +1247,7 @@ class TodayPlugin extends Plugin {
     this.activity = kept ? mergeCounts(synced, mine) : synced;
     this.feeds = normalizeFeeds(saved.feeds);
     this.feedCount = normalizeFeedCount(saved.feedCount);
+    this.more = EX.normalizeMore(saved.more);
     if (higher) await this.saveData({ ...saved, activity: this.activity });
     this.applyLook();
     this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (!v) return; if (v.onLayoutChangedElsewhere) v.onLayoutChangedElsewhere(); if (v.data && v.renderHeader) v.renderHeader(); });
@@ -1267,6 +1293,59 @@ class TodayPlugin extends Plugin {
   async saveHeatCount(mode) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.heatCount = mode; await this.saveData(data); this.heatCount = mode; this.layoutChanged(); }
   /** @param {unknown} list */
   async saveFeeds(list) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); const feeds = normalizeFeeds(list); data.feeds = feeds; await this.saveData(data); this.feeds = feeds; this.layoutChanged(); }
+  // The 1.7.0 widgets' settings, one `more` object. redraw: false for a save the open card already shows.
+  /** @param {Partial<import('./extras.js').More>} patch @param {boolean} [redraw] */
+  async saveMore(patch, redraw = true) {
+    const data = /** @type {Fm} */ ((await this.loadData()) || {});
+    this.more = EX.normalizeMore({ ...this.more, ...patch });
+    data.more = this.more;
+    await this.saveData(data);
+    if (redraw) this.layoutChanged();
+  }
+
+  // Each second while a focus run is on: the open timers tick; at the end, a notice and (focus runs) the count.
+  focusTick() {
+    const run = this.focusRun;
+    if (!run) return;
+    /** @param {(v: TodayView) => void} fn */
+    const views = (fn) => this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) fn(v); });
+    if (EX.focusLeft(run, Date.now()) > 0) { views((v) => v.tickFocus()); return; }
+    this.focusRun = null;
+    const today = dayOf(new Date());
+    new Notice(run.focus ? `Focus run done${run.task ? `: ${run.task}` : ''}. Time for a break.` : 'Break over.', 10000);
+    if (run.focus) this.saveMore({ focus: { day: today, done: EX.focusDone(this.more.focus, today) + 1 } }, false).catch((e) => console.error('[LifeWorld] the focus count could not be saved', e)).finally(() => views((v) => v.redrawCard('focus')));
+    else views((v) => v.redrawCard('focus'));
+  }
+
+  // Dateline's events for the days `from` to `to` (inclusive), asked again after 5 minutes (15 seconds after a failure); the card redraws
+  // when the answer comes. Desktop on a Mac only: Node's net module is not there on a phone.
+  /** @param {string} from @param {string} to */
+  datelineEvents(from, to) {
+    const c = this.dlCache;
+    const key = `${from}/${to}`;
+    // A failed ask is tried again after 15 seconds (Dateline may have been asking whether LifeWorld may read).
+    if (!c.loading && (c.key !== key || Date.now() - c.at > (c.error ? 15000 : 5 * 60000))) {
+      const done = (/** @type {TodayEvent[]} */ events, /** @type {string} */ error) => {
+        Object.assign(c, { key, at: Date.now(), events, error, loading: false });
+        this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) v.redrawCard('monthcal'); });
+      };
+      if (!Platform.isMacOS || !Platform.isDesktopApp) { Object.assign(c, { key, at: Date.now(), events: [], error: 'Dateline is on the Mac only. Pick Google or Apple Calendar for this device.' }); return c; }
+      if (c.key !== key) { c.events = []; c.error = ''; }
+      c.loading = true; c.key = key;
+      try {
+        // Loaded here, not at the top: the phone app has no Node modules.
+        const req = /** @type {(m: string) => unknown} */ (window.require);
+        const net = /** @type {{ createConnection: (path: string) => import('./extras.js').DlSocket }} */ (req('net'));
+        const os = /** @type {{ homedir: () => string }} */ (req('os'));
+        const sock = `${os.homedir()}/Library/Application Support/Dateline/assistant.sock`;
+        EX.askDateline((path) => net.createConnection(path), sock, from, addDays(to, 1))
+          .then((events) => done(eventsWindow(events, from, daysBetween(from, to)), ''))
+          .catch((e) => done([], (e instanceof Error && /** @type {Error & { plain?: string }} */ (e).plain) || 'Dateline could not be read.'));
+      } catch (e) { console.error('[LifeWorld] Dateline', e); done([], 'Dateline could not be read on this device.'); }
+    }
+    return c;
+  }
+
   /** @param {unknown} n */
   async saveFeedCount(n) { const data = /** @type {Fm} */ ((await this.loadData()) || {}); data.feedCount = normalizeFeedCount(n); await this.saveData(data); this.feedCount = data.feedCount; this.layoutChanged(); }
 
@@ -2007,6 +2086,44 @@ class PinPicker extends FuzzySuggestModal {
   onChooseItem(f) { this.onPick(f.path); }
 }
 
+// A list of note paths to pick from (Vault stats' unlinked notes, Daily quote's own list).
+/** @extends {FuzzySuggestModal<string>} */
+class PathPicker extends FuzzySuggestModal {
+  /** @param {import('obsidian').App} app @param {string[]} paths @param {string} placeholder @param {(path: string) => unknown} onPick */
+  constructor(app, paths, placeholder, onPick) { super(app); this.paths = paths; this.onPick = onPick; this.setPlaceholder(placeholder); }
+  getItems() { return this.paths; }
+  /** @param {string} p */
+  getItemText(p) { return p.replace(/\.md$/, ''); }
+  /** @param {string} p */
+  onChooseItem(p) { this.onPick(p); }
+}
+
+// Countdowns' "+ Add": a name, a date and "every year".
+class CountdownModal extends Modal {
+  /** @param {import('obsidian').App} app @param {(c: import('./extras.js').Countdown) => unknown} onAdd */
+  constructor(app, onAdd) { super(app); this.onAdd = onAdd; }
+  onOpen() {
+    const { contentEl } = this;
+    this.setTitle('Add a countdown');
+    const name = contentEl.createEl('input', { type: 'text', cls: 'a4t-cd-input', attr: { placeholder: 'What it is', 'aria-label': 'Name' } });
+    const date = contentEl.createEl('input', { type: 'date', cls: 'a4t-cd-input', attr: { 'aria-label': 'Date' } });
+    const yl = contentEl.createEl('label', { cls: 'a4t-cd-yearly' });
+    const yearly = yl.createEl('input', { type: 'checkbox' });
+    yl.appendText(' Every year');
+    const row = contentEl.createDiv({ cls: 'modal-button-container' });
+    const add = row.createEl('button', { cls: 'mod-cta', text: 'Add' });
+    const go = () => {
+      const c = EX.normalizeCountdown({ name: name.value, date: date.value, yearly: yearly.checked });
+      if (!c) { new Notice('A countdown needs a name and a date.'); return; }
+      this.onAdd(c); this.close();
+    };
+    add.addEventListener('click', go);
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); go(); } });
+    window.setTimeout(() => name.focus(), 30);
+  }
+  onClose() { this.contentEl.empty(); }
+}
+
 /* ========================================================================== *
  * Settings: accent colour and handwriting font, with a live preview
  * ========================================================================== */
@@ -2141,7 +2258,7 @@ class TodaySettingTab extends PluginSettingTab {
     const fits = (id) => { const w = allWidgets().find((x) => x.id === id); return !!w && (!w.tasks || w.tasks === kind); };
     /** @param {Layout} next */
     const save = async (next) => { await plugin.saveLayout(next); plugin.layoutChanged(); this.renderWidgetList(); this.renderSetup(); };
-    for (const [zone, label] of /** @type {[string, string][]} */ ([['top', 'Top strip'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right']])) {
+    for (const [zone, label] of /** @type {[string, string][]} */ ([['top', 'Top strip'], ['wide', 'Wide row (Left and Middle)'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right']])) {
       const on = layout.zones[zone].filter(fits);
       const off = layout.hidden.filter((id) => fits(id) && (allWidgets().find((x) => x.id === id) || {}).zone === zone);
       if (!on.length && !off.length) continue;
@@ -2237,7 +2354,28 @@ class TodaySettingTab extends PluginSettingTab {
         await plugin.saveHabits([...plugin.habits, { name: name.trim() }]); this.renderSetup();
       }));
     }
-    if (on('calendar')) {
+    if (on('monthcal')) {
+      new Setting(host).setName('Month calendar').setHeading();
+      new Setting(host).setName('Calendar to show').setDesc('Dateline is read on this computer only. Google and Apple use the calendar links below.')
+        .addDropdown((d) => d.addOption('', 'Pick on the card').addOption('dateline', 'Dateline').addOption('google', 'Google').addOption('apple', 'Apple')
+          .setValue(plugin.more.calSource).onChange(async (v) => { plugin.dlCache.at = 0; await plugin.saveMore({ calSource: v }); this.renderSetup(); }));
+    }
+    if (on('countdowns')) {
+      new Setting(host).setName('Countdowns').setHeading();
+      new Setting(host).setName('Birthdays from notes').setDesc('Notes with a birthday property (like 1990-03-14, or --03-14 with no year) count down every year.')
+        .addToggle((t) => t.setValue(plugin.more.birthdays).onChange((v) => plugin.saveMore({ birthdays: v })));
+    }
+    if (on('quote') && plugin.more.quotesNote) {
+      new Setting(host).setName('Daily quote').setHeading();
+      new Setting(host).setName('Your quote list').setDesc(plugin.more.quotesNote)
+        .addButton((b) => b.setButtonText('Use the built-in list').onClick(async () => { await plugin.saveMore({ quotesNote: '' }); this.renderSetup(); }));
+    }
+    if (on('randomnote')) {
+      new Setting(host).setName('Random note').setHeading();
+      new Setting(host).setName('Folders to skip').setDesc('One folder per line. Daily notes are always skipped.')
+        .addTextArea((t) => { t.setValue(plugin.more.exclude.join('\n')).setPlaceholder('Templates'); t.inputEl.addEventListener('blur', () => plugin.saveMore({ exclude: t.getValue().split('\n') })); });
+    }
+    if (on('calendar') || (on('monthcal') && ['google', 'apple'].includes(plugin.more.calSource))) {
       new Setting(host).setName(feedNotes.calendar || plugin.canRunSync() ? 'Calendar links' : 'Calendars').setHeading();
       const errs = calendarErrors();
       for (const l of linksOf(this.app)) {
@@ -2377,7 +2515,7 @@ class TodaySettingTab extends PluginSettingTab {
 
 /** @typedef {{ path?: string, prop?: string, name: string, derived: boolean, doneToday: boolean, streak: number }} TodayHabit */
 /** @typedef {{ key: string, path: string, date: string, time: string, score: number, felt: string[] }} TodayMood */
-/** @typedef {{ today: string, completed: string[], items: TodayItem[], lists: ReturnType<typeof buildTaskLists>, weather: Fm | null, events: TodayEvent[], journal: { path: string, date: string, text: string, cut: boolean } | null, habits: TodayHabit[], mood: TodayMood | null, projects: { path: string, name: string }[], recent: { path: string, basename: string, mtime: number }[], pins: { path: string, name: string, folder: boolean, gone: boolean }[] }} TodayData */
+/** @typedef {{ today: string, completed: string[], items: TodayItem[], lists: ReturnType<typeof buildTaskLists>, weather: Fm | null, events: TodayEvent[], journal: { path: string, date: string, text: string, cut: boolean } | null, habits: TodayHabit[], mood: TodayMood | null, projects: { path: string, name: string }[], recent: { path: string, basename: string, mtime: number }[], pins: { path: string, name: string, folder: boolean, gone: boolean }[], calRaw: unknown[], calSet: boolean }} TodayData */
 /** @typedef {TodayItem & { optimistic?: boolean }} TodayRowItem */
 /** @typedef {HTMLElement & { _justDragged?: boolean }} TodayRow */
 class TodayView extends ItemView {
@@ -2405,6 +2543,15 @@ class TodayView extends ItemView {
     this.widgetEls = new Map();
     /** @type {number | null} */
     this._timer = null;
+    // The 1.7.0 widgets' state on this page: the month shown, the picked day, the picker open, the task for
+    // the next focus run, the vault count, the quote step and list, the random note.
+    this.calYm = ''; this.calDay = ''; this.calPicking = false; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
+    /** @type {{ notes: number, words: number, links: number, unlinked: string[] } | null} */
+    this.vstats = null;
+    /** @type {{ path: string, mtime: number, list: { text: string, author: string }[] } | null} */
+    this.quoteCache = null;
+    /** @type {string | null} */
+    this.randomPath = null;
   }
 
   getViewType() { return VIEW_TYPE; }
@@ -2706,7 +2853,10 @@ class TodayView extends ItemView {
     const recent = recentNotes(app.vault.getMarkdownFiles().map((f) => ({ path: f.path, basename: f.basename, mtime: f.stat ? f.stat.mtime : 0 })));
     const pins = this.plugin.pins.map((p) => { const f = app.vault.getAbstractFileByPath(p); return { path: p, name: f ? (f instanceof TFile ? f.basename : f.name) : /** @type {string} */ (p.split('/').pop()), folder: f instanceof TFolder, gone: !f }; });
 
-    return { today, completed, items, lists, weather, events, journal, habits, mood, projects, recent, pins };
+    // The Month calendar's Google or Apple source: every event the calendar note and links hold.
+    const calRaw = noteEvents.concat(linked);
+    const calSet = cf instanceof TFile || linksOf(app).some((l) => !isHttp(l));
+    return { today, completed, items, lists, weather, events, journal, habits, mood, projects, recent, pins, calRaw, calSet };
   }
 
   async refresh() {
@@ -2775,6 +2925,7 @@ class TodayView extends ItemView {
     this.zoneEls = {};
     this.zoneEls.top = hero.createDiv({ cls: 'a4t-zone a4t-zone-top', attr: { 'data-zone': 'top' } });
     const grid = this.page.createDiv({ cls: 'a4t-grid' });
+    this.zoneEls.wide = grid.createDiv({ cls: 'a4t-zone a4t-wide', attr: { 'data-zone': 'wide' } });
     for (const z of ['c1', 'c2', 'c3']) this.zoneEls[z] = grid.createDiv({ cls: 'a4t-zone a4t-col', attr: { 'data-zone': z } });
     // The closing line rides at the end of the right-hand column
     // (2026-10-03), under whichever widget is last there; in one column (phone)
@@ -2947,6 +3098,8 @@ class TodayView extends ItemView {
     // Hidden widgets, and an add-on's widget that is gone, leave the page.
     for (const [id, el] of this.widgetEls) if (!zoneOf(layout, id)) { el.detach(); if (!isWidget(id)) this.widgetEls.delete(id); }
     if (this.zoneEls.c3.lastElementChild !== this.clockEl) this.zoneEls.c3.appendChild(this.clockEl);
+    this.zoneEls.wide.toggleClass('is-empty', !layout.zones.wide.length);
+    if (this.zoneEls.wide.parentElement) this.zoneEls.wide.parentElement.toggleClass('has-wide', !!layout.zones.wide.length);
   }
 
   /** @param {string} id @param {HTMLElement} body @param {HTMLElement} el @returns {unknown} */
@@ -2980,6 +3133,13 @@ class TodayView extends ItemView {
       if (id === 'clock') return this.renderClockWidget(body, el);
       if (id === 'heatmap') return this.renderHeatmap(body, el);
       if (id === 'news') return this.renderNews(body, el);
+      if (id === 'monthcal') return this.renderMonthCal(body, el);
+      if (id === 'focus') return this.renderFocus(body, el);
+      if (id === 'vaultstats') return this.renderVaultStats(body, el);
+      if (id === 'quote') return this.renderQuote(body, el);
+      if (id === 'countdowns') return this.renderCountdowns(body, el);
+      if (id === 'onthisday') return this.renderOnThisDay(body, el);
+      if (id === 'randomnote') return this.renderRandomNote(body, el);
       if (x) return Promise.resolve(/** @type {(body: HTMLElement, el: HTMLElement) => unknown} */ (x.render)(body, el)).catch((e) => this.widgetFailed(id, body, e));
     } catch (e) {
       this.widgetFailed(id, body, e);
@@ -3709,6 +3869,370 @@ class TodayView extends ItemView {
     }
   }
 
+  /* ---- the 1.7.0 widgets (mockup approved 2026-11-23) ---------------------- */
+
+  // Month calendar: two spaces wide; the month on the left, the picked day's events on the right. The source
+  // (Dateline, Google or Apple) is picked on the card the first time; "Change" brings the picker back.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderMonthCal(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const today = dayOf(new Date());
+    const src = this.calPicking ? '' : plugin.more.calSource;
+    if (!src) { this.renderCalPicker(body); return; }
+    const ym = this.calYm || today.slice(0, 7);
+    const day = this.calDay && this.calDay.slice(0, 7) === ym ? this.calDay : (ym === today.slice(0, 7) ? today : `${ym}-01`);
+    const grid = EX.monthGrid(ym);
+    const from = grid[0].day; const to = grid[grid.length - 1].day;
+    /** @type {TodayEvent[]} */
+    let events = [];
+    let problem = '';
+    let waiting = false;
+    if (src === 'dateline') { const c = plugin.datelineEvents(from, to); events = c.events; problem = c.error; waiting = c.loading && !c.events.length; }
+    else {
+      const data = /** @type {TodayData} */ (this.data);
+      events = eventsWindow(data.calRaw, from, daysBetween(from, to));
+      if (!data.calSet) problem = 'Add your calendar\'s private address in Settings › Today › Calendar links.';
+    }
+    const slots = EX.calendarSlots(events);
+    const { m, y } = partsOf(`${ym}-01`);
+    this.cardHead(body, 'Calendar', MONTHS_LONG[m - 1]);
+    const wrap = body.createDiv({ cls: 'a4t-mcal' });
+    const left = wrap.createDiv();
+    const mh = left.createDiv({ cls: 'a4t-mcal-head' });
+    mh.createEl('b', { text: `${MONTHS_LONG[m - 1]} ${y}` });
+    const arrows = mh.createSpan({ cls: 'a4t-mcal-arrows' });
+    /** @param {string} text @param {string} label @param {() => void} go */
+    const arrow = (text, label, go) => { const b = arrows.createEl('button', { cls: 'a4t-mcal-arrow', text, attr: { 'aria-label': label } }); b.addEventListener('click', () => { go(); this.redrawCard('monthcal'); }); };
+    arrow('‹', 'Last month', () => { this.calYm = EX.prevMonth(ym); this.calDay = ''; });
+    arrow('Today', 'This month', () => { this.calYm = today.slice(0, 7); this.calDay = today; });
+    arrow('›', 'Next month', () => { this.calYm = EX.nextMonth(ym); this.calDay = ''; });
+    const days = left.createDiv({ cls: 'a4t-mcal-days' });
+    for (const w of ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) days.createSpan({ cls: 'a4t-mcal-dow', text: w });
+    /** @type {Map<string, TodayEvent[]>} */
+    const byDay = new Map();
+    for (const e of events) { const list = byDay.get(/** @type {string} */ (e.date)) || []; list.push(e); byDay.set(/** @type {string} */ (e.date), list); }
+    for (const g of grid) {
+      const evs = byDay.get(g.day) || [];
+      const b = days.createEl('button', { cls: `a4t-mcal-day${g.out ? ' is-out' : ''}${g.day === today ? ' is-today' : ''}${g.day === day ? ' is-sel' : ''}`, attr: { 'aria-label': `${longDate(g.day)}${evs.length ? `, ${evs.length} event${evs.length === 1 ? '' : 's'}` : ''}` } });
+      b.createSpan({ text: String(partsOf(g.day).d) });
+      const dots = b.createSpan({ cls: 'a4t-mcal-dots' });
+      for (const e of evs.slice(0, 3)) dots.createEl('i', { cls: `a4t-cal-c${slots.get(e.calendar) || 1}` });
+      b.addEventListener('click', () => { this.calYm = g.day.slice(0, 7); this.calDay = g.day; this.redrawCard('monthcal'); });
+    }
+    const agenda = wrap.createDiv({ cls: 'a4t-mcal-agenda' });
+    agenda.createEl('h4', { text: `${WEEKDAYS_LONG[weekdayOf(day)]} ${partsOf(day).d}` });
+    if (problem) agenda.createDiv({ cls: 'a4t-mcal-problem', text: problem });
+    else if (waiting) agenda.createDiv({ cls: 'a4t-empty', text: 'asking Dateline' });
+    else {
+      const list = byDay.get(day) || [];
+      if (!list.length) agenda.createDiv({ cls: 'a4t-empty', text: 'nothing on this day' });
+      for (const e of list) {
+        const row = agenda.createDiv({ cls: 'a4t-mcal-ev' });
+        row.createSpan({ cls: 'a4t-mcal-t', text: e.allDay ? 'All day' : String(e.time) });
+        row.createSpan({ cls: `a4t-mcal-bar a4t-cal-c${slots.get(e.calendar) || 1}` });
+        const what = row.createDiv();
+        what.createDiv({ cls: 'a4t-mcal-ti', text: e.summary });
+        const sub = [e.allDay ? '' : (e.end ? `${e.time} to ${e.end}` : String(e.time)), e.calendar].filter(Boolean).join(' · ');
+        if (sub) what.createDiv({ cls: 'a4t-mcal-sub', text: sub });
+      }
+    }
+    const foot = body.createDiv({ cls: 'a4t-mcal-src' });
+    const legend = foot.createSpan({ cls: 'a4t-mcal-legend' });
+    for (const [name, slot] of slots) if (name) { const l = legend.createSpan(); l.createEl('i', { cls: `a4t-cal-c${slot}` }); l.appendText(name); }
+    const from2 = foot.createSpan({ text: 'From ' });
+    from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : (src === 'google' ? 'Google Calendar' : 'Apple Calendar') });
+    from2.appendText(' · ');
+    const change = from2.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: 'Change' });
+    change.addEventListener('click', () => { this.calPicking = true; this.redrawCard('monthcal'); });
+  }
+
+  /** @param {HTMLElement} body */
+  renderCalPicker(body) {
+    const plugin = this.plugin;
+    this.cardHead(body, 'Calendar', 'Pick your calendar');
+    const pick = body.createDiv({ cls: 'a4t-mcal-pick', attr: { role: 'group', 'aria-label': 'Calendar to show' } });
+    const mac = Platform.isMacOS && Platform.isDesktopApp;
+    for (const [id, logo, name, small, where] of [
+      ['dateline', 'D', 'Dateline', mac ? 'Every calendar you already have in Dateline' : 'Dateline is on the Mac only', 'On this Mac'],
+      ['google', 'G', 'Google Calendar', 'Your private calendar address, added in Settings', 'Any device'],
+      ['apple', 'A', 'Apple Calendar', 'Your iCloud calendar\'s address, added in Settings', 'Any device'],
+    ]) {
+      const b = pick.createEl('button', { cls: 'a4t-mcal-opt', attr: { 'aria-pressed': String(plugin.more.calSource === id) } });
+      if (id === 'dateline' && !mac) b.disabled = true;
+      b.createSpan({ cls: `a4t-mcal-logo is-${id}`, text: logo });
+      const t = b.createSpan(); t.createEl('b', { text: name }); t.createEl('small', { text: small });
+      b.createSpan({ cls: 'a4t-mcal-go', text: where });
+      b.addEventListener('click', async () => { this.calPicking = false; plugin.dlCache.at = 0; await plugin.saveMore({ calSource: id }); });
+    }
+    const fine = body.createEl('p', { cls: 'a4t-fine' });
+    fine.appendText('No Dateline yet? ');
+    // Set as text, not `text:`: the sentence-case check would lower-case the app's name.
+    fine.createEl('a', { href: 'https://dateline.app/', attr: { target: '_blank', rel: 'noopener' } }).appendText('Download Dateline');
+    fine.appendText(' for Mac or iPhone, then pick it here.');
+    body.createEl('p', { cls: 'a4t-fine', text: 'Dateline is only read, never changed. Google and Apple use the calendar links in LifeWorld\'s settings, kept on this device.' });
+    if (this.calPicking) {
+      const foot = body.createDiv({ cls: 'a4t-foot' });
+      const back = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: 'Not now' });
+      back.addEventListener('click', () => { this.calPicking = false; this.redrawCard('monthcal'); });
+    }
+  }
+
+  // Focus timer: the run lives on the plugin, so a redraw (or a second Today tab) never resets it.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderFocus(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const today = dayOf(new Date());
+    const run = plugin.focusRun;
+    const head = this.cardHead(body, 'Focus', 'Focus timer');
+    head.createSpan({ cls: 'a4t-count', text: `${EX.focusDone(plugin.more.focus, today)} of ${EX.FOCUS_GOAL} today` });
+    const box = body.createDiv({ cls: 'a4t-focus' });
+    const ring = box.createDiv({ cls: 'a4t-focus-ring' });
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('aria-hidden', 'true');
+    for (const cls of ['a4t-focus-track', 'a4t-focus-arc']) {
+      const c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', '50'); c.setAttribute('cy', '50'); c.setAttribute('r', '44'); c.setAttribute('class', cls);
+      svg.appendChild(c);
+    }
+    ring.appendChild(svg);
+    const mid = ring.createDiv({ cls: 'a4t-focus-mid' });
+    mid.createEl('b', { cls: 'a4t-focus-time', text: run ? EX.mmss(EX.focusLeft(run, Date.now())) : '25:00' });
+    mid.createSpan({ cls: 'a4t-focus-task', text: run ? (run.task || (run.focus ? 'Focus' : 'Break')) : 'Ready' });
+    const presets = box.createDiv({ cls: 'a4t-focus-presets', attr: { role: 'group', 'aria-label': 'Length' } });
+    for (const c of EX.FOCUS_CHOICES) {
+      const b = presets.createEl('button', { cls: 'a4t-btn', text: c.label, attr: { 'aria-pressed': String(!!run && run.id === c.id) } });
+      b.addEventListener('click', () => {
+        plugin.focusRun = { id: c.id, mins: c.mins, focus: c.focus, endsAt: Date.now() + c.mins * 60000, left: null, task: c.focus ? (this.focusTask || '') : '' };
+        this.redrawCard('focus');
+      });
+    }
+    if (run) {
+      const row = box.createDiv({ cls: 'a4t-focus-row' });
+      const pause = row.createEl('button', { cls: 'a4t-btn a4t-primary', text: run.left != null ? 'Resume' : 'Pause' });
+      pause.addEventListener('click', () => {
+        const now = Date.now();
+        const r = plugin.focusRun;
+        if (r) { if (r.left != null) { r.endsAt = now + r.left; r.left = null; } else r.left = EX.focusLeft(r, now); }
+        this.redrawCard('focus');
+      });
+      const stop = row.createEl('button', { cls: 'a4t-btn', text: 'Stop' });
+      stop.addEventListener('click', () => { plugin.focusRun = null; this.redrawCard('focus'); });
+    } else {
+      const data = /** @type {TodayData} */ (this.data);
+      const open = [...data.lists.morning, ...data.lists.afternoon].filter((t) => !isTaskDone(t, data.today, data.completed)).map((t) => taskTitleOf(t));
+      if (open.length) {
+        const sel = box.createEl('select', { cls: 'dropdown a4t-focus-pick', attr: { 'aria-label': 'Task for this run' } });
+        sel.createEl('option', { text: 'No task', value: '' });
+        for (const t of open) sel.createEl('option', { text: t, value: t });
+        sel.value = open.includes(this.focusTask || '') ? /** @type {string} */ (this.focusTask) : '';
+        sel.addEventListener('change', () => { this.focusTask = sel.value; });
+      }
+    }
+    this.tickFocus();
+  }
+
+  // One second of the running timer: the time and the ring only (the card is not redrawn).
+  tickFocus() {
+    const el = this.widgetEls.get('focus');
+    const run = this.plugin.focusRun;
+    if (!el || !el.isConnected) return;
+    const left = run ? EX.focusLeft(run, Date.now()) : 25 * 60000;
+    const t = el.querySelector('.a4t-focus-time');
+    if (t) t.textContent = EX.mmss(left);
+    const arc = el.querySelector('.a4t-focus-arc');
+    const total = run ? run.mins * 60000 : left;
+    if (arc) arc.setAttribute('stroke-dashoffset', String(276.5 * (1 - left / total)));
+  }
+
+  // Vault stats: counted once when this Today page opens (reading every note takes a moment), not per redraw.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderVaultStats(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const head = this.cardHead(body, 'Vault', 'Vault stats');
+    head.createSpan({ cls: 'a4t-count', text: 'this week' });
+    const st = this.vstats;
+    if (!st) {
+      body.createDiv({ cls: 'a4t-empty', text: 'counting your notes' });
+      if (!this.vcounting) {
+        this.vcounting = true;
+        this.countVault().then(async (c) => {
+          this.vstats = c;
+          const week = EX.weekStart(dayOf(new Date()));
+          const b = plugin.more.statsBase;
+          if (!b || b.week !== week) await plugin.saveMore({ statsBase: { week, notes: c.notes, words: c.words, links: c.links } }, false);
+          this.redrawCard('vaultstats');
+        }).catch((e) => { console.error('[LifeWorld] vault stats', e); this.vcounting = false; });
+      }
+      return;
+    }
+    const b = plugin.more.statsBase;
+    const grid = body.createDiv({ cls: 'a4t-stats' });
+    /** @param {string} n @param {string} label @param {string} delta */
+    const stat = (n, label, delta) => { const s = grid.createDiv({ cls: 'a4t-stat' }); s.createEl('b', { text: n }); s.createSpan({ text: label }); if (delta) s.createEl('em', { text: delta }); };
+    stat(EX.bigNumber(st.notes), 'notes', b ? EX.deltaText(st.notes - b.notes) : '');
+    stat(EX.bigNumber(st.words), 'words', b ? EX.deltaText(st.words - b.words) : '');
+    stat(EX.bigNumber(st.links), 'links', b ? EX.deltaText(st.links - b.links) : '');
+    stat(EX.bigNumber(st.unlinked.length), 'notes with no links', '');
+    const foot = body.createDiv({ cls: 'a4t-foot' });
+    foot.createSpan({ cls: 'a4t-fine', text: 'Counted when Today opens' });
+    if (st.unlinked.length) {
+      const show = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: 'Show unlinked notes' });
+      show.addEventListener('click', () => new PathPicker(this.app, st.unlinked, 'Pick a note with no links', (p) => plugin.openPath(p, false)).open());
+    }
+  }
+
+  async countVault() {
+    const files = this.app.vault.getMarkdownFiles();
+    let words = 0;
+    for (const f of files) { try { words += EX.countWords(await this.app.vault.cachedRead(f)); } catch { /* a note that cannot be read counts no words */ } }
+    const { links, unlinked } = EX.linkStats(files.map((f) => f.path), this.app.metadataCache.resolvedLinks);
+    return { notes: files.length, words, links, unlinked };
+  }
+
+  // Daily quote: the same one all day; ↻ steps through the list. "Use my own list" picks a note of list lines.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderQuote(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const own = plugin.more.quotesNote;
+    const head = this.cardHead(body, 'Quote', 'For today');
+    const again = head.createEl('button', { cls: 'a4t-btn a4t-ghost', text: '↻', attr: { 'aria-label': 'Another quote' } });
+    again.addEventListener('click', () => { this.quoteShift = (this.quoteShift || 0) + 1; this.redrawCard('quote'); });
+    let list = EX.QUOTES;
+    let note = '';
+    if (own) {
+      const f = this.app.vault.getAbstractFileByPath(own);
+      if (f instanceof TFile) {
+        note = f.basename;
+        const c = this.quoteCache;
+        if (c && c.path === own && c.mtime === f.stat.mtime) { if (c.list.length) list = c.list; } else {
+          this.app.vault.cachedRead(f).then((text) => { this.quoteCache = { path: own, mtime: f.stat.mtime, list: EX.parseQuotes(text) }; this.redrawCard('quote'); }).catch((e) => console.error('[LifeWorld] quote list', e));
+        }
+      }
+    }
+    const q = EX.quoteFor(list, dayOf(new Date()), this.quoteShift || 0);
+    if (q) { body.createEl('blockquote', { cls: 'a4t-quote', text: q.text }); if (q.author) body.createEl('cite', { cls: 'a4t-quote-by', text: q.author }); }
+    const foot = body.createDiv({ cls: 'a4t-foot' });
+    foot.createSpan({ cls: 'a4t-fine', text: own ? (note ? `One a day, from ${note}` : 'Your list note is gone; using the built-in list') : 'One a day, from a list inside the plugin' });
+    const btn = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: own ? 'Use the built-in list' : 'Use my own list' });
+    btn.addEventListener('click', () => {
+      if (own) { plugin.saveMore({ quotesNote: '' }); return; }
+      new PathPicker(this.app, this.app.vault.getMarkdownFiles().map((f) => f.path), 'Pick a note with one quote per list line', (p) => { this.quoteShift = 0; plugin.saveMore({ quotesNote: p }); }).open();
+    });
+  }
+
+  // Countdowns: the dates added here, plus birthdays from notes with a `birthday` property (Settings switch).
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderCountdowns(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const today = dayOf(new Date());
+    const head = this.cardHead(body, 'Coming up', 'Countdowns');
+    const add = head.createEl('button', { cls: 'a4t-btn a4t-ghost', attr: { 'aria-label': 'Add a countdown' } });
+    setIcon(add.createSpan({ cls: 'a4t-ic' }), 'plus');
+    add.appendText('Add');
+    add.addEventListener('click', () => new CountdownModal(this.app, (c) => plugin.saveMore({ countdowns: [...plugin.more.countdowns, c] })).open());
+    /** @type {{ name: string, date: string, known: boolean }[]} */
+    const birthdays = [];
+    if (plugin.more.birthdays) {
+      for (const f of this.app.vault.getMarkdownFiles()) {
+        const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(f) || {}).frontmatter);
+        const b = fm && fm.birthday != null ? EX.birthdayOf(fm.birthday) : null;
+        if (b) birthdays.push({ name: f.basename, ...b });
+      }
+    }
+    const rows = EX.countdownRows(plugin.more.countdowns, birthdays, today).slice(0, 8);
+    if (!rows.length) { body.createDiv({ cls: 'a4t-empty', text: 'add a date to count down to' }); return; }
+    for (const r of rows) {
+      const row = body.createDiv({ cls: 'a4t-cd' });
+      const n = row.createDiv({ cls: `a4t-cd-n${r.days <= 7 ? ' is-soon' : ''}` });
+      if (r.days < 2) n.createEl('b', { cls: 'a4t-cd-word', text: EX.daysWord(r.days) });
+      else { n.createEl('b', { text: String(r.days) }); n.createSpan({ text: 'days' }); }
+      const what = row.createDiv({ cls: 'a4t-cd-what' });
+      what.createDiv({ cls: 'a4t-cd-ti', text: r.name });
+      what.createDiv({ cls: 'a4t-cd-sub', text: [longDate(r.date), r.turns ? `turns ${r.turns}` : '', r.yearly ? 'every year' : ''].filter(Boolean).join(' · ') });
+      if (r.own >= 0) {
+        const x = row.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: '×', attr: { 'aria-label': `Remove ${r.name}` } });
+        x.addEventListener('click', () => plugin.saveMore({ countdowns: plugin.more.countdowns.filter((_, i) => i !== r.own) }));
+      }
+    }
+  }
+
+  // The day a note stands for: a daily note by its name, else its `date` property.
+  dayOfNotes() {
+    const dn = dailyNotes(this.app);
+    const mo = /** @type {MomentFn} */ (/** @type {unknown} */ (moment));
+    /** @type {((rel: string, f: string) => string | null) | null} */
+    const parse = moment ? (rel, f) => { const m = mo(rel, f, true); return m.isValid() ? m.format('YYYY-MM-DD') : null; } : null;
+    /** @param {TFile} f @returns {{ daily: boolean, date: string | null }} */
+    return (f) => {
+      const d = dayFromNoteName(f.path, dn, parse);
+      if (d) return { daily: true, date: d };
+      const fm = /** @type {Fm | undefined} */ ((this.app.metadataCache.getFileCache(f) || {}).frontmatter);
+      const v = fm ? fm.date : null;
+      return { daily: false, date: v instanceof Date ? dayOf(v) : (v ? toDayStr(String(v).slice(0, 10)) : null) };
+    };
+  }
+
+  // A short excerpt filled in once the note is read (the card is not redrawn for it).
+  /** @param {HTMLElement} p @param {string} path */
+  fillExcerpt(p, path) {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (!(f instanceof TFile)) return;
+    this.app.vault.cachedRead(f).then((text) => { if (p.isConnected) p.setText(journalExcerpt(text.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, ''), 140).text); }).catch(() => { /* no excerpt */ });
+  }
+
+  // On this day: notes from this month and day in earlier years, newest first.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderOnThisDay(body, el) {
+    el.addClass('a4t-card');
+    const today = dayOf(new Date());
+    const of = this.dayOfNotes();
+    /** @type {{ path: string, name: string, date: string }[]} */
+    const all = [];
+    for (const f of this.app.vault.getMarkdownFiles()) { const d = of(f).date; if (d && d.slice(5) === today.slice(5)) all.push({ path: f.path, name: f.basename, date: d }); }
+    const list = EX.onThisDay(all, today);
+    const { m, d } = partsOf(today);
+    const head = this.cardHead(body, `${d} ${MONTHS_LONG[m - 1]}`, 'On this day');
+    if (list.length) head.createSpan({ cls: 'a4t-count', text: `${list.length} note${list.length === 1 ? '' : 's'}` });
+    if (!list.length) { body.createDiv({ cls: 'a4t-empty', text: 'nothing from this day yet' }); return; }
+    for (const n of list.slice(0, 5)) {
+      const b = body.createEl('button', { cls: 'a4t-otd', attr: { 'aria-label': `Open ${n.name}` } });
+      b.createDiv({ cls: 'a4t-otd-yr', text: EX.yearsAgo(n.date, today) });
+      b.createDiv({ cls: 'a4t-otd-ti', text: n.name });
+      this.fillExcerpt(b.createEl('p'), n.path);
+      b.addEventListener('click', (e) => this.plugin.openPath(n.path, Keymap.isModEvent(e)));
+    }
+  }
+
+  // Random note: not a daily note, not in an excluded folder (Settings); ↻ picks another.
+  /** @param {HTMLElement} body @param {HTMLElement} el */
+  renderRandomNote(body, el) {
+    el.addClass('a4t-card');
+    const plugin = this.plugin;
+    const head = this.cardHead(body, 'Rediscover', 'Random note');
+    const of = this.dayOfNotes();
+    const paths = this.app.vault.getMarkdownFiles().filter((f) => !EX.excluded(f.path, plugin.more.exclude) && !of(f).daily).map((f) => f.path);
+    if (!this.randomPath || !paths.includes(this.randomPath)) this.randomPath = EX.pickOne(paths, null, Math.random);
+    const again = head.createEl('button', { cls: 'a4t-btn a4t-ghost', text: '↻', attr: { 'aria-label': 'Another note' } });
+    again.addEventListener('click', () => { this.randomPath = EX.pickOne(paths, this.randomPath || null, Math.random); this.redrawCard('randomnote'); });
+    const path = this.randomPath;
+    if (!path) { body.createDiv({ cls: 'a4t-empty', text: 'no notes to pick from' }); return; }
+    const box = body.createDiv({ cls: 'a4t-rn' });
+    box.createDiv({ cls: 'a4t-rn-ti', text: path.replace(/^.*\//, '').replace(/\.md$/, '') });
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')).split('/').join(' / ') : 'Vault root';
+    box.createDiv({ cls: 'a4t-rn-path', text: folder });
+    this.fillExcerpt(box.createEl('p'), path);
+    const foot = body.createDiv({ cls: 'a4t-foot' });
+    foot.createSpan({ cls: 'a4t-fine', text: 'Skips daily notes and folders you exclude' });
+    const open = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: 'Open' });
+    open.addEventListener('click', (e) => plugin.openPath(path, Keymap.isModEvent(e)));
+  }
+
   // Activity heatmap (phase 4): the year as a week grid, the streak on top; pointing at a day names it.
   /** @param {HTMLElement} body @param {HTMLElement} el */
   renderHeatmap(body, el) {
@@ -3962,6 +4486,7 @@ class TodayView extends ItemView {
     let zone = ZONES[0];
     let best = Infinity;
     for (const z of ZONES) {
+      if (!fitsZone(drag.id, z)) continue;
       const r = this.zoneEls[z].getBoundingClientRect();
       const dx = e.clientX < r.left ? r.left - e.clientX : (e.clientX > r.right ? e.clientX - r.right : 0);
       const dy = e.clientY < r.top ? r.top - e.clientY : (e.clientY > r.bottom ? e.clientY - r.bottom : 0);

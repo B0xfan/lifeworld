@@ -525,3 +525,93 @@ html:not(#a4t-guard) .a4t-root .a4t-note:hover .a4t-note-pin, html:not(#a4t-guar
 html:not(#a4t-guard) body.is-mobile .a4t-root .a4t-note-pin { opacity: .45; }
 html:not(#a4t-guard) .a4t-root .a4t-note-text { font-size: 13.5px; line-height: 1.45; color: var(--a4t-paper); overflow-wrap: anywhere; }
 html:not(#a4t-guard) .a4t-root .a4t-note-link { color: inherit; text-decoration: none; border-bottom: 1px solid var(--a4t-faint); cursor: pointer; }
+
+html:not(#a4t-guard) /* 1.7.0 widgets (mockup approved 2026-11-23). The wide row: over Left and Middle, Right beside it */
+.a4t-root .a4t-wide.is-empty { display: none; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide { grid-template-rows: auto 1fr; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > .a4t-wide { grid-column: 1 / 3; grid-row: 1; min-width: 0; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c1'] { grid-column: 1; grid-row: 2; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c2'] { grid-column: 2; grid-row: 2; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c3'] { grid-column: 3; grid-row: 1 / 3; }
+html:not(#a4t-guard) .a4t-root .a4t-fine { font-size: 12px; line-height: 1.45; color: var(--a4t-faint); margin: 8px 0 0; }
+html:not(#a4t-guard) .a4t-root .a4t-fine a { color: var(--a4t-dim); text-decoration: underline; }
+html:not(#a4t-guard) .a4t-root .a4t-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+html:not(#a4t-guard) .a4t-root .a4t-foot .a4t-fine { margin: 0; }
+html:not(#a4t-guard) .a4t-root .a4t-btn.a4t-mini { padding: 2px 6px; font-size: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-cal-c1 { --a4t-cal: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-cal-c2 { --a4t-cal: var(--a4t-success); }
+html:not(#a4t-guard) .a4t-root .a4t-cal-c3 { --a4t-cal: var(--a4t-warning); }
+html:not(#a4t-guard) .a4t-root .a4t-cal-c4 { --a4t-cal: var(--a4t-dim); }
+
+html:not(#a4t-guard) /* month calendar */
+.a4t-root .a4t-mcal { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mcal { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--a4t-paper); font-size: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-arrows { display: inline-flex; gap: 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-arrow { min-width: 26px; height: 26px; padding: 0 8px; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-control); background: transparent; color: var(--a4t-dim); font: 500 12px var(--a4t-f-mono); box-shadow: none; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-dow { text-align: center; font: 500 10.5px var(--a4t-f-mono); color: var(--a4t-faint); padding: 2px 0 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px; height: 38px; padding: 5px 0 0; border: 1px solid transparent; border-radius: var(--a4t-r-control); background: transparent; box-shadow: none; color: var(--a4t-paper); font-size: 13px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-day:hover { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-day.is-out { color: var(--a4t-faint); opacity: .55; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-day.is-today { color: var(--a4t-marker); font-weight: 700; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-day.is-sel { border-color: var(--a4t-marker-border); background: var(--a4t-marker-soft); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-dots { display: flex; gap: 2px; height: 5px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-dots i, html:not(#a4t-guard) .a4t-root .a4t-mcal-legend i { width: 5px; height: 5px; border-radius: 50%; background: var(--a4t-cal); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-agenda h4 { margin: 2px 0 10px; font: 620 15px var(--a4t-f-display); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-ev { display: grid; grid-template-columns: 52px 3px minmax(0, 1fr); gap: 10px; padding: 6px 0; align-items: start; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-ev + .a4t-mcal-ev { border-top: 1px dashed var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-t { font: 500 11.5px var(--a4t-f-mono); color: var(--a4t-dim); padding-top: 2px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-bar { align-self: stretch; border-radius: 2px; background: var(--a4t-cal); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-ti { font-size: 13.5px; color: var(--a4t-paper); overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-sub { font-size: 12px; color: var(--a4t-faint); margin-top: 1px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-problem { font-size: 13px; line-height: 1.45; color: var(--a4t-warning); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-src { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--a4t-hair); font-size: 12px; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-legend { display: inline-flex; flex-wrap: wrap; gap: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-src b { color: var(--a4t-dim); font-weight: 600; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-pick { display: grid; gap: 8px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-opt { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: auto; padding: 10px 12px; text-align: left; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-subtle); background: transparent; box-shadow: none; color: var(--a4t-paper); white-space: normal; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-opt[aria-pressed='true'] { border-color: var(--a4t-marker); background: var(--a4t-marker-soft); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-opt:disabled { opacity: .5; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-opt small { display: block; font-size: 12px; color: var(--a4t-faint); margin-top: 1px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-logo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--a4t-bg3); font: 700 14px var(--a4t-f-display); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-logo.is-dateline { background: var(--a4t-marker); color: var(--a4t-on-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-go { font: 500 10.5px var(--a4t-f-mono); color: var(--a4t-faint); }
+
+html:not(#a4t-guard) /* focus timer */
+.a4t-root .a4t-focus { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-ring { position: relative; width: 150px; height: 150px; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+html:not(#a4t-guard) .a4t-root .a4t-focus-track { fill: none; stroke: var(--a4t-hair2); stroke-width: 5; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-arc { fill: none; stroke: var(--a4t-marker); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 276.5; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 22px; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-time { font: 600 30px var(--a4t-f-mono); color: var(--a4t-paper); font-variant-numeric: tabular-nums; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-task { font-size: 11.5px; color: var(--a4t-faint); margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-presets, html:not(#a4t-guard) .a4t-root .a4t-focus-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+html:not(#a4t-guard) .a4t-root .a4t-focus-presets .a4t-btn[aria-pressed='true'] { border-color: var(--a4t-marker); color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-focus-pick { max-width: 100%; }
+
+html:not(#a4t-guard) /* vault stats, quote, countdowns, on this day, random note */
+.a4t-root .a4t-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-stat b { display: block; font: 600 22px var(--a4t-f-display); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-stat span { font-size: 12px; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-stat em { margin-left: 6px; font: normal 500 11px var(--a4t-f-mono); color: var(--a4t-success); }
+html:not(#a4t-guard) .a4t-root .a4t-quote { margin: 4px 0 6px; padding: 0; border: 0; font: 500 18px/1.4 var(--a4t-f-display); color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-quote-by { font-size: 12.5px; font-style: normal; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-cd { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 7px 0; }
+html:not(#a4t-guard) .a4t-root .a4t-cd + .a4t-cd { border-top: 1px dashed var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root .a4t-cd-n { text-align: center; color: var(--a4t-paper); }
+html:not(#a4t-guard) .a4t-root .a4t-cd-n b { display: block; font: 600 20px/1.1 var(--a4t-f-display); }
+html:not(#a4t-guard) .a4t-root .a4t-cd-n b.a4t-cd-word { font-size: 13px; }
+html:not(#a4t-guard) .a4t-root .a4t-cd-n span { font: 500 10px var(--a4t-f-mono); color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-cd-n.is-soon { color: var(--a4t-marker); }
+html:not(#a4t-guard) .a4t-root .a4t-cd-ti, html:not(#a4t-guard) .a4t-root .a4t-otd-ti, html:not(#a4t-guard) .a4t-root .a4t-rn-ti { font-size: 13.5px; color: var(--a4t-paper); overflow-wrap: anywhere; }
+html:not(#a4t-guard) .a4t-root .a4t-cd-sub, html:not(#a4t-guard) .a4t-root .a4t-rn-path { font-size: 12px; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-otd { display: block; width: 100%; height: auto; padding: 7px 6px; text-align: left; white-space: normal; border-radius: var(--a4t-r-control); background: transparent; box-shadow: none; }
+html:not(#a4t-guard) .a4t-root .a4t-otd + .a4t-otd { border-top: 1px dashed var(--a4t-hair); }
+html:not(#a4t-guard) .a4t-root .a4t-otd:hover { background: var(--a4t-wash); }
+html:not(#a4t-guard) .a4t-root .a4t-otd-yr { font: 500 10.5px var(--a4t-f-mono); color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-otd p, html:not(#a4t-guard) .a4t-root .a4t-rn p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-cd-input { display: block; width: 100%; margin-bottom: 10px; }
+html:not(#a4t-guard) .a4t-cd-yearly { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
