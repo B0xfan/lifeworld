@@ -60,11 +60,12 @@ const ask = (answer, how, t) => { let sock; const p = T.askDateline(() => (sock 
   ok(() => eq(T.countWords('---\ntags: [a, b]\n---\n# Title here\nOne two, three. [[Link note]] ```code block``` four'), 8));
   ok(() => eq(T.linkStats(['a.md', 'b.md', 'c.md', 'd.md'], { 'a.md': { 'b.md': 2, 'a.md': 1 }, 'c.md': { 'c.md': 3 } }), { links: 2, unlinked: ['c.md', 'd.md'] }, 'a link to itself does not count'));
   ok(() => eq([T.weekStart('2026-11-23'), T.weekStart('2026-11-29'), T.weekStart('2026-12-01')], ['2026-11-23', '2026-11-23', '2026-11-30']));
-  ok(() => eq([T.bigNumber(4812), T.bigNumber(18406), T.bigNumber(1920000), T.bigNumber(1000000)], ['4,812', '18.4k', '1.92M', '1M']));
+  ok(() => eq([T.bigNumber(4812), T.bigNumber(18406), T.bigNumber(1920000), T.bigNumber(1000000), T.bigNumber(999960)], ['4,812', '18.4k', '1.92M', '1M', '1M']));
   ok(() => eq([T.deltaText(0), T.deltaText(37), T.deltaText(-11400)], ['', '+37', '−11.4k']));
 
   // Daily quote.
   ok(() => eq(T.parseQuotes('# Mine\n- Do it now — Me\n- "Plain one"\n* Dash - Someone Else\n- [ ] a task\ntext line'), [{ text: 'Do it now', author: 'Me' }, { text: 'Plain one', author: '' }, { text: 'Dash', author: 'Someone Else' }]));
+  ok(() => eq(T.parseQuotes('- Work hard - play hard - Anon\n- Patience is bitter — Jean-Jacques Rousseau'), [{ text: 'Work hard - play hard', author: 'Anon' }, { text: 'Patience is bitter', author: 'Jean-Jacques Rousseau' }]));
   ok(() => { const a = T.quoteFor(T.QUOTES, '2026-11-23', 0); eq(T.quoteFor(T.QUOTES, '2026-11-23', 0), a, 'same quote all day'); assert.notStrictEqual(T.quoteFor(T.QUOTES, '2026-11-23', 1), a); eq(T.quoteFor([], '2026-11-23', 0), null); eq(T.quoteFor(['x', 'y'], '2026-11-23', -7) != null, true); });
 
   // Countdowns and birthdays.

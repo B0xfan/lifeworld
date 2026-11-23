@@ -33,6 +33,15 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - Activity heatmap: a year of active days and your current streak
 - News feeds: the newest headlines from feeds you add, off until you turn it on
 - A Planner shortcut
+- Month calendar, two cards wide: the month with a dot on busy days and the events of the day you pick, from Dateline (Mac), Google Calendar or Apple Calendar
+- Focus timer: 25 or 50 minute runs and a 5 minute break, with a task from today's list and a count of today's runs
+- Vault stats: notes, words, links and notes with no links, with the change since Monday
+- Daily quote: one quote a day from a built-in list, or from a note of your own
+- Countdowns: days left to the dates you add, and birthdays from notes with a `birthday` property
+- On this day: notes from this date in earlier years
+- Random note: one note to rediscover, skipping daily notes and folders you exclude
+
+These seven are off until you add them.
 
 For a picture behind the top of the page, choose **Banner scene** in the settings: Mountains, Coast or
 Volcano. It changes by itself through the day, from dawn to night, using your weather's sunrise and
@@ -142,6 +151,10 @@ With these off, LifeWorld makes no network requests. If you pick Things 3 (macOS
 LifeWorld reads and updates your Things to-dos by running Things' own AppleScript, because Things
 offers no other way to read them. macOS asks you to allow it once, and nothing goes online. This is
 the only reason LifeWorld runs an outside command.
+
+If you pick Dateline for the Month calendar (macOS desktop only), LifeWorld asks the Dateline app on
+the same Mac for that month's events over Dateline's local Assistant connection. It only reads, nothing
+goes online, and Dateline asks you once whether to let LifeWorld in.
 
 ## Support
 

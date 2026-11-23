@@ -80,6 +80,7 @@ import { Plugin, ItemView, TFile, TFolder, Notice, Modal, FuzzySuggestModal, Abs
  * ========================================================================== */
 
 const VIEW_TYPE = 'a4-today';
+const CAL_SOURCE_KEY = 'lifeworld-month-calendar-source'; // per device (app local storage)
 const SYNC_AFTER_CHANGE_MS = 2500; // a calendar choice is handed to the add-on's sync this long after the last tick
 const QUICK_NOTES_HEADING = '## Quick notes';
 const PLANNER_COMMAND = 'a4-planner:open'; // the old daily planner fallback was dropped 2026-10-05
@@ -1141,10 +1142,18 @@ class TodayPlugin extends Plugin {
   /** @type {import('./extras.js').More} the 1.7.0 widgets' settings */ more = EX.normalizeMore(null);
   /** @type {import('./extras.js').FocusRun | null} the running focus timer (this Obsidian session only) */ focusRun = null;
   /** @type {{ key: string, at: number, events: TodayEvent[], error: string, loading: boolean }} Dateline's last answer */ dlCache = { key: '', at: 0, events: [], error: '', loading: false };
+  /** @type {boolean} the link cache has finished a pass since start (Vault stats waits for it) */ linksResolved = false;
+
+  // The Month calendar's source is kept per device (Dateline on the Mac, links on the phone); the synced value is the default for a new device.
+  calSource() { const v = this.app.loadLocalStorage(CAL_SOURCE_KEY); return EX.CAL_SOURCES.includes(v) ? v : this.more.calSource; }
+  /** @param {string} v */
+  async setCalSource(v) { this.dlCache.at = 0; this.app.saveLocalStorage(CAL_SOURCE_KEY, v || null); await this.saveMore({ calSource: v }); }
+  datelineOk() { return Platform.isMacOS && Platform.isDesktopApp; }
 
   async onload() {
     /** @type {Map<string, HTMLElement>} */
     this.reminderCards = new Map();
+    this.registerEvent(this.app.metadataCache.on('resolved', () => { this.linksResolved = true; }));
     const saved = /** @type {Fm} */ ((await this.loadData()) || {});
 
     // Reminder pop-ups start off for everyone; the person turns them on in Settings. What came due before that is not news.
@@ -1329,7 +1338,7 @@ class TodayPlugin extends Plugin {
         Object.assign(c, { key, at: Date.now(), events, error, loading: false });
         this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) v.redrawCard('monthcal'); });
       };
-      if (!Platform.isMacOS || !Platform.isDesktopApp) { Object.assign(c, { key, at: Date.now(), events: [], error: 'Dateline is on the Mac only. Pick Google or Apple Calendar for this device.' }); return c; }
+      if (!this.datelineOk()) { Object.assign(c, { key, at: Date.now(), events: [], error: 'Dateline is on the Mac only. Pick Google or Apple Calendar for this device.' }); return c; }
       if (c.key !== key) { c.events = []; c.error = ''; }
       c.loading = true; c.key = key;
       try {
@@ -1341,7 +1350,7 @@ class TodayPlugin extends Plugin {
         EX.askDateline((path) => net.createConnection(path), sock, from, addDays(to, 1))
           .then((events) => done(eventsWindow(events, from, daysBetween(from, to)), ''))
           .catch((e) => done([], (e instanceof Error && /** @type {Error & { plain?: string }} */ (e).plain) || 'Dateline could not be read.'));
-      } catch (e) { console.error('[LifeWorld] Dateline', e); done([], 'Dateline could not be read on this device.'); }
+      } catch (e) { console.error('[LifeWorld] Dateline', e); Promise.resolve().then(() => done([], 'Dateline could not be read on this device.')); } // later: we may be mid-render
     }
     return c;
   }
@@ -2358,7 +2367,7 @@ class TodaySettingTab extends PluginSettingTab {
       new Setting(host).setName('Month calendar').setHeading();
       new Setting(host).setName('Calendar to show').setDesc('Dateline is read on this computer only. Google and Apple use the calendar links below.')
         .addDropdown((d) => d.addOption('', 'Pick on the card').addOption('dateline', 'Dateline').addOption('google', 'Google').addOption('apple', 'Apple')
-          .setValue(plugin.more.calSource).onChange(async (v) => { plugin.dlCache.at = 0; await plugin.saveMore({ calSource: v }); this.renderSetup(); }));
+          .setValue(plugin.calSource()).onChange(async (v) => { await plugin.setCalSource(v); this.renderSetup(); }));
     }
     if (on('countdowns')) {
       new Setting(host).setName('Countdowns').setHeading();
@@ -2373,9 +2382,9 @@ class TodaySettingTab extends PluginSettingTab {
     if (on('randomnote')) {
       new Setting(host).setName('Random note').setHeading();
       new Setting(host).setName('Folders to skip').setDesc('One folder per line. Daily notes are always skipped.')
-        .addTextArea((t) => { t.setValue(plugin.more.exclude.join('\n')).setPlaceholder('Templates'); t.inputEl.addEventListener('blur', () => plugin.saveMore({ exclude: t.getValue().split('\n') })); });
+        .addTextArea((t) => { t.setValue(plugin.more.exclude.join('\n')).setPlaceholder('Templates'); t.onChange((v) => plugin.saveMore({ exclude: v.split('\n') }, false)); });
     }
-    if (on('calendar') || (on('monthcal') && ['google', 'apple'].includes(plugin.more.calSource))) {
+    if (on('calendar') || (on('monthcal') && ['google', 'apple'].includes(plugin.calSource()))) {
       new Setting(host).setName(feedNotes.calendar || plugin.canRunSync() ? 'Calendar links' : 'Calendars').setHeading();
       const errs = calendarErrors();
       for (const l of linksOf(this.app)) {
@@ -2548,6 +2557,7 @@ class TodayView extends ItemView {
     this.calYm = ''; this.calDay = ''; this.calPicking = false; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
     /** @type {{ notes: number, words: number, links: number, unlinked: string[] } | null} */
     this.vstats = null;
+    this.vstatsFull = false;
     /** @type {{ path: string, mtime: number, list: { text: string, author: string }[] } | null} */
     this.quoteCache = null;
     /** @type {string | null} */
@@ -2576,7 +2586,10 @@ class TodayView extends ItemView {
     this.registerEvent(this.app.vault.on('create', onChange));
     this.registerEvent(this.app.vault.on('delete', onChange));
     this.registerEvent(this.app.vault.on('rename', (file, oldPath) => { onChange(file); onChange({ path: oldPath }); }));
-    this.registerEvent(this.app.metadataCache.on('resolved', () => { if (!this.data) this.scheduleRefresh(); }));
+    this.registerEvent(this.app.metadataCache.on('resolved', () => {
+      if (!this.data) this.scheduleRefresh();
+      if (this.vstats && !this.vstatsFull) { this.vstats = null; this.vcounting = false; this.redrawCard('vaultstats'); } // counted before links were ready
+    }));
     this.registerEvent(this.app.workspace.on('lifeworld:tasks', () => this.scheduleRefresh())); // a task source changed
     this.registerEvent(this.app.workspace.on('lifeworld:calendars', () => this.scheduleRefresh())); // calendar links read again
     this.registerEvent(this.app.workspace.on('lifeworld:weather', () => this.scheduleRefresh())); // the forecast read again
@@ -3878,7 +3891,7 @@ class TodayView extends ItemView {
     el.addClass('a4t-card');
     const plugin = this.plugin;
     const today = dayOf(new Date());
-    const src = this.calPicking ? '' : plugin.more.calSource;
+    const src = this.calPicking ? '' : plugin.calSource();
     if (!src) { this.renderCalPicker(body); return; }
     const ym = this.calYm || today.slice(0, 7);
     const day = this.calDay && this.calDay.slice(0, 7) === ym ? this.calDay : (ym === today.slice(0, 7) ? today : `${ym}-01`);
@@ -3888,7 +3901,7 @@ class TodayView extends ItemView {
     let events = [];
     let problem = '';
     let waiting = false;
-    if (src === 'dateline') { const c = plugin.datelineEvents(from, to); events = c.events; problem = c.error; waiting = c.loading && !c.events.length; }
+    if (src === 'dateline') { const c = plugin.datelineEvents(from, to); const stale = c.key !== `${from}/${to}`; events = stale ? [] : c.events; problem = stale ? '' : c.error; waiting = c.loading && (stale || !c.events.length); }
     else {
       const data = /** @type {TodayData} */ (this.data);
       events = eventsWindow(data.calRaw, from, daysBetween(from, to));
@@ -3922,7 +3935,14 @@ class TodayView extends ItemView {
     }
     const agenda = wrap.createDiv({ cls: 'a4t-mcal-agenda' });
     agenda.createEl('h4', { text: `${WEEKDAYS_LONG[weekdayOf(day)]} ${partsOf(day).d}` });
-    if (problem) agenda.createDiv({ cls: 'a4t-mcal-problem', text: problem });
+    if (problem) {
+      agenda.createDiv({ cls: 'a4t-mcal-problem', text: problem });
+      if (src === 'dateline' && plugin.datelineOk()) {
+        const again = agenda.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: 'Try again' });
+        again.addEventListener('click', () => { plugin.dlCache.at = 0; this.redrawCard('monthcal'); });
+      }
+    }
+    else if (src !== 'dateline' && to < addDays(today, -62)) agenda.createDiv({ cls: 'a4t-empty', text: 'calendar links reach back two months' });
     else if (waiting) agenda.createDiv({ cls: 'a4t-empty', text: 'asking Dateline' });
     else {
       const list = byDay.get(day) || [];
@@ -3941,7 +3961,7 @@ class TodayView extends ItemView {
     const legend = foot.createSpan({ cls: 'a4t-mcal-legend' });
     for (const [name, slot] of slots) if (name) { const l = legend.createSpan(); l.createEl('i', { cls: `a4t-cal-c${slot}` }); l.appendText(name); }
     const from2 = foot.createSpan({ text: 'From ' });
-    from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : (src === 'google' ? 'Google Calendar' : 'Apple Calendar') });
+    from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : 'your calendar links' });
     from2.appendText(' · ');
     const change = from2.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: 'Change' });
     change.addEventListener('click', () => { this.calPicking = true; this.redrawCard('monthcal'); });
@@ -3958,12 +3978,12 @@ class TodayView extends ItemView {
       ['google', 'G', 'Google Calendar', 'Your private calendar address, added in Settings', 'Any device'],
       ['apple', 'A', 'Apple Calendar', 'Your iCloud calendar\'s address, added in Settings', 'Any device'],
     ]) {
-      const b = pick.createEl('button', { cls: 'a4t-mcal-opt', attr: { 'aria-pressed': String(plugin.more.calSource === id) } });
+      const b = pick.createEl('button', { cls: 'a4t-mcal-opt', attr: { 'aria-pressed': String(plugin.calSource() === id) } });
       if (id === 'dateline' && !mac) b.disabled = true;
       b.createSpan({ cls: `a4t-mcal-logo is-${id}`, text: logo });
       const t = b.createSpan(); t.createEl('b', { text: name }); t.createEl('small', { text: small });
       b.createSpan({ cls: 'a4t-mcal-go', text: where });
-      b.addEventListener('click', async () => { this.calPicking = false; plugin.dlCache.at = 0; await plugin.saveMore({ calSource: id }); });
+      b.addEventListener('click', async () => { this.calPicking = false; await plugin.setCalSource(id); });
     }
     const fine = body.createEl('p', { cls: 'a4t-fine' });
     fine.appendText('No Dateline yet? ');
@@ -4061,15 +4081,17 @@ class TodayView extends ItemView {
         this.vcounting = true;
         this.countVault().then(async (c) => {
           this.vstats = c;
+          this.vstatsFull = plugin.linksResolved;
           const week = EX.weekStart(dayOf(new Date()));
           const b = plugin.more.statsBase;
-          if (!b || b.week !== week) await plugin.saveMore({ statsBase: { week, notes: c.notes, words: c.words, links: c.links } }, false);
+          if (this.vstatsFull && (!b || b.week !== week)) await plugin.saveMore({ statsBase: { week, notes: c.notes, words: c.words, links: c.links } }, false);
           this.redrawCard('vaultstats');
         }).catch((e) => { console.error('[LifeWorld] vault stats', e); this.vcounting = false; });
       }
       return;
     }
-    const b = plugin.more.statsBase;
+    const base = plugin.more.statsBase;
+    const b = base && base.week === EX.weekStart(dayOf(new Date())) ? base : null; // an older week's count is no 'this week'
     const grid = body.createDiv({ cls: 'a4t-stats' });
     /** @param {string} n @param {string} label @param {string} delta */
     const stat = (n, label, delta) => { const s = grid.createDiv({ cls: 'a4t-stat' }); s.createEl('b', { text: n }); s.createSpan({ text: label }); if (delta) s.createEl('em', { text: delta }); };
@@ -4117,7 +4139,8 @@ class TodayView extends ItemView {
     const q = EX.quoteFor(list, dayOf(new Date()), this.quoteShift || 0);
     if (q) { body.createEl('blockquote', { cls: 'a4t-quote', text: q.text }); if (q.author) body.createEl('cite', { cls: 'a4t-quote-by', text: q.author }); }
     const foot = body.createDiv({ cls: 'a4t-foot' });
-    foot.createSpan({ cls: 'a4t-fine', text: own ? (note ? `One a day, from ${note}` : 'Your list note is gone; using the built-in list') : 'One a day, from a list inside the plugin' });
+    const empty = !!(own && note && this.quoteCache && this.quoteCache.path === own && !this.quoteCache.list.length);
+    foot.createSpan({ cls: 'a4t-fine', text: own ? (empty ? `No list lines in ${note} yet; using the built-in list` : note ? `One a day, from ${note}` : 'Your list note is gone; using the built-in list') : 'One a day, from a list inside the plugin' });
     const btn = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: own ? 'Use the built-in list' : 'Use my own list' });
     btn.addEventListener('click', () => {
       if (own) { plugin.saveMore({ quotesNote: '' }); return; }
@@ -4135,7 +4158,11 @@ class TodayView extends ItemView {
     const add = head.createEl('button', { cls: 'a4t-btn a4t-ghost', attr: { 'aria-label': 'Add a countdown' } });
     setIcon(add.createSpan({ cls: 'a4t-ic' }), 'plus');
     add.appendText('Add');
-    add.addEventListener('click', () => new CountdownModal(this.app, (c) => plugin.saveMore({ countdowns: [...plugin.more.countdowns, c] })).open());
+    add.addEventListener('click', () => new CountdownModal(this.app, (c) => {
+      const live = plugin.more.countdowns.filter((x) => EX.nextDate(x, dayOf(new Date())));
+      if (live.length >= EX.MAX_COUNTDOWNS) { new Notice(`Countdowns holds ${EX.MAX_COUNTDOWNS} dates. Remove one first.`); return; }
+      plugin.saveMore({ countdowns: [...live, c] });
+    }).open());
     /** @type {{ name: string, date: string, known: boolean }[]} */
     const birthdays = [];
     if (plugin.more.birthdays) {
@@ -4145,7 +4172,8 @@ class TodayView extends ItemView {
         if (b) birthdays.push({ name: f.basename, ...b });
       }
     }
-    const rows = EX.countdownRows(plugin.more.countdowns, birthdays, today).slice(0, 8);
+    // Your own dates always show (× is the only way to remove one); birthdays fill up to 8 rows.
+    const rows = EX.countdownRows(plugin.more.countdowns, birthdays, today).filter((r, i) => r.own >= 0 || i < 8);
     if (!rows.length) { body.createDiv({ cls: 'a4t-empty', text: 'add a date to count down to' }); return; }
     for (const r of rows) {
       const row = body.createDiv({ cls: 'a4t-cd' });
@@ -4157,7 +4185,9 @@ class TodayView extends ItemView {
       what.createDiv({ cls: 'a4t-cd-sub', text: [longDate(r.date), r.turns ? `turns ${r.turns}` : '', r.yearly ? 'every year' : ''].filter(Boolean).join(' · ') });
       if (r.own >= 0) {
         const x = row.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: '×', attr: { 'aria-label': `Remove ${r.name}` } });
-        x.addEventListener('click', () => plugin.saveMore({ countdowns: plugin.more.countdowns.filter((_, i) => i !== r.own) }));
+        const mine = plugin.more.countdowns[r.own];
+        // By value, not position: the list may have changed (another tab, a sync) since this row was drawn.
+        x.addEventListener('click', () => { x.disabled = true; plugin.saveMore({ countdowns: plugin.more.countdowns.filter((c) => !(c.name === mine.name && c.date === mine.date && c.yearly === mine.yearly)) }); });
       }
     }
   }

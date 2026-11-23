@@ -150,7 +150,7 @@ function linkStats(paths, resolved) {
 function weekStart(today) { return addDays(today, -((weekdayOf(today) + 6) % 7)); }
 /** @param {number} n */
 function bigNumber(n) {
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
+  if (n >= 999950) return `${(n / 1e6).toFixed(2).replace(/\.?0+$/, '')}M`;
   if (n >= 1e4) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
   return n.toLocaleString('en-US');
 }
@@ -184,8 +184,8 @@ const QUOTES = [
 function parseQuotes(text) {
   return String(text || '').split('\n').map((l) => /^\s*[-*+]\s+(?!\[[ xX]\])(.+)$/.exec(l)).filter((m) => !!m).map((m) => {
     const line = /** @type {RegExpExecArray} */ (m)[1].trim();
-    const at = /\s[—–-]\s+([^—–]+)$/.exec(line);
-    return at ? { text: line.slice(0, at.index).trim().replace(/^["“]|["”]$/g, ''), author: at[1].trim() } : { text: line.replace(/^["“]|["”]$/g, ''), author: '' };
+    const at = /^(.+)\s[—–-]\s+(\S.*)$/.exec(line); // greedy: the last separator splits off the author
+    return at ? { text: at[1].trim().replace(/^["“]|["”]$/g, ''), author: at[2].trim() } : { text: line.replace(/^["“]|["”]$/g, ''), author: '' };
   }).filter((q) => q.text);
 }
 // The same quote all day; `shift` steps through the list (↻).
@@ -254,7 +254,7 @@ function pickOne(list, last, rnd) {
 }
 
 export {
-  normalizeMore, normalizeCountdown, CAL_SOURCES, monthGrid, nextMonth, prevMonth, calendarSlots, fromDateline, askDateline,
+  normalizeMore, normalizeCountdown, CAL_SOURCES, MAX_COUNTDOWNS, monthGrid, nextMonth, prevMonth, calendarSlots, fromDateline, askDateline,
   FOCUS_CHOICES, FOCUS_GOAL, focusLeft, mmss, focusDone, countWords, linkStats, weekStart, bigNumber, deltaText,
   QUOTES, parseQuotes, quoteFor, nextDate, countdownRows, birthdayOf, daysWord, onThisDay, yearsAgo, excluded, pickOne,
 };
