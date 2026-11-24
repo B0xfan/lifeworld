@@ -563,8 +563,7 @@ html:not(#a4t-guard) .a4t-root .a4t-cal-c4 { --a4t-cal: var(--a4t-dim); }
 html:not(#a4t-guard) /* month calendar */
 .a4t-root .a4t-mcal { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; }
 html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mcal, html:not(#a4t-guard) .a4t-root .a4t-mcal.is-col { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--a4t-paper); font-size: 14px; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-arrows { display: inline-flex; gap: 4px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-arrows { display: inline-flex; gap: 4px; align-self: flex-end; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-arrow { min-width: 26px; height: 26px; padding: 0 8px; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-control); background: transparent; color: var(--a4t-dim); font: 500 12px var(--a4t-f-mono); box-shadow: none; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-dow { text-align: center; font: 500 10.5px var(--a4t-f-mono); color: var(--a4t-faint); padding: 2px 0 4px; }
@@ -585,8 +584,14 @@ html:not(#a4t-guard) .a4t-root .a4t-mcal-sub { font-size: 12px; color: var(--a4t
 html:not(#a4t-guard) .a4t-root .a4t-mcal-wait { font-size: 13px; line-height: 1.45; color: var(--a4t-dim); }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-wait b { display: block; color: var(--a4t-paper); font-weight: 600; margin-bottom: 2px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-problem { font-size: 13px; line-height: 1.45; color: var(--a4t-warning); }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-src { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--a4t-hair); font-size: 12px; color: var(--a4t-faint); }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-legend { display: inline-flex; flex-wrap: wrap; gap: 12px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-src { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--a4t-hair); font-size: 12px; color: var(--a4t-faint); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-srcrow { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-roll { display: inline-flex; align-items: center; gap: 4px; height: auto; padding: 2px 0; border: 0; background: transparent; box-shadow: none; color: var(--a4t-dim); font: inherit; cursor: pointer; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-roll .a4t-ic { transition: transform .15s; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-roll[aria-expanded="true"] .a4t-ic { transform: rotate(90deg); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-roll .a4t-ic svg { width: 12px; height: 12px; }
+@media (prefers-reduced-motion: reduce) { html:not(#a4t-guard) .a4t-root .a4t-mcal-roll .a4t-ic { transition: none; } }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-legend > span { display: inline-flex; align-items: center; gap: 5px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-src b { color: var(--a4t-dim); font-weight: 600; }
 

@@ -2635,7 +2635,7 @@ class TodayView extends ItemView {
     this._timer = null;
     // The 1.7.0 widgets' state on this page: the month shown, the picked day, the task for
     // the next focus run, the vault count, the quote step and list, the random note.
-    this.calYm = ''; this.calDay = ''; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
+    this.calYm = ''; this.calDay = ''; this.calLegendOpen = false; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
     /** @type {{ notes: number, words: number, links: number, unlinked: string[] } | null} */
     this.vstats = null;
     this.vstatsFull = false;
@@ -4001,18 +4001,15 @@ class TodayView extends ItemView {
     }
     const slots = EX.calendarSlots(events);
     const { m, y } = partsOf(`${ym}-01`);
-    this.cardHead(body, 'Calendar', MONTHS_LONG[m - 1]);
-    const wrap = body.createDiv({ cls: `a4t-mcal${col ? ' is-col' : ''}` });
-    const left = wrap.createDiv();
-    const mh = left.createDiv({ cls: 'a4t-mcal-head' });
-    mh.createEl('b', { text: `${MONTHS_LONG[m - 1]} ${y}` });
-    const arrows = mh.createSpan({ cls: 'a4t-mcal-arrows' });
+    const head = this.cardHead(body, 'Calendar', `${MONTHS_LONG[m - 1]} ${y}`); // the month once, not again above the grid
+    const arrows = head.createSpan({ cls: 'a4t-mcal-arrows' });
     /** @param {string} text @param {string} label @param {() => void} go */
     const arrow = (text, label, go) => { const b = arrows.createEl('button', { cls: 'a4t-mcal-arrow', text, attr: { 'aria-label': label } }); b.addEventListener('click', () => { go(); MONTH_CARDS.forEach((id) => this.redrawCard(id)); }); };
     arrow('‹', 'Last month', () => { this.calYm = EX.prevMonth(ym); this.calDay = ''; });
     arrow('Today', 'This month', () => { this.calYm = today.slice(0, 7); this.calDay = today; });
     arrow('›', 'Next month', () => { this.calYm = EX.nextMonth(ym); this.calDay = ''; });
-    const days = left.createDiv({ cls: 'a4t-mcal-days' });
+    const wrap = body.createDiv({ cls: `a4t-mcal${col ? ' is-col' : ''}` });
+    const days = wrap.createDiv().createDiv({ cls: 'a4t-mcal-days' });
     for (const w of ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']) days.createSpan({ cls: 'a4t-mcal-dow', text: w });
     /** @type {Map<string, TodayEvent[]>} */
     const byDay = new Map();
@@ -4048,11 +4045,22 @@ class TodayView extends ItemView {
         if (sub) what.createDiv({ cls: 'a4t-mcal-sub', text: sub });
       }
     }
+    // The calendar names roll up into one line; open stays open across redraws (view state, not saved).
+    const names = [...slots].filter(([name]) => name);
     const foot = body.createDiv({ cls: 'a4t-mcal-src' });
-    const legend = foot.createSpan({ cls: 'a4t-mcal-legend' });
-    for (const [name, slot] of slots) if (name) { const l = legend.createSpan(); l.createEl('i', { cls: `a4t-cal-c${slot}` }); l.appendText(name); }
-    const from2 = foot.createSpan({ text: 'From ' });
+    const row = foot.createDiv({ cls: 'a4t-mcal-srcrow' });
+    if (names.length) {
+      const roll = row.createEl('button', { cls: 'a4t-mcal-roll', attr: { 'aria-expanded': String(this.calLegendOpen) } });
+      setIcon(roll.createSpan({ cls: 'a4t-ic' }), 'chevron-right');
+      roll.appendText(`${names.length} calendar${names.length === 1 ? '' : 's'}`);
+      roll.addEventListener('click', () => { this.calLegendOpen = !this.calLegendOpen; MONTH_CARDS.forEach((id) => this.redrawCard(id)); });
+    }
+    const from2 = row.createSpan({ text: 'From ' });
     from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : 'your calendar links' });
+    if (names.length && this.calLegendOpen) {
+      const legend = foot.createDiv({ cls: 'a4t-mcal-legend' });
+      for (const [name, slot] of names) { const l = legend.createSpan(); l.createEl('i', { cls: `a4t-cal-c${slot}` }); l.appendText(name); }
+    }
   }
 
   // Focus timer: the run lives on the plugin, so a redraw (or a second Today tab) never resets it.
