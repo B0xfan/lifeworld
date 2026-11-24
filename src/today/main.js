@@ -4002,6 +4002,7 @@ class TodayView extends ItemView {
     const slots = EX.calendarSlots(events);
     const { m, y } = partsOf(`${ym}-01`);
     const head = this.cardHead(body, 'Calendar', `${MONTHS_LONG[m - 1]} ${y}`); // the month once, not again above the grid
+    head.addClass('a4t-mcal-top');
     const arrows = head.createSpan({ cls: 'a4t-mcal-arrows' });
     /** @param {string} text @param {string} label @param {() => void} go */
     const arrow = (text, label, go) => { const b = arrows.createEl('button', { cls: 'a4t-mcal-arrow', text, attr: { 'aria-label': label } }); b.addEventListener('click', () => { go(); MONTH_CARDS.forEach((id) => this.redrawCard(id)); }); };
@@ -4053,7 +4054,10 @@ class TodayView extends ItemView {
       const roll = row.createEl('button', { cls: 'a4t-mcal-roll', attr: { 'aria-expanded': String(this.calLegendOpen) } });
       setIcon(roll.createSpan({ cls: 'a4t-ic' }), 'chevron-right');
       roll.appendText(`${names.length} calendar${names.length === 1 ? '' : 's'}`);
-      roll.addEventListener('click', () => { this.calLegendOpen = !this.calLegendOpen; MONTH_CARDS.forEach((id) => this.redrawCard(id)); });
+      roll.addEventListener('click', () => {
+        this.calLegendOpen = !this.calLegendOpen; MONTH_CARDS.forEach((id) => this.redrawCard(id));
+        /** @type {HTMLElement | null | undefined} */ (this.widgetEls.get(col ? 'monthcol' : 'monthcal')?.querySelector('.a4t-mcal-roll'))?.focus(); // the redraw replaced the button
+      });
     }
     const from2 = row.createSpan({ text: 'From ' });
     from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : 'your calendar links' });

@@ -563,6 +563,7 @@ html:not(#a4t-guard) .a4t-root .a4t-cal-c4 { --a4t-cal: var(--a4t-dim); }
 html:not(#a4t-guard) /* month calendar */
 .a4t-root .a4t-mcal { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; }
 html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mcal, html:not(#a4t-guard) .a4t-root .a4t-mcal.is-col { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-top { flex-wrap: wrap; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-arrows { display: inline-flex; gap: 4px; align-self: flex-end; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-arrow { min-width: 26px; height: 26px; padding: 0 8px; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-control); background: transparent; color: var(--a4t-dim); font: 500 12px var(--a4t-f-mono); box-shadow: none; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
