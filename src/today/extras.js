@@ -5,14 +5,19 @@
 
 import { pad2, dayOf, addDays, daysBetween, weekdayOf, partsOf, toDayStr, isDayStr } from '../core/dates';
 
-const CAL_SOURCES = ['dateline', 'google', 'apple'];
+// 1.7.1: Google and Apple were one source under two names (both read the calendar links), so they are now 'links'.
+const CAL_SOURCES = ['dateline', 'links'];
+/** @param {unknown} v */
+const calSourceOf = (v) => (v === 'google' || v === 'apple' ? 'links' : CAL_SOURCES.includes(/** @type {string} */ (v)) ? /** @type {string} */ (v) : '');
+// How long one ask may wait: Dateline holds the connection open while it asks the person whether LifeWorld may read.
+const DL_WAIT_MS = 120000;
 const FOCUS_GOAL = 4;
 const MAX_COUNTDOWNS = 40;
 
 /** @typedef {{ name: string, date: string, yearly: boolean }} Countdown */
 /** @typedef {{ setEncoding: (e: string) => unknown, on: (ev: string, fn: (chunk: string) => void) => unknown, write: (s: string) => unknown, destroy: () => unknown }} DlSocket */
 /** @typedef {{ week: string, notes: number, words: number, links: number }} StatsBase */
-/** @typedef {{ calSource: string, quotesNote: string, countdowns: Countdown[], birthdays: boolean, exclude: string[], focus: { day: string, done: number }, statsBase: StatsBase | null }} More */
+/** @typedef {{ calSource: string, dlHidden: string[], quotesNote: string, countdowns: Countdown[], birthdays: boolean, exclude: string[], focus: { day: string, done: number }, statsBase: StatsBase | null }} More */
 
 /** @param {unknown} raw @returns {More} */
 function normalizeMore(raw) {
@@ -21,7 +26,9 @@ function normalizeMore(raw) {
   const b = /** @type {Record<string, unknown>} */ (r.statsBase && typeof r.statsBase === 'object' ? r.statsBase : {});
   const num = (/** @type {unknown} */ v) => (Number.isFinite(v) && /** @type {number} */ (v) >= 0 ? /** @type {number} */ (v) : 0);
   return {
-    calSource: CAL_SOURCES.includes(/** @type {string} */ (r.calSource)) ? /** @type {string} */ (r.calSource) : '',
+    calSource: calSourceOf(r.calSource),
+    // Dateline calendars switched off in Settings, by name: a calendar new in Dateline shows until switched off.
+    dlHidden: [...new Set((Array.isArray(r.dlHidden) ? /** @type {unknown[]} */ (r.dlHidden) : []).filter((x) => typeof x === 'string'))].map((x) => /** @type {string} */ (x)),
     quotesNote: typeof r.quotesNote === 'string' ? r.quotesNote.trim() : '',
     countdowns: (Array.isArray(r.countdowns) ? r.countdowns : []).map((c) => normalizeCountdown(c)).filter((c) => !!c).slice(0, MAX_COUNTDOWNS),
     birthdays: r.birthdays !== false,
@@ -79,37 +86,45 @@ function fromDateline(list) {
   }).filter((e) => isDayStr(e.date));
 }
 
-// One question to Dateline's assistant connection on this Mac (Dateline Settings › Assistant): the events
-// between two days, read only. `connect` is Node's net.createConnection (a stand-in in tests).
-// -> events, or a thrown Error whose `plain` is the sentence the card shows.
-/** @param {(path: string) => DlSocket} connect @param {string} path @param {string} from @param {string} to @param {number} [timeoutMs] */
-function askDateline(connect, path, from, to, timeoutMs = 8000) {
+// One question to Dateline's assistant connection on this Mac (Dateline Settings › Assistant), read only.
+// `connect` is Node's net.createConnection (a stand-in in tests). -> the tool's parsed answer, or a thrown
+// Error whose `plain` is the sentence the card shows and `kind` what happened: 'closed' (Dateline not open:
+// safe to ask again on its own), 'refused', 'timeout' or 'bad' (asked again only when the person opens Today again, since a
+// new ask can bring Dateline's question up again).
+/** @param {(path: string) => DlSocket} connect @param {string} path @param {string} tool @param {Record<string, string>} args @param {number} [timeoutMs] @returns {Promise<unknown>} */
+function askDatelineTool(connect, path, tool, args, timeoutMs = DL_WAIT_MS) {
   return new Promise((resolve, reject) => {
     let buf = ''; let done = false;
     const sock = connect(path);
-    const fail = (/** @type {string} */ plain) => { if (done) return; done = true; sock.destroy(); reject(Object.assign(new Error('dateline'), { plain })); };
-    const timer = window.setTimeout(() => fail('Dateline did not answer. If Dateline is asking whether LifeWorld may use your calendar, answer it, then try again.'), timeoutMs);
+    const fail = (/** @type {string} */ kind, /** @type {string} */ plain) => { if (done) return; done = true; window.clearTimeout(timer); sock.destroy(); reject(Object.assign(new Error('dateline'), { plain, kind })); };
+    const timer = window.setTimeout(() => fail('timeout', 'Dateline did not answer.'), timeoutMs);
     sock.setEncoding('utf8');
-    sock.on('error', () => { window.clearTimeout(timer); fail('Dateline is not open, or its Assistant is off. Open Dateline and turn on Settings › Assistant.'); });
-    sock.on('close', () => { window.clearTimeout(timer); fail('Dateline did not let LifeWorld read the calendar.'); });
-    sock.on('connect', () => sock.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_events', arguments: { from, to } } })}\n`));
+    sock.on('error', () => fail('closed', 'Open Dateline to see your calendar. If it is open, turn on Settings › Assistant in Dateline.'));
+    sock.on('close', () => fail('refused', 'Dateline did not let LifeWorld read the calendar.'));
+    sock.on('connect', () => sock.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } })}\n`));
     sock.on('data', (chunk) => {
       buf += chunk;
       const nl = buf.indexOf('\n');
       if (nl < 0) return;
-      window.clearTimeout(timer);
       /** @type {unknown} */
       let raw = null;
       try { raw = JSON.parse(buf.slice(0, nl)); } catch { /* not JSON: falls through to the plain error */ }
       const m = /** @type {{ result?: { isError?: boolean, content?: { text?: string }[] } }} */ (raw && typeof raw === 'object' ? raw : {});
       const text = m.result && m.result.content && m.result.content[0] ? String(m.result.content[0].text || '') : '';
-      if (!m.result || m.result.isError) { fail(text ? `Dateline: ${text}` : 'Dateline did not answer.'); return; }
+      if (!m.result || m.result.isError) { fail('bad', text ? `Dateline: ${text}` : 'Dateline did not answer.'); return; }
       /** @type {unknown} */
       let list;
-      try { list = JSON.parse(text); } catch { fail('Dateline sent an answer LifeWorld cannot read.'); return; }
-      done = true; sock.destroy(); resolve(fromDateline(list));
+      try { list = JSON.parse(text); } catch { fail('bad', 'Dateline sent an answer LifeWorld cannot read.'); return; }
+      done = true; window.clearTimeout(timer); sock.destroy(); resolve(list);
     });
   });
+}
+
+// Dateline's calendar names, in Dateline's order, each once.
+// shortcut: two calendars with the same name share one switch (Dateline's events carry the name only); key on account too if that comes up.
+/** @param {unknown} list @returns {string[]} */
+function datelineCalendars(list) {
+  return [...new Set((Array.isArray(list) ? /** @type {unknown[]} */ (list) : []).map((c) => (c && typeof c === 'object' ? /** @type {Record<string, unknown>} */ (c).name : null)).filter((n) => typeof n === 'string' && n).map((n) => /** @type {string} */ (n)))];
 }
 
 /* ---- focus timer --------------------------------------------------------- */
@@ -254,7 +269,7 @@ function pickOne(list, last, rnd) {
 }
 
 export {
-  normalizeMore, normalizeCountdown, CAL_SOURCES, MAX_COUNTDOWNS, monthGrid, nextMonth, prevMonth, calendarSlots, fromDateline, askDateline,
+  normalizeMore, normalizeCountdown, CAL_SOURCES, calSourceOf, askDatelineTool, datelineCalendars, MAX_COUNTDOWNS, monthGrid, nextMonth, prevMonth, calendarSlots, fromDateline,
   FOCUS_CHOICES, FOCUS_GOAL, focusLeft, mmss, focusDone, countWords, linkStats, weekStart, bigNumber, deltaText,
   QUOTES, parseQuotes, quoteFor, nextDate, countdownRows, birthdayOf, daysWord, onThisDay, yearsAgo, excluded, pickOne,
 };

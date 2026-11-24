@@ -33,7 +33,8 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - Activity heatmap: a year of active days and your current streak
 - News feeds: the newest headlines from feeds you add, off until you turn it on
 - A Planner shortcut
-- Month calendar, two cards wide: the month with a dot on busy days and the events of the day you pick, from Dateline (Mac), Google Calendar or Apple Calendar
+- Month calendar, two cards wide or across the bottom row: the month with a dot on busy days and the events of the day you pick, from Dateline (Mac) or your calendar links (Google Calendar, Apple Calendar). Pick the source and switch single Dateline calendars on or off in Settings
+- Calendar (month, one column): the same month calendar in a normal column, the month on top and the day's events underneath
 - Focus timer: 25 or 50 minute runs and a 5 minute break, with a task from today's list and a count of today's runs
 - Vault stats: notes, words, links and notes with no links, with the change since Monday
 - Daily quote: one quote a day from a built-in list, or from a note of your own
@@ -41,7 +42,7 @@ page, and remove the ones you don't use (removing a card only hides it). The car
 - On this day: notes from this date in earlier years
 - Random note: one note to rediscover, skipping daily notes and folders you exclude
 
-These seven are off until you add them.
+These eight are off until you add them.
 
 For a picture behind the top of the page, choose **Banner scene** in the settings: Mountains, Coast or
 Volcano. It changes by itself through the day, from dawn to night, using your weather's sunrise and

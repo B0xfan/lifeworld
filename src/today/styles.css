@@ -81,6 +81,8 @@ html:not(#a4t-guard) /* zones and grid */
 .a4t-root .a4t-zone { min-height: 8px; }
 html:not(#a4t-guard) .a4t-root .a4t-grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 16px; align-items: start; }
 html:not(#a4t-guard) .a4t-root.is-narrow .a4t-grid { grid-template-columns: 1fr; gap: 0; }
+/* Phone: the Right column (with the closing line) stays last, under a bottom wide row */
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-grid > [data-zone='c3'] { order: 1; }
 html:not(#a4t-guard) .a4t-root .a4t-col { min-width: 0; }
 html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-zone { min-height: 70px; border-radius: var(--a4t-r-subtle); outline: 1px dashed transparent; outline-offset: 4px; transition: outline-color .15s; }
 html:not(#a4t-guard) .a4t-root .a4t-page.is-editing .a4t-zone.is-drop-here { outline-color: var(--a4t-marker-border); }
@@ -533,6 +535,21 @@ html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > .a4t-wide { 
 html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c1'] { grid-column: 1; grid-row: 2; }
 html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c2'] { grid-column: 2; grid-row: 2; }
 html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide > [data-zone='c3'] { grid-column: 3; grid-row: 1 / 3; }
+/* 1.7.1: the wide row under Left and Middle instead (shortcut: one wide card exists, so never both rows at once) */
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide-end { grid-template-rows: auto 1fr; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide-end > .a4t-wide-end { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide-end > [data-zone='c1'] { grid-column: 1; grid-row: 1; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide-end > [data-zone='c2'] { grid-column: 2; grid-row: 1; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-grid.has-wide-end > [data-zone='c3'] { grid-column: 3; grid-row: 1 / 3; }
+/* While the Month calendar is dragged, the empty wide row shows as a drop place: under the columns, or over them */
+html:not(#a4t-guard) .a4t-root .a4t-page.a4t-drag-wide .a4t-wide.is-empty { display: block; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide > .a4t-wide-end { grid-column: 1 / 3; grid-row: 3; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end { grid-template-rows: auto auto 1fr; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end > .a4t-wide:not(.a4t-wide-end) { grid-column: 1 / 3; grid-row: 1; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end > [data-zone='c1'],
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end > [data-zone='c2'] { grid-row: 2; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end > .a4t-wide-end { grid-row: 3; }
+html:not(#a4t-guard) .a4t-root:not(.is-narrow) .a4t-page.a4t-drag-wide .a4t-grid.has-wide-end > [data-zone='c3'] { grid-row: 1 / 4; }
 html:not(#a4t-guard) .a4t-root .a4t-fine { font-size: 12px; line-height: 1.45; color: var(--a4t-faint); margin: 8px 0 0; }
 html:not(#a4t-guard) .a4t-root .a4t-fine a { color: var(--a4t-dim); text-decoration: underline; }
 html:not(#a4t-guard) .a4t-root .a4t-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
@@ -545,7 +562,7 @@ html:not(#a4t-guard) .a4t-root .a4t-cal-c4 { --a4t-cal: var(--a4t-dim); }
 
 html:not(#a4t-guard) /* month calendar */
 .a4t-root .a4t-mcal { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; }
-html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mcal { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+html:not(#a4t-guard) .a4t-root.is-narrow .a4t-mcal, html:not(#a4t-guard) .a4t-root .a4t-mcal.is-col { grid-template-columns: minmax(0, 1fr); gap: 14px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--a4t-paper); font-size: 14px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-arrows { display: inline-flex; gap: 4px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-arrow { min-width: 26px; height: 26px; padding: 0 8px; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-control); background: transparent; color: var(--a4t-dim); font: 500 12px var(--a4t-f-mono); box-shadow: none; }
@@ -565,19 +582,13 @@ html:not(#a4t-guard) .a4t-root .a4t-mcal-t { font: 500 11.5px var(--a4t-f-mono);
 html:not(#a4t-guard) .a4t-root .a4t-mcal-bar { align-self: stretch; border-radius: 2px; background: var(--a4t-cal); }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-ti { font-size: 13.5px; color: var(--a4t-paper); overflow-wrap: anywhere; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-sub { font-size: 12px; color: var(--a4t-faint); margin-top: 1px; }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-wait { font-size: 13px; line-height: 1.45; color: var(--a4t-dim); }
+html:not(#a4t-guard) .a4t-root .a4t-mcal-wait b { display: block; color: var(--a4t-paper); font-weight: 600; margin-bottom: 2px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-problem { font-size: 13px; line-height: 1.45; color: var(--a4t-warning); }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-src { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--a4t-hair); font-size: 12px; color: var(--a4t-faint); }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-legend { display: inline-flex; flex-wrap: wrap; gap: 12px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-legend > span { display: inline-flex; align-items: center; gap: 5px; }
 html:not(#a4t-guard) .a4t-root .a4t-mcal-src b { color: var(--a4t-dim); font-weight: 600; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-pick { display: grid; gap: 8px; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-opt { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: auto; padding: 10px 12px; text-align: left; border: 1px solid var(--a4t-hair2); border-radius: var(--a4t-r-subtle); background: transparent; box-shadow: none; color: var(--a4t-paper); white-space: normal; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-opt[aria-pressed='true'] { border-color: var(--a4t-marker); background: var(--a4t-marker-soft); }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-opt:disabled { opacity: .5; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-opt small { display: block; font-size: 12px; color: var(--a4t-faint); margin-top: 1px; }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-logo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--a4t-bg3); font: 700 14px var(--a4t-f-display); color: var(--a4t-paper); }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-logo.is-dateline { background: var(--a4t-marker); color: var(--a4t-on-marker); }
-html:not(#a4t-guard) .a4t-root .a4t-mcal-go { font: 500 10.5px var(--a4t-f-mono); color: var(--a4t-faint); }
 
 html:not(#a4t-guard) /* focus timer */
 .a4t-root .a4t-focus { display: flex; flex-direction: column; align-items: center; gap: 12px; }

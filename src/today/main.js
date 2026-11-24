@@ -816,8 +816,10 @@ function hourLabel(h) { const mins = Math.round(h * 60) % 1440; return timeText(
 
 /* ---- widgets and layout ---------------------------------------------------- */
 
-// wide: one row over the Left and Middle columns, for the two-space Month calendar only (1.7.0).
-const ZONES = ['top', 'wide', 'c1', 'c2', 'c3'];
+// wide: one row over the Left and Middle columns, for the two-space Month calendar only (1.7.0);
+// wideend: the same row under them (1.7.1), so the Month calendar can sit at the bottom.
+const ZONES = ['top', 'wide', 'c1', 'c2', 'c3', 'wideend'];
+const WIDE_ZONES = ['wide', 'wideend'];
 // The launch widget list (mockup v6, approved 2026-10-19), in each zone's order. tasks: the task cards that
 // show only for one kind of task source ('notes': Morning and Afternoon; 'checkbox': one "Today's tasks"
 // card, decision A). needs: the part it needs ('planner', 'projects'); greyed in Settings while it is off.
@@ -845,7 +847,9 @@ const WIDGETS = [
   { id: 'journalbox', name: 'Journal box', desc: "Write a line under Journal in today's note", zone: 'c3' },
   { id: 'news', name: 'News feeds', desc: 'Headlines from feeds you add', zone: 'c3' },
   // 1.7.0 (mockup approved 2026-11-23)
-  { id: 'monthcal', name: 'Month calendar', desc: 'The month from Dateline, Google or Apple, two spaces wide', zone: 'wide' },
+  { id: 'monthcal', name: 'Month calendar', desc: 'The month from Dateline or your calendar links, two spaces wide', zone: 'wide' },
+  // 1.7.1: the same calendar in one column, the day's events under the month (asked for 2026-11-24)
+  { id: 'monthcol', name: 'Calendar (month, one column)', desc: "The month, the day's events underneath", zone: 'c2' },
   { id: 'focus', name: 'Focus timer', desc: 'Timed focus runs, with a task', zone: 'c1' },
   { id: 'countdowns', name: 'Countdowns', desc: 'Days left to the dates you add', zone: 'c2' },
   { id: 'vaultstats', name: 'Vault stats', desc: 'Notes, words and links this week', zone: 'c3' },
@@ -853,7 +857,9 @@ const WIDGETS = [
   { id: 'onthisday', name: 'On this day', desc: 'Notes from this day in earlier years', zone: 'c3' },
   { id: 'randomnote', name: 'Random note', desc: 'One note to rediscover', zone: 'c3' },
 ];
-const NEW_170 = ['monthcal', 'focus', 'countdowns', 'vaultstats', 'quote', 'onthisday', 'randomnote'];
+const NEW_170 = ['monthcal', 'focus', 'countdowns', 'vaultstats', 'quote', 'onthisday', 'randomnote', 'monthcol'];
+// Both month calendar cards: one source, one set of Dateline switches, one picked month.
+const MONTH_CARDS = ['monthcal', 'monthcol'];
 // A new install starts with the decided starter set (decision 10): everything else starts off.
 const STARTER_OFF = ['weather', 'plannerlink', 'clock', 'journal', 'pinned', 'journalbox', 'heatmap', 'news', 'notes', ...NEW_170];
 // Widgets added at launch that a layout saved before them has never seen: they start off there, so an
@@ -882,12 +888,12 @@ const TOP_ONLY = ['weather', 'capture'];
 const WIDE_ONLY = ['monthcal'];
 // The wide row takes only the wide widgets, and they go nowhere else.
 /** @param {string} id @param {string} zone */
-const fitsZone = (id, zone) => WIDE_ONLY.includes(id) === (zone === 'wide');
+const fitsZone = (id, zone) => WIDE_ONLY.includes(id) === WIDE_ZONES.includes(zone);
 
 /** @returns {Layout} */
 function defaultLayout() {
   /** @type {Record<string, string[]>} */
-  const zones = { top: [], wide: [], c1: [], c2: [], c3: [] };
+  const zones = { top: [], wide: [], c1: [], c2: [], c3: [], wideend: [] };
   /** @type {string[]} */
   const hidden = [];
   allWidgets().forEach((w) => (STARTER_OFF.includes(w.id) ? hidden : zones[w.zone]).push(w.id));
@@ -899,7 +905,7 @@ function defaultLayout() {
 /** @param {unknown} raw @returns {Layout} */
 function normalizeLayout(raw) {
   /** @type {Layout} */
-  const out = { zones: { top: [], wide: [], c1: [], c2: [], c3: [] }, hidden: [] };
+  const out = { zones: { top: [], wide: [], c1: [], c2: [], c3: [], wideend: [] }, hidden: [] };
   /** @type {Set<string>} */
   const seen = new Set();
   const src = /** @type {Fm} */ (raw && typeof raw === 'object' ? raw : {});
@@ -968,9 +974,17 @@ function moveWidget(layout, id, dir, shown) {
   const v = vis(z);
   const j = v.indexOf(id) + dir;
   if (j >= 0 && j < v.length) { const a = list.indexOf(id); const b = list.indexOf(v[j]); list[a] = v[j]; list[b] = id; return l; }
-  if (z === 'top' || z === 'wide') return l;
+  if (z === 'top') return l;
+  // A wide card swaps between the row over the columns and the row under them.
+  if (WIDE_ZONES.includes(z)) {
+    const t = dir > 0 ? 'wideend' : 'wide';
+    if (t === z) return l;
+    list.splice(list.indexOf(id), 1);
+    if (dir < 0) l.zones[t].push(id); else l.zones[t].unshift(id);
+    return l;
+  }
   const zi = ZONES.indexOf(z) + dir;
-  if (zi < 2 || zi >= ZONES.length) return l;
+  if (!['c1', 'c2', 'c3'].includes(ZONES[zi])) return l;
   list.splice(list.indexOf(id), 1);
   const target = l.zones[ZONES[zi]];
   if (dir < 0) target.push(id); else target.unshift(id);
@@ -1141,14 +1155,23 @@ class TodayPlugin extends Plugin {
   /** @type {boolean | undefined} LifeWorld sets it: the Today page is off, only the reminder pop-ups run */ popupsOnly;
   /** @type {import('./extras.js').More} the 1.7.0 widgets' settings */ more = EX.normalizeMore(null);
   /** @type {import('./extras.js').FocusRun | null} the running focus timer (this Obsidian session only) */ focusRun = null;
-  /** @type {{ key: string, at: number, events: TodayEvent[], error: string, loading: boolean }} Dateline's last answer */ dlCache = { key: '', at: 0, events: [], error: '', loading: false };
+  /** @type {{ key: string, at: number, events: TodayEvent[], error: string, kind: string, loading: boolean, since: number }} Dateline's last answer */ dlCache = { key: '', at: 0, events: [], error: '', kind: '', loading: false, since: 0 };
+  /** @type {{ at: number, names: string[], error: string, kind: string, loading: boolean }} Dateline's calendar names, for the Settings switches */ dlCals = { at: 0, names: [], error: '', kind: '', loading: false };
+  /** @type {boolean} Dateline has answered once this session: a slow answer after that is not its permission question */ dlAnswered = false;
   /** @type {boolean} the link cache has finished a pass since start (Vault stats waits for it) */ linksResolved = false;
 
   // The Month calendar's source is kept per device (Dateline on the Mac, links on the phone); the synced value is the default for a new device.
-  calSource() { const v = this.app.loadLocalStorage(CAL_SOURCE_KEY); return EX.CAL_SOURCES.includes(v) ? v : this.more.calSource; }
+  // No choice yet: Dateline on a Mac, the calendar links elsewhere (1.7.1). Dateline is never the answer where it cannot be read.
+  calSource() { const v = EX.calSourceOf(this.app.loadLocalStorage(CAL_SOURCE_KEY)) || this.more.calSource || (this.datelineThere() ? 'dateline' : 'links'); return v === 'dateline' && !this.datelineOk() ? 'links' : v; }
   /** @param {string} v */
   async setCalSource(v) { this.dlCache.at = 0; this.app.saveLocalStorage(CAL_SOURCE_KEY, v || null); await this.saveMore({ calSource: v }); }
   datelineOk() { return Platform.isMacOS && Platform.isDesktopApp; }
+  // Dateline installed and its assistant set up on this Mac: only then is it the default for a device with no choice yet.
+  datelineThere() {
+    if (!this.datelineOk()) return false;
+    try { const req = /** @type {(m: string) => unknown} */ (window.require); return /** @type {{ existsSync: (p: string) => boolean }} */ (req('fs')).existsSync(this.datelineSock()); } catch { return false; }
+  }
+  datelineSock() { const req = /** @type {(m: string) => unknown} */ (window.require); return `${/** @type {{ homedir: () => string }} */ (req('os')).homedir()}/Library/Application Support/Dateline/assistant.sock`; }
 
   async onload() {
     /** @type {Map<string, HTMLElement>} */
@@ -1326,32 +1349,80 @@ class TodayPlugin extends Plugin {
     else views((v) => v.redrawCard('focus'));
   }
 
-  // Dateline's events for the days `from` to `to` (inclusive), asked again after 5 minutes (15 seconds after a failure); the card redraws
-  // when the answer comes. Desktop on a Mac only: Node's net module is not there on a phone.
+  // Dateline's assistant connection on this Mac -> a function that asks it one tool. Desktop on a Mac only: Node's net module is not there on a phone.
+  /** @returns {(tool: string, args: Record<string, string>) => Promise<unknown>} */
+  datelineAsker() {
+    // Loaded here, not at the top: the phone app has no Node modules.
+    const req = /** @type {(m: string) => unknown} */ (window.require);
+    const net = /** @type {{ createConnection: (path: string) => import('./extras.js').DlSocket }} */ (req('net'));
+    const sock = this.datelineSock();
+    return (tool, args) => EX.askDatelineTool((path) => net.createConnection(path), sock, tool, args);
+  }
+
+  // A refused, unanswered or failed Dateline ask may be asked again now. Returns whether there was one.
+  dlRetry() {
+    let any = false;
+    for (const c of [this.dlCache, this.dlCals]) if (c.kind && c.kind !== 'closed' && !c.loading) { c.at = 0; c.kind = ''; any = true; }
+    return any;
+  }
+
+  /** @param {...string} ids */
+  redrawCards(...ids) { this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) ids.forEach((id) => v.redrawCard(id)); }); }
+
+  // Dateline's events for the days `from` to `to` (inclusive); the cards redraw when the answer comes. Asked again after 5 minutes,
+  // after 15 seconds when Dateline was closed. One ask waits while Dateline asks the person whether LifeWorld may read (up to 2 minutes).
+  // After a refusal or no answer it is not asked again on its own (each ask would bring Dateline's question up again), only
+  // when the Today page opens again or the source is set again (at = 0).
   /** @param {string} from @param {string} to */
   datelineEvents(from, to) {
     const c = this.dlCache;
     const key = `${from}/${to}`;
-    // A failed ask is tried again after 15 seconds (Dateline may have been asking whether LifeWorld may read).
-    if (!c.loading && (c.key !== key || Date.now() - c.at > (c.error ? 15000 : 5 * 60000))) {
-      const done = (/** @type {TodayEvent[]} */ events, /** @type {string} */ error) => {
-        Object.assign(c, { key, at: Date.now(), events, error, loading: false });
-        this.app.workspace.getLeavesOfType(VIEW_TYPE).forEach((l) => { const v = /** @type {TodayView} */ (l.view); if (v && v.redrawCard) v.redrawCard('monthcal'); });
+    const every = c.kind === 'closed' ? 15000 : c.kind ? Infinity : 5 * 60000;
+    // After a no or no answer, another month is not asked either: it would bring Dateline's question up again.
+    const newKey = c.key !== key && !(c.kind && c.kind !== 'closed');
+    if (!c.loading && (newKey || !c.at || Date.now() - c.at > every)) {
+      const done = (/** @type {TodayEvent[]} */ events, /** @type {string} */ error, /** @type {string} */ kind) => {
+        const hint = kind && kind !== 'closed' ? ' Come back to the Today page to ask again.' : '';
+        Object.assign(c, { key, at: Date.now(), events, error: error + hint, kind, loading: false });
+        if (!kind) this.dlAnswered = true;
+        this.redrawCards(...MONTH_CARDS);
+        // Settings waited for this ask before reading the calendar list: draw it now if it is open and still empty.
+        const tab = this.settingTab;
+        if (!this.dlCals.names.length && tab && typeof tab.renderSetup === 'function' && tab.setupHost && tab.setupHost.isConnected) tab.renderSetup();
+        // Dateline closed: look again by itself, even when nothing else redraws the page.
+        if (kind === 'closed') window.setTimeout(() => this.redrawCards(...MONTH_CARDS), 15500);
       };
-      if (!this.datelineOk()) { Object.assign(c, { key, at: Date.now(), events: [], error: 'Dateline is on the Mac only. Pick Google or Apple Calendar for this device.' }); return c; }
+      if (!this.datelineOk()) { Object.assign(c, { key, at: Date.now(), events: [], error: 'Dateline is on the Mac only. Pick Calendar links for this device in Settings.', kind: 'bad' }); return c; }
       if (c.key !== key) { c.events = []; c.error = ''; }
-      c.loading = true; c.key = key;
+      c.loading = true; c.key = key; c.since = Date.now();
+      // A quick answer never shows the waiting line; one still out after 1.5 seconds is Dateline asking the person.
+      window.setTimeout(() => { if (c.loading && c.key === key) this.redrawCards(...MONTH_CARDS); }, 1600);
       try {
-        // Loaded here, not at the top: the phone app has no Node modules.
-        const req = /** @type {(m: string) => unknown} */ (window.require);
-        const net = /** @type {{ createConnection: (path: string) => import('./extras.js').DlSocket }} */ (req('net'));
-        const os = /** @type {{ homedir: () => string }} */ (req('os'));
-        const sock = `${os.homedir()}/Library/Application Support/Dateline/assistant.sock`;
-        EX.askDateline((path) => net.createConnection(path), sock, from, addDays(to, 1))
-          .then((events) => done(eventsWindow(events, from, daysBetween(from, to)), ''))
-          .catch((e) => done([], (e instanceof Error && /** @type {Error & { plain?: string }} */ (e).plain) || 'Dateline could not be read.'));
-      } catch (e) { console.error('[LifeWorld] Dateline', e); Promise.resolve().then(() => done([], 'Dateline could not be read on this device.')); } // later: we may be mid-render
+        this.datelineAsker()('list_events', { from, to: addDays(to, 1) })
+          .then((list) => done(eventsWindow(EX.fromDateline(list), from, daysBetween(from, to)), '', ''))
+          .catch((/** @type {unknown} */ e) => { const x = /** @type {{ plain?: string, kind?: string }} */ (e); done([], x.plain || 'Dateline could not be read.', x.kind || 'bad'); });
+      } catch (e) { console.error('[LifeWorld] Dateline', e); Promise.resolve().then(() => done([], 'Dateline could not be read on this device.', 'bad')); } // later: we may be mid-render
     }
+    return c;
+  }
+
+  // Dateline's calendar names for the Settings switches, read again after 5 minutes; Settings redraws when they come.
+  datelineCalendars() {
+    const c = this.dlCals;
+    // Same rule as the events: 15 seconds after Dateline was closed, never by itself after a no; one question at a time.
+    const every = c.kind === 'closed' ? 15000 : c.kind ? Infinity : 5 * 60000;
+    if (c.loading || this.dlCache.loading || !this.datelineOk() || (c.at && Date.now() - c.at < every)) return c;
+    c.loading = true;
+    const done = (/** @type {string[]} */ names, /** @type {string} */ error, /** @type {string} */ kind) => {
+      const same = JSON.stringify(names) === JSON.stringify(c.names) && error === c.error;
+      Object.assign(c, { at: Date.now(), names, error, kind, loading: false });
+      // Redraw only for news, and only an open Settings: a redraw throws away anything half-typed there.
+      const tab = this.settingTab;
+      if (!same && tab && typeof tab.renderSetup === 'function' && tab.setupHost && tab.setupHost.isConnected) tab.renderSetup();
+    };
+    try {
+      this.datelineAsker()('list_calendars', {}).then((list) => done(EX.datelineCalendars(list), '', ''), (/** @type {unknown} */ e) => { const x = /** @type {{ plain?: string, kind?: string }} */ (e); done(c.names, x.plain || 'Dateline could not be read.', x.kind || 'bad'); });
+    } catch (e) { console.error('[LifeWorld] Dateline', e); Promise.resolve().then(() => done([], 'Dateline could not be read on this device.', 'bad')); }
     return c;
   }
 
@@ -2267,7 +2338,7 @@ class TodaySettingTab extends PluginSettingTab {
     const fits = (id) => { const w = allWidgets().find((x) => x.id === id); return !!w && (!w.tasks || w.tasks === kind); };
     /** @param {Layout} next */
     const save = async (next) => { await plugin.saveLayout(next); plugin.layoutChanged(); this.renderWidgetList(); this.renderSetup(); };
-    for (const [zone, label] of /** @type {[string, string][]} */ ([['top', 'Top strip'], ['wide', 'Wide row (Left and Middle)'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right']])) {
+    for (const [zone, label] of /** @type {[string, string][]} */ ([['top', 'Top strip'], ['wide', 'Wide row, top (Left and Middle)'], ['c1', 'Left'], ['c2', 'Middle'], ['c3', 'Right'], ['wideend', 'Wide row, bottom (Left and Middle)']])) {
       const on = layout.zones[zone].filter(fits);
       const off = layout.hidden.filter((id) => fits(id) && (allWidgets().find((x) => x.id === id) || {}).zone === zone);
       if (!on.length && !off.length) continue;
@@ -2363,11 +2434,21 @@ class TodaySettingTab extends PluginSettingTab {
         await plugin.saveHabits([...plugin.habits, { name: name.trim() }]); this.renderSetup();
       }));
     }
-    if (on('monthcal')) {
+    if (MONTH_CARDS.some(on)) {
       new Setting(host).setName('Month calendar').setHeading();
-      new Setting(host).setName('Calendar to show').setDesc('Dateline is read on this computer only. Google and Apple use the calendar links below.')
-        .addDropdown((d) => d.addOption('', 'Pick on the card').addOption('dateline', 'Dateline').addOption('google', 'Google').addOption('apple', 'Apple')
-          .setValue(plugin.calSource()).onChange(async (v) => { await plugin.setCalSource(v); this.renderSetup(); }));
+      const mac = plugin.datelineOk();
+      new Setting(host).setName('Calendars come from').setDesc(mac ? 'Dateline is read on this Mac only. Calendar links work on every device.' : 'Calendar links work on every device. Dateline can be read on a Mac only.')
+        .addDropdown((d) => { if (mac) d.addOption('dateline', 'Dateline'); d.addOption('links', 'Calendar links').setValue(plugin.calSource()).onChange(async (v) => { await plugin.setCalSource(v); this.renderSetup(); }); });
+      if (plugin.calSource() === 'dateline') {
+        const cals = plugin.datelineCalendars();
+        new Setting(host).setName('Calendars to show').setDesc('Always in step. Dateline calendars you add later show here too.');
+        if (cals.error || !cals.names.length) host.createDiv({ cls: 'setting-item-description', text: cals.error || 'Reading the calendars from Dateline.' });
+        for (const name of cals.names) {
+          new Setting(host).setName(name).addToggle((t) => t.setValue(!plugin.more.dlHidden.includes(name)).onChange(async (v) => {
+            await plugin.saveMore({ dlHidden: v ? plugin.more.dlHidden.filter((x) => x !== name) : [...plugin.more.dlHidden, name] });
+          }));
+        }
+      }
     }
     if (on('countdowns')) {
       new Setting(host).setName('Countdowns').setHeading();
@@ -2384,7 +2465,7 @@ class TodaySettingTab extends PluginSettingTab {
       new Setting(host).setName('Folders to skip').setDesc('One folder per line. Daily notes are always skipped.')
         .addTextArea((t) => { t.setValue(plugin.more.exclude.join('\n')).setPlaceholder('Templates'); t.onChange((v) => plugin.saveMore({ exclude: v.split('\n') }, false)); });
     }
-    if (on('calendar') || (on('monthcal') && ['google', 'apple'].includes(plugin.calSource()))) {
+    if (on('calendar') || (MONTH_CARDS.some(on) && plugin.calSource() === 'links')) {
       new Setting(host).setName(feedNotes.calendar || plugin.canRunSync() ? 'Calendar links' : 'Calendars').setHeading();
       const errs = calendarErrors();
       for (const l of linksOf(this.app)) {
@@ -2552,9 +2633,9 @@ class TodayView extends ItemView {
     this.widgetEls = new Map();
     /** @type {number | null} */
     this._timer = null;
-    // The 1.7.0 widgets' state on this page: the month shown, the picked day, the picker open, the task for
+    // The 1.7.0 widgets' state on this page: the month shown, the picked day, the task for
     // the next focus run, the vault count, the quote step and list, the random note.
-    this.calYm = ''; this.calDay = ''; this.calPicking = false; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
+    this.calYm = ''; this.calDay = ''; this.focusTask = ''; this.vcounting = false; this.quoteShift = 0;
     /** @type {{ notes: number, words: number, links: number, unlinked: string[] } | null} */
     this.vstats = null;
     this.vstatsFull = false;
@@ -2569,6 +2650,9 @@ class TodayView extends ItemView {
   getIcon() { return 'sun'; }
 
   async onOpen() {
+    // A Dateline ask that was refused or went unanswered is asked again when a Today page opens, or is come back to.
+    this.plugin.dlRetry();
+    this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => { if (leaf === this.leaf && this.plugin.dlRetry()) this.plugin.redrawCards(...MONTH_CARDS); }));
     const root = this.contentEl;
     root.empty();
     root.addClass('a4t-root');
@@ -2940,6 +3024,7 @@ class TodayView extends ItemView {
     const grid = this.page.createDiv({ cls: 'a4t-grid' });
     this.zoneEls.wide = grid.createDiv({ cls: 'a4t-zone a4t-wide', attr: { 'data-zone': 'wide' } });
     for (const z of ['c1', 'c2', 'c3']) this.zoneEls[z] = grid.createDiv({ cls: 'a4t-zone a4t-col', attr: { 'data-zone': z } });
+    this.zoneEls.wideend = grid.createDiv({ cls: 'a4t-zone a4t-wide a4t-wide-end', attr: { 'data-zone': 'wideend' } });
     // The closing line rides at the end of the right-hand column
     // (2026-10-03), under whichever widget is last there; in one column (phone)
     // that column is last, so the line ends the page.
@@ -3111,8 +3196,9 @@ class TodayView extends ItemView {
     // Hidden widgets, and an add-on's widget that is gone, leave the page.
     for (const [id, el] of this.widgetEls) if (!zoneOf(layout, id)) { el.detach(); if (!isWidget(id)) this.widgetEls.delete(id); }
     if (this.zoneEls.c3.lastElementChild !== this.clockEl) this.zoneEls.c3.appendChild(this.clockEl);
-    this.zoneEls.wide.toggleClass('is-empty', !layout.zones.wide.length);
-    if (this.zoneEls.wide.parentElement) this.zoneEls.wide.parentElement.toggleClass('has-wide', !!layout.zones.wide.length);
+    for (const z of WIDE_ZONES) this.zoneEls[z].toggleClass('is-empty', !layout.zones[z].length);
+    const grid = this.zoneEls.wide.parentElement;
+    if (grid) { grid.toggleClass('has-wide', !!layout.zones.wide.length); grid.toggleClass('has-wide-end', !layout.zones.wide.length && !!layout.zones.wideend.length); }
   }
 
   /** @param {string} id @param {HTMLElement} body @param {HTMLElement} el @returns {unknown} */
@@ -3146,7 +3232,7 @@ class TodayView extends ItemView {
       if (id === 'clock') return this.renderClockWidget(body, el);
       if (id === 'heatmap') return this.renderHeatmap(body, el);
       if (id === 'news') return this.renderNews(body, el);
-      if (id === 'monthcal') return this.renderMonthCal(body, el);
+      if (id === 'monthcal' || id === 'monthcol') return this.renderMonthCal(body, el, id === 'monthcol');
       if (id === 'focus') return this.renderFocus(body, el);
       if (id === 'vaultstats') return this.renderVaultStats(body, el);
       if (id === 'quote') return this.renderQuote(body, el);
@@ -3884,15 +3970,14 @@ class TodayView extends ItemView {
 
   /* ---- the 1.7.0 widgets (mockup approved 2026-11-23) ---------------------- */
 
-  // Month calendar: two spaces wide; the month on the left, the picked day's events on the right. The source
-  // (Dateline, Google or Apple) is picked on the card the first time; "Change" brings the picker back.
-  /** @param {HTMLElement} body @param {HTMLElement} el */
-  renderMonthCal(body, el) {
+  // Month calendar: two spaces wide, the month on the left and the picked day's events on the right; `col`: the
+  // one-column card (1.7.1), the events under the month. The source (Dateline or the calendar links) is set in Settings.
+  /** @param {HTMLElement} body @param {HTMLElement} el @param {boolean} [col] */
+  renderMonthCal(body, el, col = false) {
     el.addClass('a4t-card');
     const plugin = this.plugin;
     const today = dayOf(new Date());
-    const src = this.calPicking ? '' : plugin.calSource();
-    if (!src) { this.renderCalPicker(body); return; }
+    const src = plugin.calSource();
     const ym = this.calYm || today.slice(0, 7);
     const day = this.calDay && this.calDay.slice(0, 7) === ym ? this.calDay : (ym === today.slice(0, 7) ? today : `${ym}-01`);
     const grid = EX.monthGrid(ym);
@@ -3901,7 +3986,14 @@ class TodayView extends ItemView {
     let events = [];
     let problem = '';
     let waiting = false;
-    if (src === 'dateline') { const c = plugin.datelineEvents(from, to); const stale = c.key !== `${from}/${to}`; events = stale ? [] : c.events; problem = stale ? '' : c.error; waiting = c.loading && (stale || !c.events.length); }
+    let asking = false;
+    if (src === 'dateline') {
+      const c = plugin.datelineEvents(from, to); const stale = c.key !== `${from}/${to}`;
+      events = stale ? [] : c.events.filter((e) => !plugin.more.dlHidden.includes(e.calendar || ''));
+      problem = c.loading || (stale && !c.kind) ? '' : c.error; // after a no, other months show it too, not an empty month
+      waiting = c.loading && (stale || !c.events.length);
+      asking = waiting && !this.plugin.dlAnswered && Date.now() - c.since > 1500;
+    }
     else {
       const data = /** @type {TodayData} */ (this.data);
       events = eventsWindow(data.calRaw, from, daysBetween(from, to));
@@ -3910,13 +4002,13 @@ class TodayView extends ItemView {
     const slots = EX.calendarSlots(events);
     const { m, y } = partsOf(`${ym}-01`);
     this.cardHead(body, 'Calendar', MONTHS_LONG[m - 1]);
-    const wrap = body.createDiv({ cls: 'a4t-mcal' });
+    const wrap = body.createDiv({ cls: `a4t-mcal${col ? ' is-col' : ''}` });
     const left = wrap.createDiv();
     const mh = left.createDiv({ cls: 'a4t-mcal-head' });
     mh.createEl('b', { text: `${MONTHS_LONG[m - 1]} ${y}` });
     const arrows = mh.createSpan({ cls: 'a4t-mcal-arrows' });
     /** @param {string} text @param {string} label @param {() => void} go */
-    const arrow = (text, label, go) => { const b = arrows.createEl('button', { cls: 'a4t-mcal-arrow', text, attr: { 'aria-label': label } }); b.addEventListener('click', () => { go(); this.redrawCard('monthcal'); }); };
+    const arrow = (text, label, go) => { const b = arrows.createEl('button', { cls: 'a4t-mcal-arrow', text, attr: { 'aria-label': label } }); b.addEventListener('click', () => { go(); MONTH_CARDS.forEach((id) => this.redrawCard(id)); }); };
     arrow('‹', 'Last month', () => { this.calYm = EX.prevMonth(ym); this.calDay = ''; });
     arrow('Today', 'This month', () => { this.calYm = today.slice(0, 7); this.calDay = today; });
     arrow('›', 'Next month', () => { this.calYm = EX.nextMonth(ym); this.calDay = ''; });
@@ -3931,18 +4023,17 @@ class TodayView extends ItemView {
       b.createSpan({ text: String(partsOf(g.day).d) });
       const dots = b.createSpan({ cls: 'a4t-mcal-dots' });
       for (const e of evs.slice(0, 3)) dots.createEl('i', { cls: `a4t-cal-c${slots.get(e.calendar) || 1}` });
-      b.addEventListener('click', () => { this.calYm = g.day.slice(0, 7); this.calDay = g.day; this.redrawCard('monthcal'); });
+      b.addEventListener('click', () => { this.calYm = g.day.slice(0, 7); this.calDay = g.day; MONTH_CARDS.forEach((id) => this.redrawCard(id)); });
     }
     const agenda = wrap.createDiv({ cls: 'a4t-mcal-agenda' });
     agenda.createEl('h4', { text: `${WEEKDAYS_LONG[weekdayOf(day)]} ${partsOf(day).d}` });
-    if (problem) {
-      agenda.createDiv({ cls: 'a4t-mcal-problem', text: problem });
-      if (src === 'dateline' && plugin.datelineOk()) {
-        const again = agenda.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: 'Try again' });
-        again.addEventListener('click', () => { plugin.dlCache.at = 0; this.redrawCard('monthcal'); });
-      }
-    }
+    if (problem) agenda.createDiv({ cls: 'a4t-mcal-problem', text: problem });
     else if (src !== 'dateline' && to < addDays(today, -62)) agenda.createDiv({ cls: 'a4t-empty', text: 'calendar links reach back two months' });
+    else if (asking) {
+      const w = agenda.createDiv({ cls: 'a4t-mcal-wait' });
+      w.createEl('b').appendText('Waiting for Dateline'); // as text: the sentence-case check would lower-case the app's name
+      w.createDiv({ text: 'Dateline is asking whether LifeWorld may read your calendar. Answer it there, and this fills in on its own.' });
+    }
     else if (waiting) agenda.createDiv({ cls: 'a4t-empty', text: 'asking Dateline' });
     else {
       const list = byDay.get(day) || [];
@@ -3962,40 +4053,6 @@ class TodayView extends ItemView {
     for (const [name, slot] of slots) if (name) { const l = legend.createSpan(); l.createEl('i', { cls: `a4t-cal-c${slot}` }); l.appendText(name); }
     const from2 = foot.createSpan({ text: 'From ' });
     from2.createEl('b', { text: src === 'dateline' ? 'Dateline' : 'your calendar links' });
-    from2.appendText(' · ');
-    const change = from2.createEl('button', { cls: 'a4t-btn a4t-ghost a4t-mini', text: 'Change' });
-    change.addEventListener('click', () => { this.calPicking = true; this.redrawCard('monthcal'); });
-  }
-
-  /** @param {HTMLElement} body */
-  renderCalPicker(body) {
-    const plugin = this.plugin;
-    this.cardHead(body, 'Calendar', 'Pick your calendar');
-    const pick = body.createDiv({ cls: 'a4t-mcal-pick', attr: { role: 'group', 'aria-label': 'Calendar to show' } });
-    const mac = Platform.isMacOS && Platform.isDesktopApp;
-    for (const [id, logo, name, small, where] of [
-      ['dateline', 'D', 'Dateline', mac ? 'Every calendar you already have in Dateline' : 'Dateline is on the Mac only', 'On this Mac'],
-      ['google', 'G', 'Google Calendar', 'Your private calendar address, added in Settings', 'Any device'],
-      ['apple', 'A', 'Apple Calendar', 'Your iCloud calendar\'s address, added in Settings', 'Any device'],
-    ]) {
-      const b = pick.createEl('button', { cls: 'a4t-mcal-opt', attr: { 'aria-pressed': String(plugin.calSource() === id) } });
-      if (id === 'dateline' && !mac) b.disabled = true;
-      b.createSpan({ cls: `a4t-mcal-logo is-${id}`, text: logo });
-      const t = b.createSpan(); t.createEl('b', { text: name }); t.createEl('small', { text: small });
-      b.createSpan({ cls: 'a4t-mcal-go', text: where });
-      b.addEventListener('click', async () => { this.calPicking = false; await plugin.setCalSource(id); });
-    }
-    const fine = body.createEl('p', { cls: 'a4t-fine' });
-    fine.appendText('No Dateline yet? ');
-    // Set as text, not `text:`: the sentence-case check would lower-case the app's name.
-    fine.createEl('a', { href: 'https://dateline.app/', attr: { target: '_blank', rel: 'noopener' } }).appendText('Download Dateline');
-    fine.appendText(' for Mac or iPhone, then pick it here.');
-    body.createEl('p', { cls: 'a4t-fine', text: 'Dateline is only read, never changed. Google and Apple use the calendar links in LifeWorld\'s settings, kept on this device.' });
-    if (this.calPicking) {
-      const foot = body.createDiv({ cls: 'a4t-foot' });
-      const back = foot.createEl('button', { cls: 'a4t-btn a4t-ghost', text: 'Not now' });
-      back.addEventListener('click', () => { this.calPicking = false; this.redrawCard('monthcal'); });
-    }
   }
 
   // Focus timer: the run lives on the plugin, so a redraw (or a second Today tab) never resets it.
@@ -4485,6 +4542,7 @@ class TodayView extends ItemView {
     el.style.setProperty('--a4t-w', `${r.width}px`);
     el.addClass('is-dragging');
     this.page.addClass('a4t-has-drag');
+    this.page.toggleClass('a4t-drag-wide', WIDE_ONLY.includes(id));  // shows the empty wide row as a place to drop
     this.moveGhost(e);
     /** @param {PointerEvent} ev */
     this._onMove = (ev) => this.onDragMove(ev);
@@ -4541,7 +4599,7 @@ class TodayView extends ItemView {
     const zone = zoneEl && zoneEl.getAttr ? zoneEl.getAttr('data-zone') : null;
     const index = zoneEl ? Array.from(zoneEl.children).filter((c) => c === ph || (c.hasClass('a4t-w') && !c.hasClass('is-dragging'))).indexOf(ph) : -1;
     el.removeClass('is-dragging');
-    this.page.removeClass('a4t-has-drag');
+    this.page.removeClass('a4t-has-drag', 'a4t-drag-wide');
     ['--a4t-x', '--a4t-y', '--a4t-w'].forEach((v) => el.style.removeProperty(v));
     ph.remove();
     for (const z of ZONES) this.zoneEls[z].removeClass('is-drop-here');

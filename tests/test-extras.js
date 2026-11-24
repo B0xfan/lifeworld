@@ -15,8 +15,12 @@ const eq = (a, b, m) => assert.deepStrictEqual(a, b, m || 'check');
 let n = 0; const ok = (fn) => { fn(); n++; };
 
 // Settings: junk in, clean out; nothing set yet means no source and birthdays on.
-ok(() => eq(T.normalizeMore(null), { calSource: '', quotesNote: '', countdowns: [], birthdays: true, exclude: [], focus: { day: '', done: 0 }, statsBase: null }));
+ok(() => eq(T.normalizeMore(null), { calSource: '', dlHidden: [], quotesNote: '', countdowns: [], birthdays: true, exclude: [], focus: { day: '', done: 0 }, statsBase: null }));
 ok(() => eq(T.normalizeMore({ calSource: 'outlook', exclude: [' /Templates/ ', 'Templates', 3, ''], countdowns: [{ name: ' Trip ', date: '2026-12-01' }, { name: '', date: '2026-12-01' }, { name: 'x', date: 'soon' }] }).exclude, ['Templates']));
+// 1.7.1: Google and Apple were the same calendar links, now one source; switched-off Dateline calendars cleaned.
+ok(() => eq([T.normalizeMore({ calSource: 'google' }).calSource, T.normalizeMore({ calSource: 'apple' }).calSource, T.normalizeMore({ calSource: 'dateline' }).calSource, T.calSourceOf('outlook')], ['links', 'links', 'dateline', '']));
+ok(() => eq(T.normalizeMore({ dlHidden: ['Work', 'Work', 3, 'Family'] }).dlHidden, ['Work', 'Family']));
+ok(() => eq(T.datelineCalendars([{ name: 'Personal', account: 'iCloud' }, { name: 'Work' }, { name: 'Personal' }, { name: '' }, null, 'x']), ['Personal', 'Work']));
 ok(() => eq(T.normalizeMore({ countdowns: [{ name: ' Trip ', date: '2026-12-01', yearly: 'yes' }] }).countdowns, [{ name: 'Trip', date: '2026-12-01', yearly: false }]));
 
 // Month grid: Monday first, whole weeks. November 2026 starts on a Sunday, ends on a Monday.
@@ -38,18 +42,24 @@ const sockWith = (answer, how) => {
   setImmediate(() => { if (how === 'error') s.emit('error', new Error('ENOENT')); else if (how === 'close') s.emit('close'); else { s.emit('connect'); setImmediate(() => s.emit('data', `${JSON.stringify(answer)}\n`)); } });
   return s;
 };
-const ask = (answer, how, t) => { let sock; const p = T.askDateline(() => (sock = sockWith(answer, how)), '/x.sock', '2026-10-26', '2026-12-07', t); return p.then((v) => ({ v, sent: sock.sent }), (e) => ({ err: e.plain, sent: sock.sent })); };
+const ask = (answer, how, t) => { let sock; const p = T.askDatelineTool(() => (sock = sockWith(answer, how)), '/x.sock', 'list_events', { from: '2026-10-26', to: '2026-12-07' }, t).then(T.fromDateline); return p.then((v) => ({ v, sent: sock.sent }), (e) => ({ err: e.plain, kind: e.kind, sent: sock.sent })); };
 
 (async () => {
   const good = await ask({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: JSON.stringify([{ title: 'Surf', start: '2026-11-23T17:15:00-06:00', end: '2026-11-23T18:30:00-06:00', all_day: false, calendar: 'Personal' }]) }], isError: false } });
   eq(JSON.parse(good.sent), { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_events', arguments: { from: '2026-10-26', to: '2026-12-07' } } }); n++;
   eq([good.v.length, good.v[0].summary, good.v[0].calendar], [1, 'Surf', 'Personal']); n++;
   eq((await ask({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: "The user has turned this off in Dateline's settings." }], isError: true } })).err, "Dateline: The user has turned this off in Dateline's settings."); n++;
-  assert.match((await ask(null, 'error')).err, /not open, or its Assistant is off/); n++;
-  assert.match((await ask(null, 'close')).err, /did not let LifeWorld/); n++;
-  // No answer at all (Dateline asking the person whether LifeWorld may connect): the wait ends with a plain line.
-  const slow = await new Promise((res) => { T.askDateline(() => { const s = new EventEmitter(); s.setEncoding = () => {}; s.destroy = () => {}; s.write = () => {}; return s; }, '/x', 'a', 'b', 20).catch((e) => res(e.plain)); });
-  assert.match(slow, /asking whether LifeWorld may use your calendar/); n++;
+  const closed = await ask(null, 'error');
+  assert.match(closed.err, /^Open Dateline to see your calendar/); eq(closed.kind, 'closed', 'Dateline not open: asked again on its own'); n++;
+  const refused = await ask(null, 'close');
+  assert.match(refused.err, /did not let LifeWorld/); eq(refused.kind, 'refused'); n++;
+  // No answer at all: the wait ends with a plain line, and is not asked again on its own.
+  const slow = await new Promise((res) => { T.askDatelineTool(() => { const s = new EventEmitter(); s.setEncoding = () => {}; s.destroy = () => {}; s.write = () => {}; return s; }, '/x', 'list_events', {}, 20).catch((e) => res(e)); });
+  eq([slow.plain, slow.kind], ['Dateline did not answer.', 'timeout']); n++;
+  // The default wait covers Dateline's "may LifeWorld connect?" question (it used to give up after 8 seconds).
+  const late = await new Promise((res) => { const s = new EventEmitter(); s.setEncoding = () => {}; s.destroy = () => {}; s.write = () => {};
+    const p = T.askDatelineTool(() => s, '/x', 'list_calendars', {}); setTimeout(() => s.emit('data', `${JSON.stringify({ result: { content: [{ text: '[{"name":"Work"}]' }] } })}\n`), 30); p.then((v) => res(T.datelineCalendars(v))); });
+  eq(late, ['Work']); n++;
 
   // Focus timer.
   ok(() => eq([T.mmss(25 * 60000), T.mmss(61000), T.mmss(1), T.mmss(0)], ['25:00', '1:01', '0:01', '0:00']));
@@ -89,13 +99,22 @@ const ask = (answer, how, t) => { let sock; const p = T.askDateline(() => (sock 
     eq(l.zones.wide, ['monthcal'], 'switched on: in the wide row');
     eq(T.placeWidget(l, 'monthcal', 'c1', 0), l, 'cannot be dropped in a column');
     eq(T.placeWidget(l, 'calendar', 'wide', 0).zones.wide, ['monthcal'], 'a column card cannot go in the wide row');
-    eq([T.canMoveWidget(l, 'monthcal', 1), T.canMoveWidget(l, 'monthcal', -1)], [false, false]);
+    eq([T.canMoveWidget(l, 'monthcal', 1), T.canMoveWidget(l, 'monthcal', -1)], [true, false], 'top wide row: can go down only');
+    const low = T.placeWidget(l, 'monthcal', 'wideend', 0);
+    eq([low.zones.wide, low.zones.wideend], [[], ['monthcal']], 'dropped under the columns: it stays there (1.7.1)');
+    eq(T.normalizeLayout(JSON.parse(JSON.stringify(low))).zones.wideend, ['monthcal'], 'the bottom place survives a save and reload');
+    eq([T.moveWidget(l, 'monthcal', 1).zones.wideend, T.moveWidget(low, 'monthcal', -1).zones.wide], [['monthcal'], ['monthcal']], 'Settings arrows swap the two wide rows');
+    eq(T.placeWidget(l, 'calendar', 'wideend', 0).zones.wideend, [], 'a column card cannot go in the bottom wide row');
+    eq(T.moveWidget(T.placeWidget(l, 'calendar', 'c3', 99), 'calendar', 1).zones.wideend, [], 'moving down from Right never enters the bottom wide row');
     const top = l.zones.c1[0];
     eq(T.moveWidget(l, top, -1).zones.wide, ['monthcal'], 'moving up from Left never enters the wide row');
     eq(T.addWidget(T.removeWidget(l, 'monthcal'), 'monthcal').zones.wide, ['monthcal'], 'Add widget puts it back in the wide row');
     eq(T.normalizeLayout({ zones: { top: [], wide: ['calendar'], c1: ['monthcal'], c2: [], c3: [] }, hidden: [] }).zones.wide, ['monthcal'], 'a hand-edited layout is put right');
     const old = T.normalizeLayout({ zones: { top: ['capture'], c1: ['morning'], c2: ['calendar'], c3: [] }, hidden: [] });
-    eq([old.zones.wide, ['monthcal', 'focus', 'countdowns', 'vaultstats', 'quote', 'onthisday', 'randomnote'].every((id) => old.hidden.includes(id))], [[], true], 'an existing layout: the new widgets start off');
+    eq([old.zones.wide, ['monthcal', 'focus', 'countdowns', 'vaultstats', 'quote', 'onthisday', 'randomnote', 'monthcol'].every((id) => old.hidden.includes(id))], [[], true], 'an existing layout: the new widgets start off');
+    // 1.7.1 one-column month calendar: a normal column card, never in a wide row.
+    eq([T.defaultLayout().hidden.includes('monthcol'), T.setWidgetOn(l, 'monthcol', true).zones.c2.includes('monthcol')], [true, true], 'starts off; switched on in Middle');
+    eq([T.placeWidget(l, 'monthcol', 'wide', 0).zones.wide, T.placeWidget(l, 'monthcol', 'c3', 0).zones.c3[0]], [['monthcal'], 'monthcol'], 'goes in any column, not a wide row');
   });
 
   console.log(`extras self-check: OK (${n} checks)`);
