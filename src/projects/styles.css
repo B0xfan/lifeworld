@@ -460,6 +460,7 @@ html:not(#a4pj-guard) .a4pj-pop .a4pj-pop-go { display: block; width: 100%; marg
 html:not(#a4pj-guard) .a4pj-card {
   --pj-acc: var(--ink-marker, var(--pj-acc-l, var(--interactive-accent)));
   --pj-high: #a8360f;
+  --pj-start: #2563a8;
   --pj-late: var(--ink-destructive-text, #b3261e);
   --pj-gold: var(--ink-hue-yellow, #7f662f);
   --pj-teal: var(--ink-hue-cyan, #4e6b73);
@@ -471,6 +472,7 @@ html:not(#a4pj-guard) .a4pj-card {
 html:not(#a4pj-guard) body.theme-dark .a4pj-card {
   --pj-acc: var(--ink-marker, var(--pj-acc-d, var(--interactive-accent)));
   --pj-high: #f5875c;
+  --pj-start: #6aa9ec;
   --pj-late: var(--ink-destructive-text, #f0695c);
   --pj-gold: var(--ink-hue-yellow, #c2a35c);
   --pj-teal: var(--ink-hue-cyan, #7a99a1);
@@ -484,15 +486,16 @@ html:not(#a4pj-guard) .a4pj-card .a4pj-stseg button.is-on[data-st="blocked"] { -
 html:not(#a4pj-guard) .a4pj-card .a4pj-halfseg button.is-on:is([data-half="am"], [data-half="pm"]) { --c: var(--pj-teal); --cw: var(--pj-cw); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-prisel button.is-on .a4pj-chip.is-top { --c: var(--pj-high); --cw: var(--pj-cw); }
 html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-late { --c: var(--pj-late); --cw: var(--pj-cw); }
-html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg button.is-on[data-st="in-progress"], .a4pj-stseg button.is-on[data-st="blocked"], .a4pj-halfseg button.is-on:is([data-half="am"], [data-half="pm"]), .a4pj-prisel button.is-on .a4pj-chip.is-top, .a4pj-pick.is-today, .a4pj-pick.is-late) {
+html:not(#a4pj-guard) .a4pj-card .a4pj-pick.is-set { --c: var(--pj-start); --cw: var(--pj-cw); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg button.is-on[data-st="in-progress"], .a4pj-stseg button.is-on[data-st="blocked"], .a4pj-halfseg button.is-on:is([data-half="am"], [data-half="pm"]), .a4pj-prisel button.is-on .a4pj-chip.is-top, .a4pj-pick.is-today, .a4pj-pick.is-late, .a4pj-pick.is-set) {
   color: color-mix(in srgb, var(--c) var(--cw), var(--pj-paper));
   background: color-mix(in srgb, var(--c) 12%, var(--pj-bg2));
   border-color: color-mix(in srgb, var(--c) 45%, var(--pj-bg2));
   font-weight: 600;
 }
 html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button.is-on:is([data-st="in-progress"], [data-st="blocked"], [data-half="am"], [data-half="pm"]) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, var(--pj-bg2)); }
-html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late):hover { background: color-mix(in srgb, var(--c) 18%, var(--pj-bg2)); border-color: color-mix(in srgb, var(--c) 70%, var(--pj-bg2)); }
-html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late) .a4pj-ic svg { color: currentColor; }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late, .a4pj-pick.is-set):hover { background: color-mix(in srgb, var(--c) 18%, var(--pj-bg2)); border-color: color-mix(in srgb, var(--c) 70%, var(--pj-bg2)); }
+html:not(#a4pj-guard) .a4pj-card :is(.a4pj-pick.is-today, .a4pj-pick.is-late, .a4pj-pick.is-set) .a4pj-ic svg { color: currentColor; }
 /* neutral picks: Open, Any time, Normal / Low / None */
 html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button { color: var(--pj-choice); }
 html:not(#a4pj-guard) .a4pj-card :is(.a4pj-stseg, .a4pj-halfseg) button:hover { color: var(--pj-paper); }

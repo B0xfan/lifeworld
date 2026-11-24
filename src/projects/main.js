@@ -5987,7 +5987,7 @@ class TaskCardManager {
       const tm = k === 'due' ? t.dueTime : t.startTime;
       const late = k === 'due' && val && val < today && open && !t.recurrenceRaw;
       const dueToday = k === 'due' && val === today && open && !t.recurrenceRaw;
-      const b = el(v, 'button', 'a4pj-pick' + (val ? '' : ' is-dash') + (late ? ' is-late' : '') + (dueToday ? ' is-today' : '') + (k === 'start' && val ? ' is-dash' : ''));  // a due time is shown plainly; the bell next to it carries the colour (reminder mockup)
+      const b = el(v, 'button', 'a4pj-pick' + (val ? '' : ' is-dash') + (late ? ' is-late' : '') + (dueToday ? ' is-today' : '') + (k === 'start' && val ? ' is-set' : ''));  // a due time is shown plainly; the bell next to it carries the colour (reminder mockup)
       setIcon(el(b, 'span', 'a4pj-ic'), 'calendar'); b.appendText(val ? `${lab} ${shortDay(val, today)}${tm ? `, ${timeText(tm)}` : ''}` : 'Pick a date');
       b.setAttr('aria-label', `${lab} date and time, open the calendar (${help})`);
       /** @param {WhenPick | null} r */

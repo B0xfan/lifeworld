@@ -746,7 +746,8 @@ if (VAULT) {
   ok(!/\.a4pj-prisel button \{ opacity: \.38; \}/.test(css) && !/prisel button[^{]*\{[^}]*opacity/.test(css), 'card colour: unpicked priorities are no longer faded');
   ok(/\.a4pj-prisel button \.a4pj-chip \{ color: var\(--pj-choice\)/.test(css), 'card colour: unpicked priorities are plain grey');
   ok(/--pj-acc: var\(--ink-marker, var\(--pj-acc-l, var\(--interactive-accent\)\)\)/.test(css) && /body\.theme-dark \.a4pj-card \{\s*--pj-acc: var\(--ink-marker, var\(--pj-acc-d/.test(css), "card colour: the theme's --ink-marker wins, then Today's accent, light and dark");
-  for (const [sel, name] of [['data-st="in-progress"', 'In progress'], ['data-st="blocked"', 'Waiting'], ['data-half="am"', 'Morning'], ['.a4pj-chip.is-top', 'High'], ['.a4pj-pick.is-today', 'Due today'], ['.a4pj-pick.is-late', 'overdue']]) ok(css.includes(sel), `card colour: ${name} has a colour rule`);
+  for (const [sel, name] of [['data-st="in-progress"', 'In progress'], ['data-st="blocked"', 'Waiting'], ['data-half="am"', 'Morning'], ['.a4pj-chip.is-top', 'High'], ['.a4pj-pick.is-today', 'Due today'], ['.a4pj-pick.is-late', 'overdue'], ['.a4pj-pick.is-set', 'Starts set']]) ok(css.includes(sel), `card colour: ${name} has a colour rule`);
+  ok(/k === 'start' && val \? ' is-set' : ''/.test(draw) && !/k === 'start' && val \? ' is-dash'/.test(draw), 'card colour: a set Starts is coloured, not dashed like an empty one');
   ok(/\.a4pj-card \.a4pj-bigtick \{ border-color: var\(--pj-acc\)/.test(css), 'card colour: the tick circle is outlined in the accent');
   ok(/\['closed', 'Canceled'\]\]\) \{/.test(draw) && /setIcon\(big, canceled \? 'x' : 'check'\)/.test(draw), 'Canceled: a Status button, and an x in the circle');
   ok(/\$\{canceled \? 'Canceled' : 'Completed'\} \$\{longDay/.test(draw), 'Canceled: the footer says Canceled, not Completed');
