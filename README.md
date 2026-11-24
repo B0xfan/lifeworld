@@ -103,6 +103,44 @@ Add a task by typing a sentence like `call Max friday 3pm !high`; LifeWorld pick
 the time and the priority. Tasks can repeat, wait on other tasks, and move to an archive folder when
 they are done. One button moves everything overdue to today, with Undo.
 
+## Add your calendar
+
+The Calendar card and the Month calendar read your Google or Apple calendar from its private link. Copy
+the link once, then paste it into LifeWorld.
+
+**Google Calendar**
+
+1. On a computer, open Google Calendar and select **Settings** (the gear at the top right).
+2. On the left, under **Settings for my calendars**, select the calendar you want.
+3. Select **Integrate calendar**.
+4. Copy the link under **Secret address in iCal format**.
+
+Keep this link to yourself: anyone who has it can see the calendar. If it gets out, select **Reset** in
+the same place to make a new one, then add the new link to LifeWorld.
+
+**Apple Calendar (iCloud)**
+
+1. On a computer or tablet, go to icloud.com/calendar and sign in.
+2. Hold the pointer over the calendar in the sidebar (on a tablet, tap next to its name), then select the
+   share button.
+3. Turn on **Public Calendar**, then select **Copy**.
+
+Apple calls this a public calendar because anyone with the link can see it. The link is not listed
+anywhere, so keep it to yourself.
+
+**Paste it into LifeWorld**
+
+1. Open **Settings → LifeWorld → Today page**. The **Calendar links** section shows when the Calendar
+   card is on, or when the Month calendar is set to Calendar links.
+2. Under **Calendar links**, select **Add** next to **Add a calendar link**, paste the link and give it a
+   name if you like.
+3. Repeat for each calendar you want to see.
+
+A calendar link stays on the device you added it on. It is not synced or backed up, so add it again on
+your phone, tablet or other computer.
+
+![Calendar settings](screenshots/settings-calendars-light.png)
+
 ## Companion: LifeWorld Capture
 
 [LifeWorld Capture](https://github.com/B0xfan/lifeworld-capture) is a free companion plugin. It puts a pen icon in your computer's menu bar: type a thought from any app and it lands in today's daily note, your inbox or a LifeWorld task. Computers only. Find it in Settings, Community plugins, or from the Menu bar capture row at the top of LifeWorld's settings.
