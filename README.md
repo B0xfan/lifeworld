@@ -161,6 +161,10 @@ your phone, tablet or other computer.
 5. Select the sun icon in the ribbon to open the Today page, or run **LifeWorld: Open today** from the
    command palette.
 
+Times show the way your device's region does. To pick one style, open **Settings → LifeWorld** and set
+**Time format** to 12-hour (2:00 PM) or 24-hour (14:00). Calendars, the Planner, the world clock, weather,
+tides and mood check-ins all follow it.
+
 LifeWorld works on Obsidian for desktop, iPhone, iPad and Android. Things 3 is offered only on a Mac.
 
 ![The welcome window](screenshots/welcome-light.png)
