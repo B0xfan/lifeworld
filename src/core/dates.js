@@ -192,6 +192,7 @@ function halfOfTime(t) { return t ? (t < '13:00' ? 'am' : 'pm') : null; }
 /** @param {string | null | undefined} t @param {boolean} [short] */
 function timeText(t, short) {
   if (!t) return '';
+  if (!/^\d{1,2}:\d{2}/.test(t)) return t; // not a clock time (a calendar can send anything): shown as it came
   const [h, mi] = t.split(':').map(Number);
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;

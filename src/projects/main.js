@@ -157,6 +157,7 @@ function addActivity(list, text, at) { return [{ at, text }, ...(Array.isArray(l
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
 import { pad2, dayOf, isDayStr, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
 import { asList } from '../core/lists';
+import { confirmAction } from '../core/confirm';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { parseDayWord, repeatRule, understand, parseClock, whenValue, firstOccurrence, repeatWords, shortDay, halfWord, quickAddChips, quickAddPlan } from '../core/quickadd';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, wikilinkLabel, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, isLate, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, applyUnschedule, blockerLinks, blockerHolds, openBlockersOf } from '../core/tasks';
@@ -2575,19 +2576,6 @@ class AskModal extends Modal {
   onClose() { this.contentEl.empty(); this.done(this.answer); }
 }
 
-class ConfirmModal extends Modal {
-  /** @param {import('obsidian').App} app @param {string} title @param {string} text @param {string} okLabel @param {(ok: boolean) => void} done */
-  constructor(app, title, text, okLabel, done) { super(app); this.title = title; this.text = text; this.okLabel = okLabel; this.done = done; this.ok = false; }
-  onOpen() {
-    this.titleEl.setText(this.title);
-    this.contentEl.createEl('p', { text: this.text });
-    const row = this.contentEl.createDiv({ cls: 'modal-button-container' });
-    row.createEl('button', { cls: 'mod-warning', text: this.okLabel }).addEventListener('click', () => { this.ok = true; this.close(); });
-    row.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
-  }
-  onClose() { this.contentEl.empty(); this.done(this.ok); }
-}
-
 /** @extends {SuggestModal<TFile>} */
 class GoalPickModal extends SuggestModal {
   /** @param {import('obsidian').App} app @param {TFile[]} goals @param {string} name @param {(goal: TFile | null) => void} done */
@@ -3606,7 +3594,7 @@ class ProjectsPlugin extends Plugin {
   /** @param {string} question @param {string} [value] @returns {Promise<string | null>} */
   ask(question, value) { return new Promise((resolve) => new AskModal(this.app, question, value, resolve).open()); }
   /** @param {string} title @param {string} text @param {string} okLabel @returns {Promise<boolean>} */
-  confirmAction(title, text, okLabel) { return new Promise((resolve) => new ConfirmModal(this.app, title, text, okLabel, resolve).open()); }
+  confirmAction(title, text, okLabel) { return confirmAction(this.app, title, text, okLabel); }
 }
 
 /* ========================================================================== *

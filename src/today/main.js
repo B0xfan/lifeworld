@@ -105,6 +105,7 @@ const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
 import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
 import { asList } from '../core/lists';
+import { confirmAction } from '../core/confirm'; // the tick on a note asks first (1.7.4)
 import { parseClock } from '../core/quickadd';
 import { REMINDER_CHOICES, ringField, offsetMinutes, offsetIso, reminderOf, reminderShort, reminderWords } from '../core/reminders';
 import { DEFAULT_COMPLETED_STATUSES, wikilinkTarget, taskTitleOf, timeOf, ruleTimeOf, onDay, movedDate, untimedSlot, taskFromFrontmatter, isTaskDone, isOverdue, lastMissedDay, taskOnDay, isSomeday, applySomeday, sortByOrder, orderForInsert, applyMove, applyPlacement, planInsert, openBlockersOf } from '../core/tasks';
@@ -3438,7 +3439,7 @@ class TodayView extends ItemView {
       if (!pinned) {
         const done = acts.createEl('button', { cls: 'a4t-note-done', attr: { 'aria-label': 'Done, take it off Today', title: 'Done' } });
         setIcon(done, 'check');
-        done.addEventListener('click', () => this.moveNote('Notes', n.raw, 'Done'));
+        done.addEventListener('click', async () => { if (await confirmAction(this.app, 'Mark this note done?', n.text, 'Mark done')) await this.moveNote('Notes', n.raw, 'Done'); });
       }
       this.noteText(row.createDiv({ cls: 'a4t-note-text' }), n.text, path);
     }
@@ -4038,11 +4039,11 @@ class TodayView extends ItemView {
       if (!list.length) agenda.createDiv({ cls: 'a4t-empty', text: 'nothing on this day' });
       for (const e of list) {
         const row = agenda.createDiv({ cls: 'a4t-mcal-ev' });
-        row.createSpan({ cls: 'a4t-mcal-t', text: e.allDay ? 'All day' : String(e.time) });
+        row.createSpan({ cls: 'a4t-mcal-t', text: e.allDay ? 'All day' : timeText(e.time) });
         row.createSpan({ cls: `a4t-mcal-bar a4t-cal-c${slots.get(e.calendar) || 1}` });
         const what = row.createDiv();
         what.createDiv({ cls: 'a4t-mcal-ti', text: e.summary });
-        const sub = [e.allDay ? '' : (e.end ? `${e.time} to ${e.end}` : String(e.time)), e.calendar].filter(Boolean).join(' · ');
+        const sub = [e.allDay ? '' : (e.end ? `${timeText(e.time)} to ${timeText(e.end)}` : timeText(e.time)), e.calendar].filter(Boolean).join(' · ');
         if (sub) what.createDiv({ cls: 'a4t-mcal-sub', text: sub });
       }
     }

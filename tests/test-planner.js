@@ -278,7 +278,7 @@ eq(L.eventsForDay(EV, '2026-10-04').map((e) => e.summary), ['Holiday', 'Market',
 eq(L.eventsForDay(null, '2026-10-04'), [], 'no events note -> nothing');
 const ev = L.eventsForDay(EV, '2026-10-04')[1];
 eq(L.eventKey(ev), '2026-10-04|08:00|Market', 'event key');
-eq(L.eventDetails(ev), 'From your calendar (Family): Sun, Oct 4, 08:00–10:00.', 'event note text');
+eq(L.eventDetails(ev), 'From your calendar (Family): Sun, Oct 4, 8:00 AM–10:00 AM.', 'event note text');
 eq(L.eventDetails(L.eventsForDay(EV, '2026-10-04')[0]), 'From your calendar (Holidays): Sun, Oct 4, All day.', 'all-day event note text');
 eq(L.plannedFields('2026-10-05', 'pm', 10), { planned_day: '2026-10-05', planned_half: 'pm', planned_order: 10 }, 'event dropped on afternoon');
 eq(L.plannedFields('2026-10-05', null, 10), { planned_day: '2026-10-05', planned_order: 10 }, 'event dropped on Any time: no half');

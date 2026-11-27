@@ -143,6 +143,7 @@ const MON = '2026-10-05'; // a Monday, the day the v2 table was run
   eq(P({ day: '2026-10-06', time: null }, 'due'), 'Due Tue, Oct 6 (tomorrow) · Any time · no reminder', 'line: a date only (reminder mockup: Any time · no reminder)');
   ok(/Didn't catch the day/.test(P({ error: 'day' }, 'due')) && /Didn't catch the time/.test(P({ error: 'time' }, 'due')), 'line: errors say what to try');
   eq(L.timeText('16:30'), '4:30 PM', 'shown: 4:30 PM'); eq(L.timeText('00:05'), '12:05 AM', 'shown: 12:05 AM'); eq(L.timeText('12:00'), '12:00 PM', 'shown: 12:00 PM'); eq(L.timeText('16:00', true), '4 PM', 'shown short: 4 PM (Planner week)'); eq(L.timeText('16:30', true), '4:30 PM', 'shown short keeps minutes');
+  eq(L.timeText('14:00'), '2:00 PM', 'a calendar event at 14:00 shows 2:00 PM (1.7.4)'); eq(L.timeText('soon'), 'soon', 'a time that is not a clock time is shown as it came (1.7.4)');
 }
 
 /* ---- 3. quick add -------------------------------------------------------------- */

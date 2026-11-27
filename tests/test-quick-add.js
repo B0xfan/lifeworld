@@ -154,7 +154,7 @@ async function main() {
   eq([d.due, d.customFrontmatter.planned_day], ['2026-10-06', undefined], 'an all-day event: no time, Due is the day');
   d = await drop('2026-10-10', 'am', Object.assign({}, ev, { time: 'soon' }));
   eq(d.due, '2026-10-10', 'a time that isn\'t HH:MM is ignored');
-  eq(d.details, 'From your calendar (Family): Sat, Oct 10, soon–14:00.', 'the note line is unchanged');
+  eq(d.details, 'From your calendar (Family): Sat, Oct 10, soon–2:00 PM.', 'the note line is unchanged');
 
   // Settings › Planning: "Just plan it for that day" -> planned_day, as before 0.1.16; a kept time still goes on Due.
   const V = require('./lib/paths').lifeworld().vault;

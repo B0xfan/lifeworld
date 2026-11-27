@@ -411,7 +411,7 @@ function eventsForDay(events, day) {
 /** @param {PlanEvent} ev */
 function eventKey(ev) { return `${ev.date}|${ev.time || ''}|${ev.summary}`; }
 /** @param {PlanEvent} ev */
-function eventWhen(ev) { return ev.allDay ? 'All day' : `${ev.time}${ev.end ? '–' + ev.end : ''}`; }
+function eventWhen(ev) { return ev.allDay ? 'All day' : `${timeText(ev.time)}${ev.end ? '–' + timeText(ev.end) : ''}`; }
 /** @param {string} day @param {Intl.DateTimeFormatOptions} opts */
 function fmtDay(day, opts) { return new Date(utcOf(day)).toLocaleDateString('en-US', { ...opts, timeZone: 'UTC' }); }
 /** @param {PlanEvent} ev */
@@ -1595,7 +1595,7 @@ class PlannerView extends ItemView {
   eventRow(ev) {
     const r = h(null, 'div', 'a4pl-ev');
     r.setAttr('title', 'Drag onto Morning, Afternoon or the Unscheduled list to make a task. The event itself stays in Apple Calendar.');
-    h(r, 'span', 'a4pl-ev-t', ev.allDay ? 'All day' : ev.time);
+    h(r, 'span', 'a4pl-ev-t', ev.allDay ? 'All day' : timeText(ev.time));
     h(r, 'span', 'a4pl-ev-s', ev.summary);
     if (this.plugin.data.made[eventKey(ev)]) h(r, 'span', 'a4pl-ev-made', '✓ task');
     r.addEventListener('pointerdown', (e) => this.startDrag(e, { ev }, r));
