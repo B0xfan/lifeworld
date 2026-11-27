@@ -2,6 +2,7 @@
 // LifeWorld reads. One live object per build; LifeWorld fills it from its settings at start and on
 // every change (src/main.js), the parts read it each time they need a folder or a name.
 'use strict';
+import { setTimeFormat } from './dates';
 
 // A new install's folders, as drawn (lifeworld-your-vault-mockup.html, approved 2026-10-14).
 // mood: where mood check-ins are read and saved (launch section 9, default `Mood`).
@@ -112,6 +113,7 @@ function setVault(saved) {
   const note = (v) => { const p = cleanFolder(v); return p.endsWith('.md') ? p : ''; };
   for (const k of Object.keys(feeds)) feeds[k] = note(typeof fd[k] === 'string' ? fd[k] : /** @type {Fm} */ (START.feeds || {})[k]);
   planning.setsDue = s.placeOnDay !== 'plan';
+  setTimeFormat(s.timeFormat);
   // Each Sidebar value: saved, else the start settings, else the new-install default; a damaged value
   // (wrong type) counts as missing.
   const sb = isObj(s.sidebar) ? s.sidebar : {};

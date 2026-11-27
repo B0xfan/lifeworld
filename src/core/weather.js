@@ -10,7 +10,7 @@
 
 import { requestUrl } from 'obsidian';
 import { keyOf, errStatus } from './sources';
-import { dayOf } from './dates';
+import { dayOf, timeText } from './dates';
 
 const REFRESH_MS = 30 * 60 * 1000;
 const SG_KEY = 'lifeworld-tides-stormglass'; // the kept Stormglass answer (not a secret: times and heights)
@@ -30,9 +30,9 @@ function normalizeWeather(raw) {
 
 // 'YYYY-MM-DDTHH:MM' (a place's own clock) -> '6:05 AM'.
 /** @param {unknown} iso */
-function clock12(iso) { const m = /T(\d{2}):(\d{2})/.exec(String(iso || '')); if (!m) return ''; const h = Number(m[1]); return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`; }
+function clock12(iso) { const m = /T(\d{2}):(\d{2})/.exec(String(iso || '')); return m ? timeText(`${m[1]}:${m[2]}`) : ''; }
 /** @param {unknown} iso */
-const hourWord = (iso) => { const m = /T(\d{2})/.exec(String(iso || '')); if (!m) return ''; const h = Number(m[1]); return `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`; };
+const hourWord = (iso) => { const m = /T(\d{2})/.exec(String(iso || '')); return m ? timeText(`${m[1]}:00`, true) : ''; };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** @param {string} d */
 const dayWord = (d) => DAYS[new Date(`${d}T12:00:00Z`).getUTCDay()];

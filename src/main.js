@@ -8,6 +8,7 @@
 import { Plugin, PluginSettingTab, Setting, Notice, Modal, TFolder, AbstractInputSuggest, Platform } from 'obsidian';
 import { PARTS, ADDON, HOST as PART_HOST } from './core/parts';
 import * as vault from './core/vault';
+import { timeFormat } from './core/dates';
 import { findSetup, SetupModal } from './setup';
 import { linksOf } from './core/calendars';
 import { drawRows, blockRow, noCleanup } from './core/settings';
@@ -391,6 +392,7 @@ class LifeWorldPlugin extends Plugin {
     if (change.feeds) next.feeds = { .../** @type {Fm} */ (v.feeds || {}), ...change.feeds };
     if (change.names) next.names = change.names;
     if (change.placeOnDay) next.placeOnDay = change.placeOnDay;
+    if (change.timeFormat) next.timeFormat = change.timeFormat;
     if (change.sidebar) next.sidebar = { .../** @type {Fm} */ (v.sidebar || {}), ...change.sidebar };
     this.store[HOST] = { ...h, vault: next };
     this.applyVault(next);
@@ -599,6 +601,10 @@ class LifeWorldSettingTab extends PluginSettingTab {
       { name: 'User manual', desc: 'How to use every part, with pictures. Opens the PDF in your web browser, where you can also download it.',
         render: (s) => s.addButton((b) => b.setButtonText('Open manual').onClick(() => window.open(MANUAL_URL))) },
       ...this.captureRow(),
+      { name: 'Time format', desc: "How every time in LifeWorld reads. Automatic follows your device's region.",
+        render: (s) => s.addDropdown((d) => d.addOption('auto', 'Automatic').addOption('12', '12-hour (2:00 PM)').addOption('24', '24-hour (14:00)')
+          .setValue(timeFormat.mode)
+          .onChange(async (v) => { await this.plugin.setVaultSettings({ timeFormat: v }); })) },
       { type: 'group', heading: 'Parts', items: [
         ...SWITCHES.map((x) => /** @type {Row} */ ({ name: x.name, desc: x.desc, render: (s) => s.addToggle((t) => t
           .setValue(this.plugin.isOn(x.id))

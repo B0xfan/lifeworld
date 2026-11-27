@@ -188,12 +188,27 @@ const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** @param {string | null | undefined} t @returns {'am' | 'pm' | null} */
 function halfOfTime(t) { return t ? (t < '13:00' ? 'am' : 'pm') : null; }
 
-// 'HH:MM' -> '4:30 PM' ('4 PM' with short and no minutes).
+// Settings › Time format (1.7.5): 'auto' follows the device's region, or '12' / '24'. Set by vault.setVault.
+const timeFormat = { mode: 'auto' };
+/** @param {unknown} v A saved value; anything but '12' or '24' is Automatic. */
+function setTimeFormat(v) { timeFormat.mode = v === '12' || v === '24' ? v : 'auto'; }
+/** @type {boolean | null} */
+let regionIs24 = null;
+function is24() {
+  if (timeFormat.mode !== 'auto') return timeFormat.mode === '24';
+  if (regionIs24 === null) {
+    try { const c = /** @type {{ hourCycle?: string }} */ (new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions()).hourCycle; regionIs24 = c === 'h23' || c === 'h24'; } catch { regionIs24 = false; }
+  }
+  return regionIs24;
+}
+
+// 'HH:MM' -> '4:30 PM' ('4 PM' with short and no minutes), or '16:30' in 24-hour.
 /** @param {string | null | undefined} t @param {boolean} [short] */
 function timeText(t, short) {
   if (!t) return '';
   if (!/^\d{1,2}:\d{2}/.test(t)) return t; // not a clock time (a calendar can send anything): shown as it came
   const [h, mi] = t.split(':').map(Number);
+  if (is24()) return `${pad2(h)}:${pad2(mi)}`;
   const hh = h % 12 === 0 ? 12 : h % 12;
   return `${short && !mi ? hh : `${hh}:${pad2(mi)}`} ${h < 12 ? 'AM' : 'PM'}`;
 }
@@ -202,4 +217,4 @@ function timeText(t, short) {
 /** @param {number} min */
 function minutesWords(min) { return min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`; }
 
-export { minutesWords, pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText };
+export { minutesWords, pad2, dayOf, isDayStr, toDayStr, utcOf, fromUtc, addDays, daysBetween, weekdayOf, partsOf, daysInMonth, WD, parseRRule, monthDaysByDay, monthDaysByMonthDay, applySetPos, matchesPattern, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText, timeFormat, setTimeFormat, is24 };

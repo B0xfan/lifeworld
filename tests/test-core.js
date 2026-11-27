@@ -12,7 +12,7 @@ const { coreUse, fromCore } = require('./lib/core-use');
 
 const CORE = path.join(__dirname, '..', 'src', 'core');
 const EXPORTS = {
-  dates: ['minutesWords', 'pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText'],
+  dates: ['minutesWords', 'pad2', 'dayOf', 'isDayStr', 'toDayStr', 'utcOf', 'fromUtc', 'addDays', 'daysBetween', 'weekdayOf', 'partsOf', 'daysInMonth', 'WD', 'parseRRule', 'monthDaysByDay', 'monthDaysByMonthDay', 'applySetPos', 'matchesPattern', 'occursOn', 'MONTHS_SHORT', 'WEEKDAYS_SHORT', 'halfOfTime', 'timeText', 'timeFormat', 'setTimeFormat', 'is24'],
   lists: ['asList'],
   confirm: ['confirmAction'],
   activity: ['HEAT_MODES', 'normalizeHeatCount', 'normalizeActivity', 'pruneActivity', 'datesPerDay', 'mergeCounts', 'tasksDonePerDay', 'heatLevel', 'heatDays', 'heatMonths', 'heatWords'],
@@ -111,5 +111,17 @@ check(() => {
   assert.strictEqual(((V.pathsAfterRename('02 Plan', 'Plans', ['Plans', '02 Other', '03 Work']) || {}).sidebar || {}).rooms, undefined, 'another folder still starts that way: the room is left alone');
   assert.strictEqual(((V.pathsAfterRename('02 draft.md', 'draft.md') || {}).sidebar || {}).rooms, undefined, 'a note never moves a room');
   V.setVault(null);
+});
+// Settings › Time format (1.7.5): the saved choice reaches every time shown; anything else is Automatic.
+check(() => {
+  const D = core.dates;
+  D.setTimeFormat('24');
+  assert.deepStrictEqual([D.timeText('14:05'), D.timeText('09:00', true), D.timeText('00:30'), D.timeText('soon')], ['14:05', '09:00', '00:30', 'soon'], '24-hour');
+  D.setTimeFormat('12');
+  assert.deepStrictEqual([D.timeText('14:05'), D.timeText('16:00', true), D.timeText('00:30')], ['2:05 PM', '4 PM', '12:30 AM'], '12-hour');
+  D.setTimeFormat('bogus');
+  assert.strictEqual(D.timeFormat.mode, 'auto', 'a damaged value is Automatic');
+  D.setTimeFormat('24'); D.setTimeFormat(undefined);
+  assert.strictEqual(D.timeFormat.mode, 'auto', 'no setting is Automatic');
 });
 console.log(`core self-check: OK (${n} checks)`);

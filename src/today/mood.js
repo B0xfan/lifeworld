@@ -6,7 +6,7 @@
 'use strict';
 
 import { ItemView, Modal, Notice, TFile, TFolder, setIcon } from 'obsidian';
-import { pad2, dayOf } from '../core/dates';
+import { pad2, dayOf, timeText } from '../core/dates';
 import { vaultFolders } from '../core/vault';
 import { insertUnderHeading, writeDailyNote } from '../core/daily';
 
@@ -37,7 +37,7 @@ function moodScore(answers) {
 /** @param {number} s */
 const scoreTier = (s) => (s >= 70 ? 'g' : s >= 45 ? 'm' : 'l');
 /** @param {Date} d */
-const clockLabel = (d) => { const h = d.getHours(); return `${h % 12 === 0 ? 12 : h % 12}:${pad2(d.getMinutes())} ${h >= 12 ? 'PM' : 'AM'}`; };
+const clockLabel = (d) => timeText(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`);
 /** @param {string} d */
 const monthYear = (d) => `${MONTHS[parseInt(d.slice(5, 7), 10) - 1]} ${d.slice(0, 4)}`;
 /** @param {string} d */

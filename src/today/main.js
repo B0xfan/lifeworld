@@ -103,7 +103,7 @@ const OVERDUE_UNDO_MS = 6000;               // mockup: the "N moved to today · 
  * ========================================================================== */
 
 // The shared core (src/core/): one copy of the dates, list, reminder, quick add and task helpers.
-import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText } from '../core/dates';
+import { pad2, dayOf, toDayStr, addDays, daysBetween, weekdayOf, partsOf, parseRRule, occursOn, MONTHS_SHORT, WEEKDAYS_SHORT, halfOfTime, timeText, is24 } from '../core/dates';
 import { asList } from '../core/lists';
 import { confirmAction } from '../core/confirm'; // the tick on a note asks first (1.7.4)
 import { parseClock } from '../core/quickadd';
@@ -622,12 +622,7 @@ function wmoIcon(code) {
 }
 
 /** @param {unknown} hhmm */
-function fmt12(hhmm) {
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
-  if (!m) return String(hhmm || '');
-  const h = Number(m[1]);
-  return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
-}
+function fmt12(hhmm) { return timeText(String(hhmm || '')); }
 
 /** @typedef {{ date: string, time: string | null, allDay: boolean, summary: string, calendar: string, end?: string | null }} TodayEvent */
 /** @param {unknown} events @param {string} today @param {number | null} [daysAhead] @returns {TodayEvent[]} */
@@ -654,10 +649,7 @@ function moodWhen(day, time, today) {
   return time ? `${label} · ${time}` : label;
 }
 /** @param {Date} d */
-function clockText(d) {
-  const h = d.getHours();
-  return `${h % 12 === 0 ? 12 : h % 12}:${pad2(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
-}
+function clockText(d) { return timeText(`${pad2(d.getHours())}:${pad2(d.getMinutes())}`); }
 
 /** @param {unknown} body @param {number} [max] */
 function journalExcerpt(body, max) {
@@ -738,8 +730,9 @@ function clockAt(now, tz) {
   const parts = (o) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { ...o, ...(tz ? { timeZone: tz } : {}) }).formatToParts(now).map((x) => [x.type, x.value]));
   const p = parts({ hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true, weekday: 'short', month: 'short', day: 'numeric', timeZoneName: 'short' });
   const h24 = Number(parts({ hour: '2-digit', hourCycle: 'h23' }).hour) % 24;
-  const ap = String(p.dayPeriod || '').toLowerCase();
-  return { time: `${String(p.hour).padStart(2, '0')}:${p.minute} ${ap}`, big: `${p.hour}:${p.minute}:${p.second} ${ap}`, day: String(p.weekday).toUpperCase(), date: `${p.weekday}, ${p.month} ${p.day}`, zone: p.timeZoneName || '', h: h24, m: Number(p.minute), s: Number(p.second) };
+  const ap = is24() ? '' : ` ${String(p.dayPeriod || '').toLowerCase()}`;
+  const hr = is24() ? pad2(h24) : p.hour;
+  return { time: `${String(hr).padStart(2, '0')}:${p.minute}${ap}`, big: `${hr}:${p.minute}:${p.second}${ap}`, day: String(p.weekday).toUpperCase(), date: `${p.weekday}, ${p.month} ${p.day}`, zone: p.timeZoneName || '', h: h24, m: Number(p.minute), s: Number(p.second) };
 }
 
 // Today's sun times as local hours (fractions for minutes), from the weather the Today page already shows
@@ -4424,7 +4417,7 @@ class TodayView extends ItemView {
       const [x1, y1] = pt(h, R + 12), [x2, y2] = pt(h, R + (h % 6 ? 17 : 21));
       ticks.createSvg('line', { cls: h % 6 ? undefined : 'is-six', attr: { x1, y1, x2, y2 } });
     }
-    for (const [h, t] of /** @type {[number, string][]} */ ([[0, '12 AM'], [12, '12 PM']])) {
+    for (const [h, t] of /** @type {[number, string][]} */ ([[0, timeText('00:00', true)], [12, timeText('12:00', true)]])) {
       const [x, y] = pt(h, R - 26);
       svg.createSvg('text', { cls: 'a4t-clk-lab', attr: { x, y: y + 4, 'text-anchor': 'middle' } }).textContent = t;
     }
